@@ -5,11 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Trash2, Plus } from 'lucide-react';
 
 const Settings = () => {
   const [sidAmount, setSidAmount] = useState('5000');
   const [specialAmount, setSpecialAmount] = useState('15%');
+  const [saveMessage, setSaveMessage] = useState('');
   
   const [categories, setCategories] = useState([
     'Housing', 'Food', 'Transport', 'Entertainment', 'Healthcare', 'Utilities'
@@ -39,6 +41,49 @@ const Settings = () => {
     if (newItem && !list.includes(newItem)) {
       setList([...list, newItem]);
     }
+  };
+
+  const handleSave = () => {
+    // Validate SID amount
+    const sidValue = parseFloat(sidAmount);
+    if (isNaN(sidValue) || sidValue < 0) {
+      setSaveMessage('SID amount must be a valid positive number');
+      return;
+    }
+
+    // Validate Special amount (can be percentage or fixed amount)
+    let specialValue: number | string = specialAmount;
+    if (specialAmount.includes('%')) {
+      const percentValue = parseFloat(specialAmount.replace('%', ''));
+      if (isNaN(percentValue) || percentValue < 0 || percentValue > 100) {
+        setSaveMessage('Special percentage must be between 0% and 100%');
+        return;
+      }
+    } else {
+      const fixedValue = parseFloat(specialAmount);
+      if (isNaN(fixedValue) || fixedValue < 0) {
+        setSaveMessage('Special amount must be a valid positive number or percentage');
+        return;
+      }
+    }
+
+    // Save to localStorage (in a real app, this would be sent to a backend)
+    const settings = {
+      sidAmount: sidValue,
+      specialAmount: specialValue,
+      categories,
+      accounts,
+      statuses,
+      budgetTypes,
+      recurringOptions,
+      updatedAt: new Date().toISOString()
+    };
+    
+    localStorage.setItem('financeSettings', JSON.stringify(settings));
+    setSaveMessage('Settings saved successfully!');
+    
+    // Clear message after 3 seconds
+    setTimeout(() => setSaveMessage(''), 3000);
   };
 
   const EnumSection = ({ 
@@ -104,6 +149,13 @@ const Settings = () => {
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Settings</h1>
 
       <div className="space-y-6">
+        {/* Save Message */}
+        {saveMessage && (
+          <Alert>
+            <AlertDescription>{saveMessage}</AlertDescription>
+          </Alert>
+        )}
+
         {/* SID & Special Settings */}
         <Card>
           <CardHeader>
@@ -115,11 +167,12 @@ const Settings = () => {
                 <Label htmlFor="sid-amount">SID Amount (DKK)</Label>
                 <Input
                   id="sid-amount"
-                  type="text"
+                  type="number"
                   value={sidAmount}
                   onChange={(e) => setSidAmount(e.target.value)}
                   placeholder="5000"
                 />
+                <p className="text-xs text-gray-500 mt-1">Fixed monthly SID allocation</p>
               </div>
               <div>
                 <Label htmlFor="special-amount">Special Amount (DKK or %)</Label>
@@ -130,6 +183,7 @@ const Settings = () => {
                   onChange={(e) => setSpecialAmount(e.target.value)}
                   placeholder="15% or 7000"
                 />
+                <p className="text-xs text-gray-500 mt-1">Use % for percentage of income or fixed amount</p>
               </div>
             </div>
           </CardContent>
@@ -170,7 +224,7 @@ const Settings = () => {
 
         {/* Save Button */}
         <div className="flex justify-end">
-          <Button size="lg">Save Settings</Button>
+          <Button size="lg" onClick={handleSave}>Save Settings</Button>
         </div>
       </div>
     </div>

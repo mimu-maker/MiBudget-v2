@@ -1,9 +1,11 @@
 
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Settings } from 'lucide-react';
 
-const budgetData = [
+const initialBudgetData = [
   {
     category: 'Housing',
     budget: 15000,
@@ -62,6 +64,28 @@ const budgetData = [
 ];
 
 const Budget = () => {
+  const [budgetData, setBudgetData] = useState(initialBudgetData);
+  const [editingBudget, setEditingBudget] = useState<string | null>(null);
+
+  const updateBudget = (category: string, newBudget: number) => {
+    setBudgetData(prev => prev.map(item => {
+      if (item.category === category) {
+        const totalBudget = prev.reduce((sum, item) => sum + (item.category === category ? 0 : item.budget), 0) + newBudget;
+        const allocation = totalBudget > 0 ? (newBudget / totalBudget) * 100 : 0;
+        const vsBudget = item.spent - newBudget;
+        
+        return {
+          ...item,
+          budget: newBudget,
+          allocation: parseFloat(allocation.toFixed(1)),
+          vsBudget
+        };
+      }
+      return item;
+    }));
+    setEditingBudget(null);
+  };
+
   const totalBudget = budgetData.reduce((sum, item) => sum + item.budget, 0);
   const totalSpent = budgetData.reduce((sum, item) => sum + item.spent, 0);
   const totalDelta = totalSpent - totalBudget;
@@ -134,7 +158,29 @@ const Budget = () => {
                   <>
                     <tr key={index} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-2 font-semibold">{item.category}</td>
-                      <td className="py-3 px-2 text-right">{item.budget.toLocaleString()}</td>
+                      <td className="py-3 px-2 text-right">
+                        {editingBudget === item.category ? (
+                          <Input
+                            type="number"
+                            defaultValue={item.budget}
+                            className="w-24 h-8 text-right"
+                            autoFocus
+                            onBlur={(e) => updateBudget(item.category, parseFloat(e.target.value) || 0)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                updateBudget(item.category, parseFloat(e.currentTarget.value) || 0);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <div
+                            className="cursor-pointer hover:bg-gray-100 px-2 py-1 rounded"
+                            onClick={() => setEditingBudget(item.category)}
+                          >
+                            {item.budget.toLocaleString()}
+                          </div>
+                        )}
+                      </td>
                       <td className="py-3 px-2 text-right">{item.allocation}%</td>
                       <td className="py-3 px-2 text-right font-semibold">{item.spent.toLocaleString()}</td>
                       <td className="py-3 px-2 text-right">{item.budgetYTD.toLocaleString()}</td>

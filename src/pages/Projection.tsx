@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -141,7 +140,7 @@ const Projection = () => {
               <Line 
                 type="monotone" 
                 dataKey="value" 
-                stroke={(dataPoint) => dataPoint >= 0 ? "#10b981" : "#ef4444"}
+                stroke="#10b981"
                 strokeWidth={3}
                 dot={{ r: 6 }}
                 strokeDasharray={0}
