@@ -1,7 +1,9 @@
 
 import { useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-interface Transaction {
+export interface Transaction {
   id: number;
   date: string;
   description: string;
@@ -89,12 +91,105 @@ const mockTransactions: Transaction[] = [
   }
 ];
 
+const useTransactions = () => {
+  return useQuery({
+    queryKey: ['transactions'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('date', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching transactions:', error);
+        // Return mock data for now
+        return mockTransactions;
+      }
+      
+      // Transform Supabase data to match our Transaction interface
+      return data.map(row => ({
+        id: parseInt(row.id),
+        date: row.date,
+        description: row.description,
+        amount: parseFloat(row.amount.toString()),
+        account: row.account,
+        status: row.status,
+        budget: row.budget,
+        category: row.category,
+        subCategory: row.sub_category || '',
+        planned: row.planned,
+        recurring: row.recurring,
+        note: row.note || ''
+      })) as Transaction[];
+    },
+  });
+};
+
 export const useTransactionTable = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions);
+  const queryClient = useQueryClient();
+  const { data: transactions = [] } = useTransactions();
+  
   const [sortBy, setSortBy] = useState<keyof Transaction>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [filters, setFilters] = useState<Record<string, any>>({});
   const [editingCell, setEditingCell] = useState<{id: number, field: keyof Transaction} | null>(null);
+
+  const updateTransactionMutation = useMutation({
+    mutationFn: async ({ id, field, value }: { id: number, field: keyof Transaction, value: any }) => {
+      const updateData: any = {};
+      
+      // Map our field names to Supabase column names
+      if (field === 'subCategory') {
+        updateData.sub_category = value;
+      } else {
+        updateData[field] = value;
+      }
+      
+      const { error } = await supabase
+        .from('transactions')
+        .update(updateData)
+        .eq('id', id.toString()); // Convert to string for UUID comparison
+      
+      if (error) {
+        console.error('Error updating transaction:', error);
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+  });
+
+  const addTransactionMutation = useMutation({
+    mutationFn: async (newTransaction: Omit<Transaction, 'id'>) => {
+      const insertData = {
+        date: newTransaction.date,
+        description: newTransaction.description,
+        amount: newTransaction.amount,
+        account: newTransaction.account,
+        status: newTransaction.status,
+        budget: newTransaction.budget,
+        category: newTransaction.category,
+        sub_category: newTransaction.subCategory,
+        planned: newTransaction.planned,
+        recurring: newTransaction.recurring,
+        note: newTransaction.note,
+        fingerprint: `${newTransaction.date}-${newTransaction.description}-${newTransaction.amount}` // Simple fingerprint
+      };
+      
+      const { error } = await supabase
+        .from('transactions')
+        .insert([insertData]);
+      
+      if (error) {
+        console.error('Error adding transaction:', error);
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+  });
 
   const handleSort = (field: keyof Transaction) => {
     if (sortBy === field) {
@@ -118,18 +213,21 @@ export const useTransactionTable = () => {
   };
 
   const handleCellEdit = (id: number, field: keyof Transaction, value: any) => {
-    setTransactions(prev => prev.map(t => 
-      t.id === id ? { ...t, [field]: value } : t
-    ));
+    updateTransactionMutation.mutate({ id, field, value });
     setEditingCell(null);
   };
 
   const handleImport = (importedTransactions: Transaction[]) => {
-    setTransactions(prev => [...prev, ...importedTransactions]);
+    // For now, just add to local state
+    // In a real implementation, you'd batch insert to Supabase
+    importedTransactions.forEach(transaction => {
+      addTransactionMutation.mutate(transaction);
+    });
   };
 
   const handleAddTransaction = (newTransaction: Transaction) => {
-    setTransactions(prev => [...prev, newTransaction]);
+    const { id, ...transactionData } = newTransaction;
+    addTransactionMutation.mutate(transactionData);
   };
 
   return {
@@ -147,5 +245,3 @@ export const useTransactionTable = () => {
     handleAddTransaction
   };
 };
-
-export type { Transaction };
