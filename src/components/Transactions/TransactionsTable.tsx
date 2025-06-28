@@ -35,6 +35,10 @@ export const TransactionsTable = () => {
     sortOrder
   );
 
+  const handleStartEdit = (id: number, field: keyof typeof transactions[0]) => {
+    setEditingCell({ id, field });
+  };
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
@@ -72,7 +76,7 @@ export const TransactionsTable = () => {
                     transaction={transaction}
                     editingCell={editingCell}
                     onCellEdit={handleCellEdit}
-                    onStartEdit={setEditingCell}
+                    onStartEdit={handleStartEdit}
                     onStopEdit={() => setEditingCell(null)}
                   />
                 ))}
