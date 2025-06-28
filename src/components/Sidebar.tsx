@@ -1,9 +1,10 @@
 
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { BarChart3, CreditCard, Target, TrendingUp, Settings, Calendar } from 'lucide-react';
+import { BarChart3, CreditCard, Target, TrendingUp, Settings, Calendar, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
   { to: '/', label: 'Overview', icon: BarChart3 },
@@ -14,6 +15,7 @@ const navItems = [
 
 export const Sidebar = () => {
   const [selectedYear, setSelectedYear] = useState('2024');
+  const { signOut, user } = useAuth();
 
   return (
     <div className="w-64 bg-white border-r border-gray-200 h-screen flex flex-col">
@@ -56,13 +58,27 @@ export const Sidebar = () => {
         </ul>
       </nav>
 
-      <div className="p-4 border-t border-gray-200">
+      <div className="p-4 border-t border-gray-200 space-y-2">
         <Button variant="ghost" className="w-full justify-start" asChild>
           <NavLink to="/settings">
             <Settings className="w-5 h-5 mr-3" />
             Settings
           </NavLink>
         </Button>
+        
+        <div className="pt-2 border-t">
+          <div className="text-xs text-gray-500 mb-2 px-2">
+            {user?.email}
+          </div>
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50" 
+            onClick={signOut}
+          >
+            <LogOut className="w-5 h-5 mr-3" />
+            Sign Out
+          </Button>
+        </div>
       </div>
     </div>
   );
