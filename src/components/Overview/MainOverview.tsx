@@ -5,23 +5,24 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
+import { ComposedChart } from 'recharts';
 
 const monthlyData = [
   { month: 'Jan', income: 45000, expense: 32000 },
   { month: 'Feb', income: 47000, expense: 31500 },
   { month: 'Mar', income: 46000, expense: 33000 },
-  { month: 'Apr', income: 48000, expense: 32500 },
-  { month: 'May', income: 47500, expense: 31000 },
-  { month: 'Jun', income: 49000, expense: 34000 },
+  { month: 'Apr', income: 48000, expense: 41000 },
+  { month: 'May', income: 47000, expense: 45500 },
+  { month: 'Jun', income: 49500, expense: 47000 },
 ];
 
 const balanceData = [
-  { month: 'Jan', balance: 125000 },
-  { month: 'Feb', balance: 140500 },
-  { month: 'Mar', balance: 153500 },
-  { month: 'Apr', balance: 169000 },
-  { month: 'May', balance: 185500 },
-  { month: 'Jun', balance: 200500 },
+  { month: 'Jan', balance: 13000 },
+  { month: 'Feb', balance: 28500 },
+  { month: 'Mar', balance: 41500 },
+  { month: 'Apr', balance: 48500 },
+  { month: 'May', balance: 50000 },
+  { month: 'Jun', balance: 52500 },
 ];
 
 const radarData = [
@@ -106,38 +107,33 @@ export const MainOverview = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card>
             <CardHeader>
-              <CardTitle>Monthly Income vs Expenses</CardTitle>
+              <CardTitle>Monthly Income vs Expense + Balance</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={monthlyData}>
+                <ComposedChart data={monthlyData.map((item, index) => ({
+                  ...item,
+                  balance: balanceData[index]?.balance ?? 0,
+                  trend: index === 0
+                    ? balanceData[0].balance
+                    : balanceData[0].balance +
+                      ((balanceData[balanceData.length - 1].balance - balanceData[0].balance) /
+                        (balanceData.length - 1)) *
+                        index
+                }))}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" />
                   <YAxis />
-                  <Tooltip formatter={(value) => `${value.toLocaleString()} DKK`} />
-                  <Bar dataKey="income" fill="#10b981" name="Income" />
-                  <Bar dataKey="expense" fill="#ef4444" name="Expenses" />
-                </BarChart>
+                  <Tooltip />
+                  <Bar dataKey="income" fill="green" name="Income" />
+                  <Bar dataKey="expense" fill="red" name="Expense" />
+                  <Line type="monotone" dataKey="balance" stroke="#0074D9" strokeWidth={4} name="Balance" />
+                  <Line type="monotone" dataKey="trend" stroke="#8884d8" strokeDasharray="5 5" name="Trend" />
+                </ComposedChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Balance Trend</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={balanceData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip formatter={(value) => `${value.toLocaleString()} DKK`} />
-                  <Line type="monotone" dataKey="balance" stroke="#3b82f6" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
 
           <Card className="lg:col-span-2">
             <CardHeader>

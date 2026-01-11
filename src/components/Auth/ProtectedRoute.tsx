@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import SignInScreen from './SignInScreen';
@@ -9,6 +8,14 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { user, loading } = useAuth();
+  const bypass = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
+
+  console.log('🧪 [ProtectedRoute] bypass?', bypass);
+  console.log('🧪 [ProtectedRoute] user?', user);
+
+  if (bypass) {
+    return <>{children}</>;
+  }
 
   if (loading) {
     return (
