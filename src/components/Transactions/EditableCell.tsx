@@ -1,38 +1,41 @@
-
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Transaction } from './hooks/useTransactionTable';
 import { getStatusBadgeVariant, getBudgetBadgeVariant } from './utils/transactionUtils';
+import { useSettings } from '@/hooks/useSettings';
 
 interface EditableCellProps {
   transaction: Transaction;
   field: keyof Transaction;
   isEditing: boolean;
-  onEdit: (id: number, field: keyof Transaction, value: any) => void;
-  onStartEdit: (id: number, field: keyof Transaction) => void;
+  onEdit: (id: string, field: keyof Transaction, value: any) => void;
+  onStartEdit: (id: string, field: keyof Transaction) => void;
   onStopEdit: () => void;
 }
 
-export const EditableCell = ({ 
-  transaction, 
-  field, 
-  isEditing, 
-  onEdit, 
-  onStartEdit, 
-  onStopEdit 
+// ... (imports)
+
+export const EditableCell = ({
+  transaction,
+  field,
+  isEditing,
+  onEdit,
+  onStartEdit,
+  onStopEdit
 }: EditableCellProps) => {
+  const { settings } = useSettings();
   const value = transaction[field];
 
   if (isEditing) {
     if (field === 'account' || field === 'status' || field === 'budget' || field === 'category' || field === 'recurring') {
       const options = {
-        account: ['Master', 'Joint', 'Savings', 'Investment'],
-        status: ['Complete', 'Pending', 'Pending Marcus', 'Pending Sarah'],
-        budget: ['Budgeted', 'Special', 'Klintemarken', 'Exclude'],
-        category: ['Income', 'Food', 'Housing', 'Transport', 'Entertainment', 'Healthcare', 'Utilities'],
-        recurring: ['No', 'Weekly', 'Monthly', 'Quarterly', 'Yearly']
+        account: settings.accounts,
+        status: settings.statuses,
+        budget: settings.budgetTypes,
+        category: settings.categories,
+        recurring: settings.recurringOptions
       };
 
       return (

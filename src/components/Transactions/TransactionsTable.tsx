@@ -2,8 +2,9 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Upload } from 'lucide-react';
+import { Plus, Upload, LayoutPanelLeft } from 'lucide-react';
 import { CsvImportDialog } from './CsvImportDialog';
+import { ValidationDashboard } from './ValidationDashboard';
 import { AddTransactionDialog } from './AddTransactionDialog';
 import { TransactionsTableHeader } from './TransactionsTableHeader';
 import { TransactionsTableRow } from './TransactionsTableRow';
@@ -28,6 +29,7 @@ export const TransactionsTable = () => {
 
   const [csvImportOpen, setCsvImportOpen] = useState(false);
   const [addTransactionOpen, setAddTransactionOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'table' | 'validation'>('table');
 
   const filteredAndSortedTransactions = sortTransactions(
     filterTransactions(transactions, filters),
@@ -35,7 +37,7 @@ export const TransactionsTable = () => {
     sortOrder
   );
 
-  const handleStartEdit = (id: number, field: keyof typeof transactions[0]) => {
+  const handleStartEdit = (id: string, field: keyof typeof transactions[0]) => {
     setEditingCell({ id, field });
   };
 
@@ -55,43 +57,62 @@ export const TransactionsTable = () => {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>All Transactions ({filteredAndSortedTransactions.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <TransactionsTableHeader
-                sortBy={sortBy}
-                sortOrder={sortOrder}
-                onSort={handleSort}
-                onFilter={handleFilter}
-                onClearFilter={clearFilter}
-              />
-              <tbody>
-                {filteredAndSortedTransactions.map((transaction) => (
-                  <TransactionsTableRow
-                    key={transaction.id}
-                    transaction={transaction}
-                    editingCell={editingCell}
-                    onCellEdit={handleCellEdit}
-                    onStartEdit={handleStartEdit}
-                    onStopEdit={() => setEditingCell(null)}
-                  />
-                ))}
-              </tbody>
-            </table>
+      {viewMode === 'table' ? (
+        <>
+          <div className="flex justify-end mb-4">
+            <Button variant="outline" onClick={() => setViewMode('validation')}>
+              <LayoutPanelLeft className="w-4 h-4 mr-2" />
+              Go to Validation Dashboard
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>All Transactions ({filteredAndSortedTransactions.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <TransactionsTableHeader
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                    onFilter={handleFilter}
+                    onClearFilter={clearFilter}
+                  />
+                  <tbody>
+                    {filteredAndSortedTransactions.map((transaction) => (
+                      <TransactionsTableRow
+                        key={transaction.id}
+                        transaction={transaction}
+                        editingCell={editingCell}
+                        onCellEdit={handleCellEdit}
+                        onStartEdit={handleStartEdit}
+                        onStopEdit={() => setEditingCell(null)}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <>
+          <div className="flex justify-end mb-4">
+            <Button variant="outline" onClick={() => setViewMode('table')}>
+              Back to Table
+            </Button>
+          </div>
+          <ValidationDashboard />
+        </>
+      )}
 
-      <CsvImportDialog 
+      <CsvImportDialog
         open={csvImportOpen}
         onOpenChange={setCsvImportOpen}
         onImport={handleImport}
       />
-      
+
       <AddTransactionDialog
         open={addTransactionOpen}
         onOpenChange={setAddTransactionOpen}

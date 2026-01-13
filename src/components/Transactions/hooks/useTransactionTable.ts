@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export interface Transaction {
-  id: number;
+  id: string; // Changed to string for UUID
   date: string;
   description: string;
   amount: number;
@@ -16,11 +16,17 @@ export interface Transaction {
   planned: boolean;
   recurring: string;
   note: string;
+  // New fields
+  clean_description?: string;
+  budget_month?: string;
+  suggested_category?: string;
+  suggested_sub_category?: string;
+  merchant_description?: string;
 }
 
 const mockTransactions: Transaction[] = [
   {
-    id: 1,
+    id: "1",
     date: '2024-06-01',
     description: 'Salary deposit',
     amount: 45000,
@@ -34,7 +40,7 @@ const mockTransactions: Transaction[] = [
     note: ''
   },
   {
-    id: 2,
+    id: "2",
     date: '2024-06-02',
     description: 'Grocery shopping - Netto',
     amount: -1250,
@@ -48,7 +54,7 @@ const mockTransactions: Transaction[] = [
     note: ''
   },
   {
-    id: 3,
+    id: "3",
     date: '2024-06-05',
     description: 'Netflix subscription',
     amount: -89,
@@ -62,7 +68,7 @@ const mockTransactions: Transaction[] = [
     note: ''
   },
   {
-    id: 4,
+    id: "4",
     date: '2024-06-08',
     description: 'Restaurant dinner',
     amount: -450,
@@ -76,7 +82,7 @@ const mockTransactions: Transaction[] = [
     note: 'Anniversary dinner'
   },
   {
-    id: 5,
+    id: "5",
     date: '2024-06-12',
     description: 'Home repair materials',
     amount: -2800,
@@ -91,36 +97,28 @@ const mockTransactions: Transaction[] = [
   }
 ];
 
+// Local Storage Keys
+const STORAGE_KEY = 'mibudget_transactions';
+
+const getStoredTransactions = (): Transaction[] => {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored) {
+    return JSON.parse(stored);
+  }
+  return mockTransactions; // Seed with mock data if empty
+};
+
+const saveTransactions = (transactions: Transaction[]) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
+};
+
 const useTransactions = () => {
   return useQuery({
     queryKey: ['transactions'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .order('date', { ascending: false });
-      
-      if (error) {
-        console.error('Error fetching transactions:', error);
-        // Return mock data for now
-        return mockTransactions;
-      }
-      
-      // Transform Supabase data to match our Transaction interface
-      return data.map(row => ({
-        id: parseInt(row.id),
-        date: row.date,
-        description: row.description,
-        amount: parseFloat(row.amount.toString()),
-        account: row.account,
-        status: row.status,
-        budget: row.budget,
-        category: row.category,
-        subCategory: row.sub_category || '',
-        planned: row.planned,
-        recurring: row.recurring,
-        note: row.note || ''
-      })) as Transaction[];
+      // Simulate network delay for realism/state updates
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return getStoredTransactions();
     },
   });
 };
@@ -128,32 +126,26 @@ const useTransactions = () => {
 export const useTransactionTable = () => {
   const queryClient = useQueryClient();
   const { data: transactions = [] } = useTransactions();
-  
+
   const [sortBy, setSortBy] = useState<keyof Transaction>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [filters, setFilters] = useState<Record<string, any>>({});
-  const [editingCell, setEditingCell] = useState<{id: number, field: keyof Transaction} | null>(null);
+  const [editingCell, setEditingCell] = useState<{ id: string, field: keyof Transaction } | null>(null);
 
   const updateTransactionMutation = useMutation({
-    mutationFn: async ({ id, field, value }: { id: number, field: keyof Transaction, value: any }) => {
-      const updateData: any = {};
-      
-      // Map our field names to Supabase column names
-      if (field === 'subCategory') {
-        updateData.sub_category = value;
-      } else {
-        updateData[field] = value;
-      }
-      
-      const { error } = await supabase
-        .from('transactions')
-        .update(updateData)
-        .eq('id', id.toString()); // Convert to string for UUID comparison
-      
-      if (error) {
-        console.error('Error updating transaction:', error);
-        throw error;
-      }
+    mutationFn: async ({ id, field, value }: { id: string, field: keyof Transaction, value: any }) => {
+      const currentTransactions = getStoredTransactions();
+      const updated = currentTransactions.map(t => {
+        if (t.id === id) {
+          // Handle specific field logic if needed
+          if (field === 'subCategory') {
+            return { ...t, subCategory: value, sub_category: value };
+          }
+          return { ...t, [field]: value };
+        }
+        return t;
+      });
+      saveTransactions(updated);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -162,29 +154,18 @@ export const useTransactionTable = () => {
 
   const addTransactionMutation = useMutation({
     mutationFn: async (newTransaction: Omit<Transaction, 'id'>) => {
-      const insertData = {
-        date: newTransaction.date,
-        description: newTransaction.description,
-        amount: newTransaction.amount,
-        account: newTransaction.account,
-        status: newTransaction.status,
-        budget: newTransaction.budget,
-        category: newTransaction.category,
-        sub_category: newTransaction.subCategory,
-        planned: newTransaction.planned,
-        recurring: newTransaction.recurring,
-        note: newTransaction.note,
-        fingerprint: `${newTransaction.date}-${newTransaction.description}-${newTransaction.amount}` // Simple fingerprint
+      const currentTransactions = getStoredTransactions();
+      const transaction: Transaction = {
+        ...newTransaction,
+        id: crypto.randomUUID(), // Generate a real UUID
+        clean_description: newTransaction.clean_description,
+        budget_month: newTransaction.budget_month,
+        suggested_category: newTransaction.suggested_category,
+        suggested_sub_category: newTransaction.suggested_sub_category,
+        merchant_description: newTransaction.merchant_description
       };
-      
-      const { error } = await supabase
-        .from('transactions')
-        .insert([insertData]);
-      
-      if (error) {
-        console.error('Error adding transaction:', error);
-        throw error;
-      }
+
+      saveTransactions([transaction, ...currentTransactions]);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -212,20 +193,31 @@ export const useTransactionTable = () => {
     });
   };
 
-  const handleCellEdit = (id: number, field: keyof Transaction, value: any) => {
+  const handleCellEdit = (id: string, field: keyof Transaction, value: any) => {
     updateTransactionMutation.mutate({ id, field, value });
     setEditingCell(null);
   };
 
-  const handleImport = (importedTransactions: Transaction[]) => {
-    // For now, just add to local state
-    // In a real implementation, you'd batch insert to Supabase
-    importedTransactions.forEach(transaction => {
-      addTransactionMutation.mutate(transaction);
-    });
+  const handleImport = (importedTransactions: any[]) => {
+    // Bulk import optimization
+    const currentTransactions = getStoredTransactions();
+    const newTransactions = importedTransactions.map((t, index) => ({
+      ...t,
+      id: t.id || crypto.randomUUID(),
+      amount: parseFloat(t.amount) || 0,
+      // Ensure defaults
+      status: t.status || 'New',
+      budget: t.budget || 'Budgeted',
+      recurring: t.recurring || 'No',
+      planned: t.planned || false,
+    }));
+
+    saveTransactions([...newTransactions, ...currentTransactions]);
+    queryClient.invalidateQueries({ queryKey: ['transactions'] });
   };
 
   const handleAddTransaction = (newTransaction: Transaction) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id, ...transactionData } = newTransaction;
     addTransactionMutation.mutate(transactionData);
   };

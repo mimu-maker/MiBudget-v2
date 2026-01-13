@@ -13,6 +13,7 @@ import Transactions from "./pages/Transactions";
 import Projection from "./pages/Projection";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
+import { ConnectionStatus } from "./components/ConnectionStatus";
 
 const queryClient = new QueryClient();
 

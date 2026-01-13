@@ -31,16 +31,16 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const transaction = {
-      id: Date.now(),
+      id: Date.now().toString(),
       ...formData,
       amount: parseFloat(formData.amount) || 0
     };
-    
+
     onAdd(transaction);
     onOpenChange(false);
-    
+
     // Reset form
     setFormData({
       date: new Date().toISOString().split('T')[0],
@@ -63,7 +63,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
         <DialogHeader>
           <DialogTitle>Add New Transaction</DialogTitle>
         </DialogHeader>
-        
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -76,7 +76,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
                 required
               />
             </div>
-            
+
             <div>
               <Label htmlFor="amount">Amount (DKK)</Label>
               <Input
@@ -90,7 +90,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
               />
             </div>
           </div>
-          
+
           <div>
             <Label htmlFor="description">Description</Label>
             <Input
@@ -100,7 +100,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
               required
             />
           </div>
-          
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="account">Account</Label>
@@ -116,7 +116,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div>
               <Label htmlFor="status">Status</Label>
               <Select value={formData.status} onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}>
@@ -132,7 +132,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
               </Select>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="budget">Budget</Label>
@@ -148,7 +148,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div>
               <Label htmlFor="category">Category</Label>
               <Select value={formData.category} onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}>
@@ -167,7 +167,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
               </Select>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="subCategory">Sub-category</Label>
@@ -177,7 +177,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
                 onChange={(e) => setFormData(prev => ({ ...prev, subCategory: e.target.value }))}
               />
             </div>
-            
+
             <div>
               <Label htmlFor="recurring">Recurring</Label>
               <Select value={formData.recurring} onValueChange={(value) => setFormData(prev => ({ ...prev, recurring: value }))}>
@@ -194,7 +194,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
               </Select>
             </div>
           </div>
-          
+
           <div className="flex items-center space-x-2">
             <Switch
               id="planned"
@@ -203,7 +203,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
             />
             <Label htmlFor="planned">Planned Transaction</Label>
           </div>
-          
+
           <div>
             <Label htmlFor="note">Note</Label>
             <Textarea
@@ -213,7 +213,7 @@ export const AddTransactionDialog = ({ open, onOpenChange, onAdd }: AddTransacti
               rows={3}
             />
           </div>
-          
+
           <div className="flex justify-end space-x-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
