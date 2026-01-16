@@ -16,7 +16,9 @@ export interface Transaction {
   planned: boolean;
   recurring: string;
   note: string;
+  budgetYear?: string;
   // New fields
+  sub_category?: string; // Add this one to avoid lint errors if it's used elsewhere
   clean_description?: string;
   budget_month?: string;
   suggested_category?: string;
@@ -131,6 +133,7 @@ export const useTransactionTable = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [filters, setFilters] = useState<Record<string, any>>({});
   const [editingCell, setEditingCell] = useState<{ id: string, field: keyof Transaction } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const updateTransactionMutation = useMutation({
     mutationFn: async ({ id, field, value }: { id: string, field: keyof Transaction, value: any }) => {
@@ -222,8 +225,58 @@ export const useTransactionTable = () => {
     addTransactionMutation.mutate(transactionData);
   };
 
+  const bulkUpdateMutation = useMutation({
+    mutationFn: async ({ ids, updates }: { ids: string[], updates: Partial<Transaction> }) => {
+      const currentTransactions = getStoredTransactions();
+      const updated = currentTransactions.map(t => {
+        if (ids.includes(t.id)) {
+          return { ...t, ...updates };
+        }
+        return t;
+      });
+      saveTransactions(updated);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      setSelectedIds(new Set());
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const currentTransactions = getStoredTransactions();
+      const updated = currentTransactions.filter(t => !ids.includes(t.id));
+      saveTransactions(updated);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      setSelectedIds(new Set());
+    },
+  });
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const selectAll = (ids: string[]) => {
+    setSelectedIds(new Set(ids));
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
   return {
     transactions,
+    selectedIds,
     sortBy,
     sortOrder,
     filters,
@@ -234,6 +287,11 @@ export const useTransactionTable = () => {
     clearFilter,
     handleCellEdit,
     handleImport,
-    handleAddTransaction
+    handleAddTransaction,
+    toggleSelection,
+    selectAll,
+    clearSelection,
+    bulkUpdate: bulkUpdateMutation.mutate,
+    bulkDelete: bulkDeleteMutation.mutate,
   };
 };

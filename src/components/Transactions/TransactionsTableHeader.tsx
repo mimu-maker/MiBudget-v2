@@ -79,18 +79,30 @@ interface TransactionsTableHeaderProps {
   onSort: (field: keyof Transaction) => void;
   onFilter: (field: string, value: any) => void;
   onClearFilter: (field: string) => void;
+  onSelectAll: (checked: boolean) => void;
+  isAllSelected: boolean;
 }
 
-export const TransactionsTableHeader = ({ 
-  sortBy, 
-  sortOrder, 
-  onSort, 
-  onFilter, 
-  onClearFilter 
+export const TransactionsTableHeader = ({
+  sortBy,
+  sortOrder,
+  onSort,
+  onFilter,
+  onClearFilter,
+  onSelectAll,
+  isAllSelected
 }: TransactionsTableHeaderProps) => {
   return (
     <thead>
       <tr className="border-b border-gray-200">
+        <th className="py-3 px-2 text-left">
+          <input
+            type="checkbox"
+            checked={isAllSelected}
+            onChange={(e) => onSelectAll(e.target.checked)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+        </th>
         <SortableHeader field="date" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort}>
           <div className="flex items-center space-x-1">
             <span>Date</span>

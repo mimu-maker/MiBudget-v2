@@ -4,6 +4,8 @@ import { Transaction } from './hooks/useTransactionTable';
 
 interface TransactionsTableRowProps {
   transaction: Transaction;
+  isSelected: boolean;
+  onToggleSelection: (id: string) => void;
   editingCell: { id: string, field: keyof Transaction } | null;
   onCellEdit: (id: string, field: keyof Transaction, value: any) => void;
   onStartEdit: (id: string, field: keyof Transaction) => void;
@@ -12,6 +14,8 @@ interface TransactionsTableRowProps {
 
 export const TransactionsTableRow = ({
   transaction,
+  isSelected,
+  onToggleSelection,
   editingCell,
   onCellEdit,
   onStartEdit,
@@ -22,9 +26,17 @@ export const TransactionsTableRow = ({
 
   return (
     <tr
-      className={`border-b border-gray-100 hover:bg-gray-50 ${transaction.budget === 'Exclude' ? 'opacity-50' : ''
-        }`}
+      className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${transaction.budget === 'Exclude' ? 'opacity-50' : ''
+        } ${isSelected ? 'bg-blue-50/50' : ''}`}
     >
+      <td className="py-3 px-2">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={() => onToggleSelection(transaction.id)}
+          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        />
+      </td>
       <td className="py-3 px-2">
         <EditableCell
           transaction={transaction}

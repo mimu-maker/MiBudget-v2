@@ -27,42 +27,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-useEffect(() => {
-  console.log("🧪 VITE_DEV_BYPASS_AUTH:", import.meta.env.VITE_DEV_BYPASS_AUTH);
-  const bypass = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
+  useEffect(() => {
+    console.log("🧪 VITE_DEV_BYPASS_AUTH:", import.meta.env.VITE_DEV_BYPASS_AUTH);
+    const bypass = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
 
-  if (bypass) {
-    console.warn('⚠️ Bypassing Supabase login (dev mode)');
-    setUser({
-      id: 'dev-user',
-      email: 'dev@example.com',
-      role: 'authenticated',
-    } as User);
-    setSession({} as Session);
-    setLoading(false);
-    return;
-  }
+    if (bypass) {
+      console.warn('⚠️ Bypassing Supabase login (dev mode)');
+      setUser({
+        id: 'dev-user',
+        email: 'dev@example.com',
+        role: 'authenticated',
+      } as User);
+      setSession({} as Session);
+      setLoading(false);
+      return;
+    }
 
-  // Set up auth state listener
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.email);
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.email);
+        setSession(session);
+        setUser(session?.user ?? null);
+        setLoading(false);
+      }
+    );
+
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('Initial session check:', session?.user?.email);
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-    }
-  );
+    });
 
-  // Check for existing session
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    console.log('Initial session check:', session?.user?.email);
-    setSession(session);
-    setUser(session?.user ?? null);
-    setLoading(false);
-  });
-
-  return () => subscription.unsubscribe();
-}, []);
+    return () => subscription.unsubscribe();
+  }, []);
 
   const signInWithGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
@@ -71,7 +71,7 @@ useEffect(() => {
         redirectTo: `${window.location.origin}/`
       }
     });
-    
+
     if (error) {
       console.error('Error signing in with Google:', error);
     }

@@ -1,115 +1,125 @@
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-
-const specialData = [
-  { month: 'Jan', vacation: 5000, gifts: -2000, bonus: 15000 },
-  { month: 'Feb', vacation: 0, gifts: -1500, bonus: 0 },
-  { month: 'Mar', vacation: 3000, gifts: -800, bonus: 0 },
-  { month: 'Apr', vacation: 0, gifts: -1200, bonus: 0 },
-  { month: 'May', vacation: 8000, gifts: -2500, bonus: 0 },
-  { month: 'Jun', vacation: 2000, gifts: -900, bonus: 10000 },
-];
-
-const categories = [
-  { 
-    name: 'Vacation Fund', 
-    total: 18000, 
-    transactions: 6,
-    subcategories: [
-      { name: 'Summer Trip', amount: 12000, transactions: 3 },
-      { name: 'Weekend Getaways', amount: 4000, transactions: 2 },
-      { name: 'Travel Insurance', amount: 2000, transactions: 1 }
-    ]
-  },
-  { 
-    name: 'Gift Fund', 
-    total: -8900, 
-    transactions: 12,
-    subcategories: [
-      { name: 'Birthday Gifts', amount: -3200, transactions: 4 },
-      { name: 'Holiday Gifts', amount: -4500, transactions: 6 },
-      { name: 'Anniversary', amount: -1200, transactions: 2 }
-    ]
-  },
-  { 
-    name: 'Bonus Income', 
-    total: 25000, 
-    transactions: 2,
-    subcategories: [
-      { name: 'Q1 Performance Bonus', amount: 15000, transactions: 1 },
-      { name: 'Project Completion Bonus', amount: 10000, transactions: 1 }
-    ]
-  },
-];
+import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
+import { usePeriod } from '@/contexts/PeriodContext';
+import { filterByPeriod } from '@/lib/dateUtils';
+import { parseISO, format } from 'date-fns';
+import { da } from 'date-fns/locale';
 
 export const SpecialOverview = () => {
+  const { transactions } = useTransactionTable();
+  const { selectedPeriod } = usePeriod();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  // Filter for 'Special' budget type
+  const specialTransactions = useMemo(() => {
+    const periodFiltered = filterByPeriod(transactions, selectedPeriod);
+    return periodFiltered.filter(t => t.budget === 'Special');
+  }, [transactions, selectedPeriod]);
+
+  // Aggregate by category and subcategory
+  const categories = useMemo(() => {
+    const map: Record<string, { total: number; transactions: number; subcats: Record<string, { amount: number; count: number }> }> = {};
+
+    specialTransactions.forEach(t => {
+      const cat = t.category || 'Uncategorized';
+      const sub = t.subCategory || 'Other';
+
+      if (!map[cat]) map[cat] = { total: 0, transactions: 0, subcats: {} };
+      map[cat].total += t.amount;
+      map[cat].transactions += 1;
+
+      if (!map[cat].subcats[sub]) map[cat].subcats[sub] = { amount: 0, count: 0 };
+      map[cat].subcats[sub].amount += t.amount;
+      map[cat].subcats[sub].count += 1;
+    });
+
+    return Object.entries(map).map(([name, data]) => ({
+      name,
+      total: data.total,
+      transactions: data.transactions,
+      subcategories: Object.entries(data.subcats).map(([subName, subData]) => ({
+        name: subName,
+        amount: subData.amount,
+        transactions: subData.count
+      }))
+    })).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+  }, [specialTransactions]);
+
+  // Special trend - group by month
+  const trendData = useMemo(() => {
+    const months: Record<string, Record<string, number>> = {};
+    const categoriesList = Array.from(new Set(specialTransactions.map(t => t.category || 'Other')));
+
+    specialTransactions.forEach(t => {
+      const month = format(parseISO(t.date), 'MMM', { locale: da });
+      const cat = t.category || 'Other';
+      if (!months[month]) months[month] = { month };
+      months[month][cat] = (months[month][cat] || 0) + t.amount;
+    });
+
+    return Object.values(months);
+  }, [specialTransactions]);
 
   const toggleCategory = (categoryName: string) => {
     setExpandedCategories(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(categoryName)) {
-        newSet.delete(categoryName);
-      } else {
-        newSet.add(categoryName);
-      }
+      if (newSet.has(categoryName)) newSet.delete(categoryName);
+      else newSet.add(categoryName);
       return newSet;
     });
   };
 
-  const totalAmount = categories.reduce((sum, cat) => sum + cat.total, 0);
+  const totalAmount = specialTransactions.reduce((sum, t) => sum + t.amount, 0);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              Special Categories
-              <div className={`text-lg font-bold ${totalAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                Total: {totalAmount >= 0 ? '+' : ''}{totalAmount.toLocaleString()} DKK
+        <Card className="shadow-md border-none">
+          <CardHeader className="bg-slate-50/50 rounded-t-xl">
+            <CardTitle className="flex items-center justify-between text-lg">
+              Special Budget Items
+              <div className={`text-xl font-bold ${totalAmount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {totalAmount >= 0 ? '+' : ''}{totalAmount.toLocaleString('da-DK')} DKK
               </div>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
+          <CardContent className="p-6">
+            <div className="space-y-3">
               {categories.map((category) => (
-                <div key={category.name} className="border border-gray-200 rounded-lg">
-                  <div 
-                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
+                <div key={category.name} className="border border-slate-100 rounded-xl overflow-hidden shadow-sm">
+                  <div
+                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 transition-colors"
                     onClick={() => toggleCategory(category.name)}
                   >
-                    <div className="flex items-center space-x-3">
-                      <Button variant="ghost" size="sm" className="p-0 h-auto">
-                        {expandedCategories.has(category.name) ? 
-                          <ChevronUp className="w-4 h-4" /> : 
-                          <ChevronDown className="w-4 h-4" />
-                        }
-                      </Button>
+                    <div className="flex items-center space-x-4">
+                      <div className="bg-slate-100 p-1 rounded-md">
+                        {expandedCategories.has(category.name) ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                      </div>
                       <div>
-                        <h3 className="font-semibold">{category.name}</h3>
-                        <p className="text-sm text-gray-600">{category.transactions} transactions</p>
+                        <h3 className="font-bold text-slate-800">{category.name}</h3>
+                        <p className="text-xs text-slate-500 font-medium uppercase tracking-tight">{category.transactions} transactions</p>
                       </div>
                     </div>
-                    <div className={`text-right font-bold text-lg ${category.total >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {category.total >= 0 ? '+' : ''}{category.total.toLocaleString()} DKK
+                    <div className={`text-right font-black text-lg ${category.total >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {category.total >= 0 ? '+' : ''}{category.total.toLocaleString()}
                     </div>
                   </div>
-                  
+
                   {expandedCategories.has(category.name) && (
-                    <div className="px-4 pb-4 border-t border-gray-100">
-                      <div className="space-y-2 mt-3">
+                    <div className="px-4 pb-4 bg-slate-50/30 border-t border-slate-50">
+                      <div className="space-y-2 mt-4">
                         {category.subcategories.map((subcat) => (
-                          <div key={subcat.name} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded">
+                          <div key={subcat.name} className="flex items-center justify-between py-2.5 px-4 bg-white rounded-lg border border-slate-100 shadow-xs">
                             <div>
-                              <div className="font-medium text-sm">{subcat.name}</div>
-                              <div className="text-xs text-gray-500">{subcat.transactions} transactions</div>
+                              <div className="font-bold text-slate-700 text-sm">{subcat.name}</div>
+                              <div className="text-[10px] text-slate-400 font-bold uppercase">{subcat.transactions} ops</div>
                             </div>
-                            <div className={`font-semibold text-sm ${subcat.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            <div className={`font-bold text-sm ${subcat.amount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                               {subcat.amount >= 0 ? '+' : ''}{subcat.amount.toLocaleString()} DKK
                             </div>
                           </div>
@@ -119,29 +129,47 @@ export const SpecialOverview = () => {
                   )}
                 </div>
               ))}
+              {categories.length === 0 && (
+                <div className="text-center py-20 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                  <p className="text-slate-400 font-medium">No special items found for {selectedPeriod.toLowerCase()}</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Special Items Trend</CardTitle>
+        <Card className="shadow-md border-none">
+          <CardHeader className="bg-slate-50/50 rounded-t-xl">
+            <CardTitle className="text-lg">Special Spend Trends</CardTitle>
           </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={specialData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip formatter={(value) => `${value.toLocaleString()} DKK`} />
-                <Line type="monotone" dataKey="vacation" stroke="#10b981" strokeWidth={2} name="Vacation" />
-                <Line type="monotone" dataKey="gifts" stroke="#ef4444" strokeWidth={2} name="Gifts" />
-                <Line type="monotone" dataKey="bonus" stroke="#3b82f6" strokeWidth={2} name="Bonus" />
-              </LineChart>
-            </ResponsiveContainer>
+          <CardContent className="p-6">
+            <div className="h-[350px] w-full mt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  />
+                  {/* Dynamic lines for each category found */}
+                  {Array.from(new Set(specialTransactions.map(t => t.category || 'Other'))).slice(0, 5).map((cat, i) => (
+                    <Line
+                      key={cat}
+                      type="monotone"
+                      dataKey={cat}
+                      stroke={['#10b981', '#3b82f6', '#f59e0b', '#f43f5e', '#8b5cf6'][i % 5]}
+                      strokeWidth={3}
+                      dot={{ r: 4, strokeWidth: 2, stroke: '#fff' }}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
       </div>
     </div>
   );
 };
+import React from 'react';

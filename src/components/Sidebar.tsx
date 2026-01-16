@@ -5,6 +5,7 @@ import { BarChart3, CreditCard, Target, TrendingUp, Settings, Calendar, LogOut }
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePeriod, Period } from '@/contexts/PeriodContext';
 
 const navItems = [
   { to: '/', label: 'Overview', icon: BarChart3 },
@@ -14,26 +15,13 @@ const navItems = [
 ];
 
 export const Sidebar = () => {
-  const [selectedYear, setSelectedYear] = useState('2024');
+  const { selectedPeriod, setSelectedPeriod } = usePeriod();
   const { signOut, user } = useAuth();
 
   return (
     <div className="w-64 bg-white border-r border-gray-200 h-screen flex flex-col">
       <div className="p-6 border-b border-gray-200">
         <h1 className="text-xl font-bold text-gray-900">Finance Tracker</h1>
-        <div className="mt-4">
-          <Select value={selectedYear} onValueChange={setSelectedYear}>
-            <SelectTrigger className="w-full">
-              <Calendar className="w-4 h-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="2024">2024</SelectItem>
-              <SelectItem value="2023">2023</SelectItem>
-              <SelectItem value="2022">2022</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
       <nav className="flex-1 p-4">
@@ -43,10 +31,9 @@ export const Sidebar = () => {
               <NavLink
                 to={item.to}
                 className={({ isActive }) =>
-                  `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-                    isActive
-                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                      : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                  `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
                   }`
                 }
               >
@@ -65,14 +52,14 @@ export const Sidebar = () => {
             Settings
           </NavLink>
         </Button>
-        
+
         <div className="pt-2 border-t">
           <div className="text-xs text-gray-500 mb-2 px-2">
             {user?.email}
           </div>
-          <Button 
-            variant="ghost" 
-            className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50" 
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
             onClick={signOut}
           >
             <LogOut className="w-5 h-5 mr-3" />

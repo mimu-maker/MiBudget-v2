@@ -5,7 +5,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
-import ProtectedRoute from "./components/Auth/ProtectedRoute";
+import { PeriodProvider } from "./contexts/PeriodContext";
+
 import { Sidebar } from "./components/Sidebar";
 import { OverviewTabs } from "./components/Overview/OverviewTabs";
 import Budget from "./pages/Budget";
@@ -23,8 +24,8 @@ const App = () => (
       <Toaster />
       <Sonner />
       <AuthProvider>
-        <BrowserRouter>
-          <ProtectedRoute>
+        <PeriodProvider>
+          <BrowserRouter>
             <div className="flex min-h-screen bg-gray-50">
               <Sidebar />
               <div className="flex-1">
@@ -38,8 +39,8 @@ const App = () => (
                 </Routes>
               </div>
             </div>
-          </ProtectedRoute>
-        </BrowserRouter>
+          </BrowserRouter>
+        </PeriodProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
