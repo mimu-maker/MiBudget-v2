@@ -17,20 +17,22 @@ export type Database = {
           category: string
           created_at: string
           date: string
-          description: string
+          merchant: string
           fingerprint: string
           id: string
-          note: string | null
+          description: string | null
           planned: boolean
-          recurring: string
+          recurring: boolean
           status: string
           sub_category: string | null
           updated_at: string
-          clean_description: string | null
+          clean_merchant: string | null
           budget_month: string | null
           suggested_category: string | null
           suggested_sub_category: string | null
-          merchant_description: string | null,
+          merchant_description: string | null
+          excluded: boolean | null
+          confidence: number | null
         }
         Insert: {
           account: string
@@ -39,20 +41,22 @@ export type Database = {
           category: string
           created_at?: string
           date: string
-          description: string
+          merchant: string
           fingerprint: string
           id?: string
-          note?: string | null
+          description?: string | null
           planned?: boolean
-          recurring?: string
+          recurring?: boolean
           status: string
           sub_category?: string | null
           updated_at?: string
-          clean_description?: string
+          clean_merchant?: string
           budget_month?: string
           suggested_category?: string
           suggested_sub_category?: string
           merchant_description?: string
+          excluded?: boolean | null
+          confidence?: number | null
         }
         Update: {
           account?: string
@@ -61,20 +65,22 @@ export type Database = {
           category?: string
           created_at?: string
           date?: string
-          description?: string
+          merchant?: string
           fingerprint?: string
           id?: string
-          note?: string | null
+          description?: string | null
           planned?: boolean
-          recurring?: string
+          recurring?: boolean
           status?: string
           sub_category?: string | null
           updated_at?: string
-          clean_description?: string
+          clean_merchant?: string
           budget_month?: string
           suggested_category?: string
           suggested_sub_category?: string
           merchant_description?: string
+          excluded?: boolean | null
+          confidence?: number | null
         }
         Relationships: []
       }
@@ -84,6 +90,7 @@ export type Database = {
           clean_merchant_name: string
           auto_category: string | null
           auto_sub_category: string | null
+          skip_triage: boolean | null
           created_at: string
           updated_at: string
         }
@@ -92,6 +99,7 @@ export type Database = {
           clean_merchant_name: string
           auto_category?: string | null
           auto_sub_category?: string | null
+          skip_triage?: boolean | null
           created_at?: string
           updated_at?: string
         }
@@ -100,6 +108,7 @@ export type Database = {
           clean_merchant_name?: string
           auto_category?: string | null
           auto_sub_category?: string | null
+          skip_triage?: boolean | null
           created_at?: string
           updated_at?: string
         }

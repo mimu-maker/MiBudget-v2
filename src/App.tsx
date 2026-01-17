@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { PeriodProvider } from "./contexts/PeriodContext";
+import { ThemeProvider } from "./components/ThemeProvider";
 
 import { Sidebar } from "./components/Sidebar";
 import { OverviewTabs } from "./components/Overview/OverviewTabs";
@@ -25,21 +26,23 @@ const App = () => (
       <Sonner />
       <AuthProvider>
         <PeriodProvider>
-          <BrowserRouter>
-            <div className="flex min-h-screen bg-gray-50">
-              <Sidebar />
-              <div className="flex-1">
-                <Routes>
-                  <Route path="/" element={<OverviewTabs />} />
-                  <Route path="/budget" element={<Budget />} />
-                  <Route path="/transactions" element={<Transactions />} />
-                  <Route path="/projection" element={<Projection />} />
-                  <Route path="/settings" element={<Settings />} />
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
+          <ThemeProvider>
+            <BrowserRouter>
+              <div className="flex min-h-screen bg-background text-foreground transition-colors duration-300">
+                <Sidebar />
+                <div className="flex-1">
+                  <Routes>
+                    <Route path="/" element={<OverviewTabs />} />
+                    <Route path="/budget" element={<Budget />} />
+                    <Route path="/transactions" element={<Transactions />} />
+                    <Route path="/projection" element={<Projection />} />
+                    <Route path="/settings" element={<Settings />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </div>
               </div>
-            </div>
-          </BrowserRouter>
+            </BrowserRouter>
+          </ThemeProvider>
         </PeriodProvider>
       </AuthProvider>
     </TooltipProvider>

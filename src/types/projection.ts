@@ -2,7 +2,7 @@
 export interface FutureTransaction {
   id: number;
   date: string;
-  description: string;
+  merchant: string;
   amount: number;
   account: string;
   status: string;
@@ -10,8 +10,8 @@ export interface FutureTransaction {
   category: string;
   subCategory: string;
   planned: boolean;
-  recurring: string;
-  note: string;
+  recurring: boolean;
+  description: string;
 }
 
 export interface ProjectionData {
@@ -22,7 +22,7 @@ export interface ProjectionData {
 
 export interface NewTransactionForm {
   date: string;
-  description: string;
+  merchant: string;
   amount: string;
   account: string;
   status: string;
@@ -30,6 +30,6 @@ export interface NewTransactionForm {
   category: string;
   subCategory: string;
   planned: boolean;
-  recurring: string;
-  note: string;
+  recurring: boolean;
+  description: string;
 }

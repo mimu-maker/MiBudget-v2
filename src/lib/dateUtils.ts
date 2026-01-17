@@ -1,5 +1,5 @@
-
 import { startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, subQuarters, startOfYear, endOfYear, subYears, isWithinInterval, parseISO } from 'date-fns';
+import { DateRange } from 'react-day-picker';
 
 export type Period =
     | 'This month'
@@ -8,15 +8,24 @@ export type Period =
     | 'Last Quarter'
     | 'This Year'
     | 'Last Year'
-    | '2023'
-    | '2024'
-    | '2025'
-    | '2026';
+    | 'Year to Date'
+    | 'Custom'
+    | string;
 
-export const getPeriodInterval = (period: Period): { start: Date; end: Date } => {
+export const getPeriodInterval = (period: Period, customRange?: DateRange): { start: Date; end: Date } => {
     const now = new Date();
 
+    if (/^\d{4}$/.test(period)) {
+        const year = parseInt(period);
+        return { start: new Date(year, 0, 1), end: new Date(year, 11, 31, 23, 59, 59) };
+    }
+
     switch (period) {
+        case 'Custom':
+            if (customRange?.from) {
+                return { start: customRange.from, end: customRange.to || customRange.from };
+            }
+            return { start: startOfYear(now), end: endOfYear(now) }; // Fallback
         case 'This month':
             return { start: startOfMonth(now), end: endOfMonth(now) };
         case 'Last Month':
@@ -32,21 +41,15 @@ export const getPeriodInterval = (period: Period): { start: Date; end: Date } =>
         case 'Last Year':
             const lastYear = subYears(now, 1);
             return { start: startOfYear(lastYear), end: endOfYear(lastYear) };
-        case '2023':
-            return { start: new Date(2023, 0, 1), end: new Date(2023, 11, 31, 23, 59, 59) };
-        case '2024':
-            return { start: new Date(2024, 0, 1), end: new Date(2024, 11, 31, 23, 59, 59) };
-        case '2025':
-            return { start: new Date(2025, 0, 1), end: new Date(2025, 11, 31, 23, 59, 59) };
-        case '2026':
-            return { start: new Date(2026, 0, 1), end: new Date(2026, 11, 31, 23, 59, 59) };
+        case 'Year to Date':
+            return { start: startOfYear(now), end: now };
         default:
             return { start: startOfYear(now), end: endOfYear(now) };
     }
 };
 
-export const filterByPeriod = <T extends { date: string }>(items: T[], period: Period): T[] => {
-    const interval = getPeriodInterval(period);
+export const filterByPeriod = <T extends { date: string }>(items: T[], period: Period, customRange?: DateRange): T[] => {
+    const interval = getPeriodInterval(period, customRange);
     return items.filter(item => {
         try {
             const date = parseISO(item.date);

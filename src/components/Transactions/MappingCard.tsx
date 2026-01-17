@@ -1,10 +1,11 @@
-import { ArrowRight, CheckCircle2, ChevronDown, FileText, AlertTriangle, Settings2, HelpCircle } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ChevronDown, FileText, AlertTriangle, Settings2, HelpCircle, XCircle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Label } from '@/components/ui/label';
+import { parseDate, parseAmount } from '@/lib/importUtils';
 
 interface MappingCardProps {
     field: string;
@@ -30,15 +31,23 @@ export const MappingCard = ({
     const currentMappedIdx = Object.entries(columnMapping).find(([_, f]) => f === field)?.[0];
     const isMapped = !!currentMappedIdx;
 
+    const sampleValue = isMapped ? csvSample?.[parseInt(currentMappedIdx!)] : undefined;
+
+    let isValid = true;
+    if (isMapped && sampleValue) {
+        if (field === 'date') isValid = parseDate(sampleValue) !== null;
+        if (field === 'amount') isValid = parseAmount(sampleValue) !== null;
+    }
+
     // Determine status color
     const statusColor = isMapped
-        ? "bg-emerald-50 border-emerald-200"
+        ? isValid ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"
         : mandatory
             ? "bg-rose-50 border-rose-200"
             : "bg-slate-50 border-slate-200";
 
     const labelColor = isMapped
-        ? "text-emerald-700 font-bold"
+        ? isValid ? "text-emerald-700 font-bold" : "text-amber-700 font-bold"
         : mandatory
             ? "text-rose-600 font-bold"
             : "text-slate-500 font-medium";
@@ -82,7 +91,7 @@ export const MappingCard = ({
 
                 {/* MIDDLE: Arrow */}
                 <div className="flex items-center justify-center pt-4">
-                    <ArrowRight className={cn("w-4 h-4", isMapped ? "text-emerald-500" : "text-slate-300")} />
+                    <ArrowRight className={cn("w-4 h-4", isMapped ? (isValid ? "text-emerald-500" : "text-amber-500") : "text-slate-300")} />
                 </div>
 
                 {/* RIGHT: App Field */}
@@ -90,13 +99,14 @@ export const MappingCard = ({
                     <div className="flex-1">
                         <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">App Field</Label>
                         <div className={cn("h-9 px-3 rounded-md border flex items-center justify-between bg-white/50",
-                            isMapped ? "border-emerald-200" : mandatory ? "border-rose-200" : "border-slate-200"
+                            isMapped ? (isValid ? "border-emerald-200" : "border-amber-200") : mandatory ? "border-rose-200" : "border-slate-200"
                         )}>
                             <span className={cn("capitalize text-sm truncate", labelColor)}>
                                 {field === 'budgetYear' ? 'Budget Year' : field.replace(/([A-Z])/g, ' $1').trim()}
                                 {mandatory && !isMapped && <span className="ml-1 text-rose-500">*</span>}
                             </span>
-                            {isMapped && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+                            {isMapped && isValid && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+                            {isMapped && !isValid && <XCircle className="w-4 h-4 text-amber-500 shadow-sm" />}
                             {mandatory && !isMapped && <AlertTriangle className="w-4 h-4 text-rose-400" />}
                         </div>
                     </div>
@@ -153,10 +163,21 @@ export const MappingCard = ({
 
             {/* Sample Preview */}
             {isMapped && (
-                <div className="mt-2 text-xs text-slate-400 pl-1">
-                    Value to import: <span className="font-mono text-slate-600 bg-white px-1.5 py-0.5 rounded border border-slate-100">{csvSample?.[parseInt(currentMappedIdx!)] || 'N/A'}</span>
+                <div className="mt-2 text-xs flex items-center justify-between pl-1">
+                    <div className="text-slate-400">
+                        Value to import: <span className={cn("font-mono px-1.5 py-0.5 rounded border shadow-sm",
+                            isValid ? "text-slate-600 bg-white border-slate-100" : "text-amber-700 bg-amber-100 border-amber-200 font-bold")}>
+                            {sampleValue || 'N/A'}
+                        </span>
+                    </div>
+                    {!isValid && (
+                        <Badge variant="outline" className="text-[10px] bg-amber-100 border-amber-200 text-amber-700 font-bold flex items-center gap-1 animate-pulse">
+                            <AlertTriangle className="w-2.5 h-2.5" /> Invalid Format
+                        </Badge>
+                    )}
                 </div>
             )}
         </div>
     );
 };
+

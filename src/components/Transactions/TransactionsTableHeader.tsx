@@ -11,11 +11,15 @@ interface SortableHeaderProps {
   sortBy: keyof Transaction;
   sortOrder: 'asc' | 'desc';
   onSort: (field: keyof Transaction) => void;
+  className?: string;
 }
 
-const SortableHeader = ({ field, children, sortBy, sortOrder, onSort }: SortableHeaderProps) => (
-  <th className="text-left py-3 px-2 font-semibold text-gray-700 cursor-pointer hover:bg-gray-50" onClick={() => onSort(field)}>
-    <div className="flex items-center space-x-1">
+const SortableHeader = ({ field, children, sortBy, sortOrder, onSort, className }: SortableHeaderProps) => (
+  <th
+    className={`${className || 'text-left'} py-3 px-2 font-semibold text-muted-foreground cursor-pointer hover:bg-accent/50 transition-colors`}
+    onClick={() => onSort(field)}
+  >
+    <div className={`flex items-center space-x-1 ${className?.includes('text-center') ? 'justify-center' : ''}`}>
       <span>{children}</span>
       {sortBy === field && (
         sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
@@ -48,6 +52,19 @@ const FilterableHeader = ({ field, onFilter, onClearFilter }: FilterableHeaderPr
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onFilter(field, { type: 'date', value: new Date().toISOString().split('T')[0] })}>
             Today
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => onClearFilter(field)}>
+            Clear Filter
+          </DropdownMenuItem>
+        </>
+      ) : field === 'excluded' || field === 'planned' ? (
+        <>
+          <DropdownMenuItem onClick={() => onFilter(field, 'true')}>
+            Yes / True
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onFilter(field, 'false')}>
+            No / False
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => onClearFilter(field)}>
@@ -94,13 +111,13 @@ export const TransactionsTableHeader = ({
 }: TransactionsTableHeaderProps) => {
   return (
     <thead>
-      <tr className="border-b border-gray-200">
+      <tr className="border-b border-border">
         <th className="py-3 px-2 text-left">
           <input
             type="checkbox"
             checked={isAllSelected}
             onChange={(e) => onSelectAll(e.target.checked)}
-            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="rounded border-input bg-background text-primary focus:ring-ring"
           />
         </th>
         <SortableHeader field="date" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort}>
@@ -109,10 +126,10 @@ export const TransactionsTableHeader = ({
             <FilterableHeader field="date" onFilter={onFilter} onClearFilter={onClearFilter} />
           </div>
         </SortableHeader>
-        <SortableHeader field="description" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort}>
+        <SortableHeader field="merchant" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort}>
           <div className="flex items-center space-x-1">
-            <span>Description</span>
-            <FilterableHeader field="description" onFilter={onFilter} onClearFilter={onClearFilter} />
+            <span>Merchant</span>
+            <FilterableHeader field="merchant" onFilter={onFilter} onClearFilter={onClearFilter} />
           </div>
         </SortableHeader>
         <SortableHeader field="amount" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort}>
@@ -151,7 +168,7 @@ export const TransactionsTableHeader = ({
             <FilterableHeader field="subCategory" onFilter={onFilter} onClearFilter={onClearFilter} />
           </div>
         </SortableHeader>
-        <SortableHeader field="planned" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort}>
+        <SortableHeader field="planned" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} className="text-center">
           <div className="flex items-center space-x-1">
             <span>Planned</span>
             <FilterableHeader field="planned" onFilter={onFilter} onClearFilter={onClearFilter} />
@@ -163,6 +180,15 @@ export const TransactionsTableHeader = ({
             <FilterableHeader field="recurring" onFilter={onFilter} onClearFilter={onClearFilter} />
           </div>
         </SortableHeader>
+        <SortableHeader field="excluded" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} className="text-center">
+          <div className="flex items-center space-x-1">
+            <span>Exclude</span>
+            <FilterableHeader field="excluded" onFilter={onFilter} onClearFilter={onClearFilter} />
+          </div>
+        </SortableHeader>
+        <th className="py-3 px-2 text-center text-muted-foreground font-semibold">
+          Actions
+        </th>
       </tr>
     </thead>
   );

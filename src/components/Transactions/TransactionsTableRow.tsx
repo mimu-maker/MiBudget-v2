@@ -1,4 +1,6 @@
 
+import { Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { EditableCell } from './EditableCell';
 import { Transaction } from './hooks/useTransactionTable';
 
@@ -10,6 +12,7 @@ interface TransactionsTableRowProps {
   onCellEdit: (id: string, field: keyof Transaction, value: any) => void;
   onStartEdit: (id: string, field: keyof Transaction) => void;
   onStopEdit: () => void;
+  onDelete: (id: string) => void;
 }
 
 export const TransactionsTableRow = ({
@@ -19,22 +22,23 @@ export const TransactionsTableRow = ({
   editingCell,
   onCellEdit,
   onStartEdit,
-  onStopEdit
+  onStopEdit,
+  onDelete
 }: TransactionsTableRowProps) => {
   const isEditing = (field: keyof Transaction) =>
     editingCell?.id === transaction.id && editingCell?.field === field;
 
   return (
     <tr
-      className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${transaction.budget === 'Exclude' ? 'opacity-50' : ''
-        } ${isSelected ? 'bg-blue-50/50' : ''}`}
+      className={`border-b border-border/50 hover:bg-accent/30 transition-colors ${transaction.budget === 'Exclude' || transaction.excluded ? 'opacity-40 bg-muted/20' : ''
+        } ${isSelected ? 'bg-primary/10' : ''}`}
     >
       <td className="py-3 px-2">
         <input
           type="checkbox"
           checked={isSelected}
           onChange={() => onToggleSelection(transaction.id)}
-          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          className="rounded border-input bg-background text-primary focus:ring-ring"
         />
       </td>
       <td className="py-3 px-2">
@@ -51,14 +55,16 @@ export const TransactionsTableRow = ({
         <div>
           <EditableCell
             transaction={transaction}
-            field="description"
-            isEditing={isEditing('description')}
+            field="merchant"
+            isEditing={isEditing('merchant')}
             onEdit={onCellEdit}
             onStartEdit={onStartEdit}
             onStopEdit={onStopEdit}
           />
-          {transaction.note && (
-            <div className="text-xs text-gray-500 mt-1">{transaction.note}</div>
+          {transaction.description && (
+            <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight italic">
+              {transaction.description}
+            </div>
           )}
         </div>
       </td>
@@ -141,6 +147,24 @@ export const TransactionsTableRow = ({
           onStartEdit={onStartEdit}
           onStopEdit={onStopEdit}
         />
+      </td>
+      <td className="py-3 px-2 text-center">
+        <input
+          type="checkbox"
+          checked={transaction.excluded || false}
+          onChange={(e) => onCellEdit(transaction.id, 'excluded', e.target.checked)}
+          className="rounded border-input bg-background text-primary focus:ring-ring"
+        />
+      </td>
+      <td className="py-3 px-2 text-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onDelete(transaction.id)}
+          className="text-muted-foreground hover:text-destructive transition-colors"
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
       </td>
     </tr>
   );

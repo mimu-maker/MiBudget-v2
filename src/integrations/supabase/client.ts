@@ -2,10 +2,8 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = "https://iomfdkkuvjtkfhlilkvi.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvbWZka2t1dmp0a2ZobGlsa3ZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExMTMzNzEsImV4cCI6MjA2NjY4OTM3MX0.RncLKvmig238fYXFSCBpa87dbqbrTQl8TNWu9OXbPuU";
-
-// Import the supabase client like this:
-// import { supabase } from "@/integrations/supabase/client";
+// Detect environment variables from Vite
+const SUPABASE_URL = import.meta.env?.VITE_SUPABASE_URL || "https://iomfdkkuvjtkfhlilkvi.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env?.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvbWZka2t1dmp0a2ZobGlsa3ZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExMTMzNzEsImV4cCI6MjA2NjY4OTM3MX0.RncLKvmig238fYXFSCBpa87dbqbrTQl8TNWu9OXbPuU";
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);

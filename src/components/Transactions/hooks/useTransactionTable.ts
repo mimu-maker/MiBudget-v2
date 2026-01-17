@@ -2,11 +2,13 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { parseAmount } from '@/lib/importUtils';
+import { getLocalTransactions, saveLocalTransactions, clearLocalTransactions } from '@/lib/localDb';
 
 export interface Transaction {
-  id: string; // Changed to string for UUID
+  id: string;
   date: string;
-  description: string;
+  merchant: string;
   amount: number;
   account: string;
   status: string;
@@ -14,120 +16,106 @@ export interface Transaction {
   category: string;
   subCategory: string;
   planned: boolean;
-  recurring: string;
-  note: string;
+  recurring: boolean;
+  description: string;
   budgetYear?: string;
-  // New fields
-  sub_category?: string; // Add this one to avoid lint errors if it's used elsewhere
-  clean_description?: string;
+  sub_category?: string;
+  clean_merchant?: string;
   budget_month?: string;
   suggested_category?: string;
   suggested_sub_category?: string;
   merchant_description?: string;
+  excluded?: boolean;
 }
 
-const mockTransactions: Transaction[] = [
-  {
-    id: "1",
-    date: '2024-06-01',
-    description: 'Salary deposit',
-    amount: 45000,
-    account: 'Master',
-    status: 'Complete',
-    budget: 'Budgeted',
-    category: 'Income',
-    subCategory: 'Salary',
-    planned: true,
-    recurring: 'Monthly',
-    note: ''
-  },
-  {
-    id: "2",
-    date: '2024-06-02',
-    description: 'Grocery shopping - Netto',
-    amount: -1250,
-    account: 'Joint',
-    status: 'Complete',
-    budget: 'Budgeted',
-    category: 'Food',
-    subCategory: 'Groceries',
-    planned: true,
-    recurring: 'Weekly',
-    note: ''
-  },
-  {
-    id: "3",
-    date: '2024-06-05',
-    description: 'Netflix subscription',
-    amount: -89,
-    account: 'Master',
-    status: 'Complete',
-    budget: 'Budgeted',
-    category: 'Entertainment',
-    subCategory: 'Streaming',
-    planned: true,
-    recurring: 'Monthly',
-    note: ''
-  },
-  {
-    id: "4",
-    date: '2024-06-08',
-    description: 'Restaurant dinner',
-    amount: -450,
-    account: 'Master',
-    status: 'Pending Marcus',
-    budget: 'Special',
-    category: 'Food',
-    subCategory: 'Dining Out',
-    planned: false,
-    recurring: 'No',
-    note: 'Anniversary dinner'
-  },
-  {
-    id: "5",
-    date: '2024-06-12',
-    description: 'Home repair materials',
-    amount: -2800,
-    account: 'Joint',
-    status: 'Complete',
-    budget: 'Klintemarken',
-    category: 'Housing',
-    subCategory: 'Maintenance',
-    planned: false,
-    recurring: 'No',
-    note: 'Kitchen sink repair'
+const generateFingerprint = (t: any) => {
+  const str = `${t.date}-${t.merchant}-${t.amount}-${t.account}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
   }
-];
-
-// Local Storage Keys
-const STORAGE_KEY = 'mibudget_transactions';
-
-const getStoredTransactions = (): Transaction[] => {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored) {
-    return JSON.parse(stored);
-  }
-  return mockTransactions; // Seed with mock data if empty
-};
-
-const saveTransactions = (transactions: Transaction[]) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
+  return hash.toString(36);
 };
 
 const useTransactions = () => {
+  const queryClient = useQueryClient();
+
   return useQuery({
     queryKey: ['transactions'],
     queryFn: async () => {
-      // Simulate network delay for realism/state updates
-      await new Promise(resolve => setTimeout(resolve, 500));
-      return getStoredTransactions();
+      console.log("Fetching transactions...");
+
+      let localData = await getLocalTransactions();
+
+      const storedLegacy = localStorage.getItem('mibudget_transactions');
+      if (storedLegacy) {
+        try {
+          const legacyData = JSON.parse(storedLegacy);
+          if (legacyData.length > 0) {
+            console.log(`Migrating ${legacyData.length} records from localStorage to IndexedDB...`);
+            await saveLocalTransactions(legacyData);
+            localStorage.removeItem('mibudget_transactions');
+            localData = await getLocalTransactions();
+          }
+        } catch (e) { console.error("Legacy migration failed:", e); }
+      }
+
+      if (localData.length > 0) {
+        try {
+          console.log(`Cloud Sync: Preparing to push ${localData.length} local rows...`);
+
+          const toInsert = localData.map(t => ({
+            ...t,
+            id: t.id.length > 10 ? t.id : undefined,
+            fingerprint: generateFingerprint(t),
+            sub_category: t.subCategory || t.sub_category,
+            description: t.description || ""
+          }));
+
+          const CHUNK_SIZE = 500;
+          for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
+            const chunk = toInsert.slice(i, i + CHUNK_SIZE);
+            const { error } = await supabase.from('transactions').upsert(chunk, { onConflict: 'fingerprint' });
+            if (error) throw error;
+          }
+
+          console.log("Cloud sync complete. Cleaning local cache.");
+          await clearLocalTransactions();
+          localData = [];
+        } catch (e: any) {
+          console.warn("Cloud sync deferred (Offline/DNS issue). Using local data.");
+          return localData;
+        }
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .order('date', { ascending: false });
+
+        if (error) throw error;
+
+        console.log(`Cloud sync successful: ${data?.length || 0} transactions processed.`);
+        return (data || []).map((t: any) => ({
+          ...t,
+          subCategory: t.sub_category || ''
+        })) as Transaction[];
+      } catch (e: any) {
+        console.warn("Using local fallback due to connection issue:", e.message);
+        return localData;
+      }
     },
+    retry: 1,
+    staleTime: 30000,
   });
 };
 
 export const useTransactionTable = () => {
   const queryClient = useQueryClient();
-  const { data: transactions = [] } = useTransactions();
+  const { data: transactions = [], isLoading, isError } = useTransactions();
 
   const [sortBy, setSortBy] = useState<keyof Transaction>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -137,18 +125,20 @@ export const useTransactionTable = () => {
 
   const updateTransactionMutation = useMutation({
     mutationFn: async ({ id, field, value }: { id: string, field: keyof Transaction, value: any }) => {
-      const currentTransactions = getStoredTransactions();
-      const updated = currentTransactions.map(t => {
-        if (t.id === id) {
-          // Handle specific field logic if needed
-          if (field === 'subCategory') {
-            return { ...t, subCategory: value, sub_category: value };
-          }
-          return { ...t, [field]: value };
-        }
-        return t;
-      });
-      saveTransactions(updated);
+      const dbField = field === 'subCategory' ? 'sub_category' : field;
+      const updates: any = { [dbField]: value };
+
+      // Auto-exclude logic
+      if (field === 'status') {
+        updates.excluded = (value === 'Reconciled');
+      }
+
+      const { error } = await supabase
+        .from('transactions')
+        .update(updates)
+        .eq('id', id);
+
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -157,18 +147,15 @@ export const useTransactionTable = () => {
 
   const addTransactionMutation = useMutation({
     mutationFn: async (newTransaction: Omit<Transaction, 'id'>) => {
-      const currentTransactions = getStoredTransactions();
-      const transaction: Transaction = {
+      const transaction = {
         ...newTransaction,
-        id: crypto.randomUUID(), // Generate a real UUID
-        clean_description: newTransaction.clean_description,
-        budget_month: newTransaction.budget_month,
-        suggested_category: newTransaction.suggested_category,
-        suggested_sub_category: newTransaction.suggested_sub_category,
-        merchant_description: newTransaction.merchant_description
+        fingerprint: generateFingerprint(newTransaction),
+        sub_category: newTransaction.subCategory || newTransaction.sub_category,
+        id: crypto.randomUUID()
       };
 
-      saveTransactions([transaction, ...currentTransactions]);
+      const { error } = await supabase.from('transactions').insert([transaction]);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -201,40 +188,62 @@ export const useTransactionTable = () => {
     setEditingCell(null);
   };
 
-  const handleImport = (importedTransactions: any[]) => {
-    // Bulk import optimization
-    const currentTransactions = getStoredTransactions();
-    const newTransactions = importedTransactions.map((t, index) => ({
-      ...t,
-      id: t.id || crypto.randomUUID(),
-      amount: parseFloat(t.amount) || 0,
-      // Ensure defaults
-      status: t.status || 'New',
-      budget: t.budget || 'Budgeted',
-      recurring: t.recurring || 'No',
-      planned: t.planned || false,
-    }));
+  const handleImport = async (importedTransactions: any[]) => {
+    console.log(`Starting bulk import of ${importedTransactions.length} transactions...`);
+    const toInsert = importedTransactions.map((t) => {
+      const fingerprint = generateFingerprint(t);
+      return {
+        ...t,
+        id: t.id || crypto.randomUUID(),
+        amount: parseAmount(t.amount.toString()) || 0,
+        fingerprint,
+        status: t.status || 'Pending Triage',
+        budget: t.budget || 'Budgeted',
+        recurring: t.recurring === true || t.recurring === 'Yes' || (typeof t.recurring === 'string' && t.recurring !== 'No'),
+        planned: t.planned || false,
+        sub_category: t.subCategory || t.sub_category
+      };
+    });
 
-    saveTransactions([...newTransactions, ...currentTransactions]);
-    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    try {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
+        const chunk = toInsert.slice(i, i + CHUNK_SIZE);
+        const { error } = await supabase.from('transactions').upsert(chunk, { onConflict: 'fingerprint' });
+        if (error) throw error;
+      }
+    } catch (err: any) {
+      console.warn("Supabase import failed, saving to local IndexedDB...", err.message);
+      await saveLocalTransactions(toInsert);
+    }
+
+    await queryClient.invalidateQueries({ queryKey: ['transactions'] });
   };
 
   const handleAddTransaction = (newTransaction: Transaction) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id, ...transactionData } = newTransaction;
     addTransactionMutation.mutate(transactionData);
   };
 
   const bulkUpdateMutation = useMutation({
     mutationFn: async ({ ids, updates }: { ids: string[], updates: Partial<Transaction> }) => {
-      const currentTransactions = getStoredTransactions();
-      const updated = currentTransactions.map(t => {
-        if (ids.includes(t.id)) {
-          return { ...t, ...updates };
-        }
-        return t;
-      });
-      saveTransactions(updated);
+      const dbUpdates = { ...updates } as any;
+      if (dbUpdates.subCategory) {
+        dbUpdates.sub_category = dbUpdates.subCategory;
+        delete dbUpdates.subCategory;
+      }
+
+      // Auto-exclude logic
+      if (updates.status) {
+        dbUpdates.excluded = (updates.status === 'Reconciled');
+      }
+
+      const { error } = await supabase
+        .from('transactions')
+        .update(dbUpdates)
+        .in('id', ids);
+
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -244,9 +253,12 @@ export const useTransactionTable = () => {
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
-      const currentTransactions = getStoredTransactions();
-      const updated = currentTransactions.filter(t => !ids.includes(t.id));
-      saveTransactions(updated);
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .in('id', ids);
+
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -291,7 +303,10 @@ export const useTransactionTable = () => {
     toggleSelection,
     selectAll,
     clearSelection,
+    isLoading,
+    isError,
     bulkUpdate: bulkUpdateMutation.mutate,
     bulkDelete: bulkDeleteMutation.mutate,
+    deleteTransaction: (id: string) => bulkDeleteMutation.mutate([id]),
   };
 };

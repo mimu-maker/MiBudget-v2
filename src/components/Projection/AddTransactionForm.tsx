@@ -13,12 +13,12 @@ interface AddTransactionFormProps {
   onCancel: () => void;
 }
 
-const AddTransactionForm = ({ 
-  showForm, 
-  newTransaction, 
-  onTransactionChange, 
-  onSubmit, 
-  onCancel 
+const AddTransactionForm = ({
+  showForm,
+  newTransaction,
+  onTransactionChange,
+  onSubmit,
+  onCancel
 }: AddTransactionFormProps) => {
   if (!showForm) return null;
 
@@ -55,16 +55,26 @@ const AddTransactionForm = ({
             />
           </div>
         </div>
-        
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">Description</label>
-          <Input
-            value={newTransaction.description}
-            onChange={(e) => onTransactionChange({ description: e.target.value })}
-            placeholder="Transaction description"
-          />
+
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Merchant</label>
+            <Input
+              value={newTransaction.merchant}
+              onChange={(e) => onTransactionChange({ merchant: e.target.value })}
+              placeholder="Merchant name"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Description</label>
+            <Input
+              value={newTransaction.description}
+              onChange={(e) => onTransactionChange({ description: e.target.value })}
+              placeholder="Optional description"
+            />
+          </div>
         </div>
-        
+
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium mb-1">Account</label>
@@ -80,7 +90,7 @@ const AddTransactionForm = ({
               </SelectContent>
             </Select>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium mb-1">Budget</label>
             <Select value={newTransaction.budget} onValueChange={(value) => onTransactionChange({ budget: value })}>
@@ -95,7 +105,7 @@ const AddTransactionForm = ({
               </SelectContent>
             </Select>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium mb-1">Category</label>
             <Select value={newTransaction.category} onValueChange={(value) => onTransactionChange({ category: value })}>
@@ -114,7 +124,31 @@ const AddTransactionForm = ({
             </Select>
           </div>
         </div>
-        
+
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="planned"
+              checked={newTransaction.planned}
+              onChange={(e) => onTransactionChange({ planned: e.target.checked })}
+              className="rounded border-input bg-background text-primary focus:ring-ring"
+            />
+            <label htmlFor="planned" className="text-sm font-medium">Planned</label>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="recurring"
+              checked={newTransaction.recurring}
+              onChange={(e) => onTransactionChange({ recurring: e.target.checked })}
+              className="rounded border-input bg-background text-primary focus:ring-ring"
+            />
+            <label htmlFor="recurring" className="text-sm font-medium">Recurring</label>
+          </div>
+        </div>
+
         <div className="flex justify-end space-x-2">
           <Button variant="outline" onClick={onCancel}>
             Cancel

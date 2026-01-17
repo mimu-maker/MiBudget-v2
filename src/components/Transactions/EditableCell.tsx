@@ -4,7 +4,8 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Transaction } from './hooks/useTransactionTable';
 import { getStatusBadgeVariant, getBudgetBadgeVariant } from './utils/transactionUtils';
-import { useSettings } from '@/hooks/useSettings';
+import { APP_STATUSES, useSettings } from '@/hooks/useSettings';
+import { formatCurrency } from '@/lib/formatUtils';
 
 interface EditableCellProps {
   transaction: Transaction;
@@ -14,8 +15,6 @@ interface EditableCellProps {
   onStartEdit: (id: string, field: keyof Transaction) => void;
   onStopEdit: () => void;
 }
-
-// ... (imports)
 
 export const EditableCell = ({
   transaction,
@@ -29,19 +28,34 @@ export const EditableCell = ({
   const value = transaction[field];
 
   if (isEditing) {
-    if (field === 'account' || field === 'status' || field === 'budget' || field === 'category' || field === 'recurring') {
+    if (field === 'account' || field === 'status' || field === 'budget' || field === 'category') {
       const options = {
         account: settings.accounts,
-        status: settings.statuses,
+        status: APP_STATUSES,
         budget: settings.budgetTypes,
-        category: settings.categories,
-        recurring: settings.recurringOptions
+        category: settings.categories
       };
+
+      const handleStatusChange = (newStatus: string) => {
+        if (newStatus === 'Pending Person/Event') {
+          const person = prompt("Enter Person or Event name:");
+          if (person) {
+            onEdit(transaction.id, field, `Pending: ${person}`);
+          }
+        } else {
+          onEdit(transaction.id, field, newStatus);
+        }
+      };
+
+      // Ensure that 'Pending: John' matches 'Pending Person/Event' in the Select value
+      const displayValue = field === 'status' && String(value).startsWith('Pending: ')
+        ? 'Pending Person/Event'
+        : String(value);
 
       return (
         <Select
-          value={String(value)}
-          onValueChange={(newValue) => onEdit(transaction.id, field, newValue)}
+          value={displayValue}
+          onValueChange={(newValue) => field === 'status' ? handleStatusChange(newValue) : onEdit(transaction.id, field, newValue)}
           onOpenChange={(open) => !open && onStopEdit()}
         >
           <SelectTrigger className="h-8">
@@ -54,11 +68,12 @@ export const EditableCell = ({
           </SelectContent>
         </Select>
       );
-    } else if (field === 'planned') {
+    } else if (field === 'planned' || field === 'recurring') {
       return (
         <Switch
           checked={Boolean(value)}
           onCheckedChange={(checked) => onEdit(transaction.id, field, checked)}
+          className="data-[state=checked]:bg-emerald-500"
         />
       );
     } else {
@@ -81,17 +96,17 @@ export const EditableCell = ({
   return (
     <div
       onClick={() => onStartEdit(transaction.id, field)}
-      className="cursor-pointer hover:bg-gray-50 p-1 rounded"
+      className="cursor-pointer hover:bg-accent p-1 rounded transition-colors"
     >
       {field === 'amount' ? (
-        <span className={`font-bold ${transaction.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-          {transaction.amount.toLocaleString()} DKK
+        <span className={`font-bold ${transaction.amount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+          {formatCurrency(transaction.amount, settings.currency)}
         </span>
       ) : field === 'status' ? (
         <Badge variant={getStatusBadgeVariant(String(value))}>{String(value)}</Badge>
       ) : field === 'budget' ? (
         <Badge variant={getBudgetBadgeVariant(String(value))}>{String(value)}</Badge>
-      ) : field === 'planned' ? (
+      ) : (field === 'planned' || field === 'recurring') ? (
         <Badge variant={Boolean(value) ? 'default' : 'outline'}>
           {Boolean(value) ? 'Yes' : 'No'}
         </Badge>

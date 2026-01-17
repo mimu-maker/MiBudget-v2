@@ -1,44 +1,70 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Check, X, Sparkles, AlertCircle } from 'lucide-react';
+import { Check, X, Search, AlertCircle, HelpCircle, Save, ArrowRight, Zap, RefreshCw, Calendar, ExternalLink, MoreVertical, Info } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { categorizeWithAI } from '@/lib/aiCategorizer';
+import { cn } from '@/lib/utils';
+import { formatCurrency } from '@/lib/formatUtils';
+import { useSettings } from '@/hooks/useSettings';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
-interface ValidationDashboardProps {
-    apiKey?: string; // Optional API key for AI
-}
-
-export const ValidationDashboard = ({ apiKey }: ValidationDashboardProps) => {
+export const ValidationDashboard = () => {
     const queryClient = useQueryClient();
-    const [loadingAI, setLoadingAI] = useState<string | null>(null);
+    const { settings } = useSettings();
+    const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
+    const [selectedMerchantRule, setSelectedMerchantRule] = useState<{
+        name: string;
+        category: string;
+        sub_category: string;
+        auto_verify: boolean;
+        transactionIds: string[];
+    } | null>(null);
 
-    const { data: unmatchedTransactions = [] } = useQuery({
-        queryKey: ['transactions', 'unmatched'],
+    // 1. Fetch all pending transactions
+    const { data: transactions = [] } = useQuery({
+        queryKey: ['transactions', 'validation-pending'],
         queryFn: async () => {
             const { data } = await supabase
                 .from('transactions')
                 .select('*')
-                .eq('status', 'Unmatched')
+                .neq('budget', 'Exclude')
+                .or('excluded.is.null,excluded.eq.false')
+                .in('status', ['Unmatched', 'Verified'])
                 .order('date', { ascending: false });
             return data || [];
         }
     });
 
-    const { data: verifiedTransactions = [] } = useQuery({
-        queryKey: ['transactions', 'verified'],
-        queryFn: async () => {
-            const { data } = await supabase
-                .from('transactions')
-                .select('*')
-                .eq('status', 'Verified')
-                .order('updated_at', { ascending: false })
-                .limit(10);
-            return data || [];
-        }
-    });
+    // 2. Separate into the three requested buckets
+    const confirmedItems = useMemo(() =>
+        transactions.filter(tx => tx.status === 'Verified'),
+        [transactions]);
+
+    const triageReviewItems = useMemo(() =>
+        transactions.filter(tx => tx.status === 'Unmatched' && (tx.confidence || 0) >= 0.8),
+        [transactions]);
+
+    const triageNoIdeaItems = useMemo(() =>
+        transactions.filter(tx => tx.status === 'Unmatched' && (tx.confidence || 0) < 0.8),
+        [transactions]);
+
+    // Group "No Idea" items by merchant name
+    const groupedNoIdea = useMemo(() => {
+        const groups: Record<string, any[]> = {};
+        triageNoIdeaItems.forEach(tx => {
+            const name = tx.clean_merchant || tx.merchant;
+            if (!groups[name]) groups[name] = [];
+            groups[name].push(tx);
+        });
+        return groups;
+    }, [triageNoIdeaItems]);
 
     const updateMutation = useMutation({
         mutationFn: async ({ id, updates }: { id: string, updates: any }) => {
@@ -53,133 +79,320 @@ export const ValidationDashboard = ({ apiKey }: ValidationDashboardProps) => {
         }
     });
 
-    const handleVerify = (id: string, category: string, sub_category: string | null) => {
+    const bulkUpdateMutation = useMutation({
+        mutationFn: async ({ ids, updates }: { ids: string[], updates: any }) => {
+            const { error } = await supabase
+                .from('transactions')
+                .update(updates)
+                .in('id', ids);
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+        }
+    });
+
+    const createRuleMutation = useMutation({
+        mutationFn: async ({ name, category, sub_category }: { name: string, category: string, sub_category: string | null }) => {
+            const { error } = await supabase
+                .from('merchant_rules')
+                .insert([{
+                    clean_merchant_name: name,
+                    auto_category: category,
+                    auto_sub_category: sub_category
+                }]);
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['merchant_rules'] });
+            setRuleDialogOpen(false);
+        }
+    });
+
+    const handleVerifySingle = (tx: any, category?: string, sub_category?: string | null) => {
         updateMutation.mutate({
-            id,
+            id: tx.id,
             updates: {
                 status: 'Verified',
-                category,
-                sub_category
+                category: category || tx.category,
+                sub_category: sub_category || tx.sub_category,
             }
         });
     };
 
-    const handleAISuggestion = async (transaction: any) => {
-        if (!apiKey) {
-            alert("Please provide an AI API Key in settings to use this feature.");
-            return;
-        }
-        setLoadingAI(transaction.id);
-        const suggestion = await categorizeWithAI(transaction.clean_description || transaction.description, apiKey);
-        setLoadingAI(null);
-
-        if (suggestion) {
-            updateMutation.mutate({
-                id: transaction.id,
-                updates: {
-                    suggested_category: suggestion.category,
-                    suggested_sub_category: suggestion.sub_category,
-                    merchant_description: suggestion.merchant_description
-                }
-            });
-        }
+    const openRuleDialog = (merchantName: string, txs: any[]) => {
+        setSelectedMerchantRule({
+            name: merchantName,
+            category: txs[0]?.category || '',
+            sub_category: txs[0]?.sub_category || '',
+            auto_verify: true,
+            transactionIds: txs.map(t => t.id)
+        });
+        setRuleDialogOpen(true);
     };
 
+    const handleSaveRule = () => {
+        if (!selectedMerchantRule) return;
+
+        // 1. Create the rule
+        createRuleMutation.mutate({
+            name: selectedMerchantRule.name,
+            category: selectedMerchantRule.category,
+            sub_category: selectedMerchantRule.sub_category
+        });
+
+        // 2. Apply to current transactions
+        bulkUpdateMutation.mutate({
+            ids: selectedMerchantRule.transactionIds,
+            updates: {
+                category: selectedMerchantRule.category,
+                sub_category: selectedMerchantRule.sub_category,
+                status: 'Verified'
+            }
+        });
+    };
+
+    const SearchLink = ({ name }: { name: string }) => {
+        const query = encodeURIComponent(`Identify this merchant: ${name}`);
+        const url = `https://www.google.com/search?q=${query}`;
+        return (
+            <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 p-1 px-2 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-500 hover:text-blue-600 transition-colors text-[10px] font-bold uppercase tracking-wider"
+            >
+                <Search className="w-3 h-3" />
+                Who is this?
+            </a>
+        );
+    };
+
+    const TransactionCard = ({ tx, type }: { tx: any, type: 'review' | 'unknown' | 'confirmed' }) => (
+        <Card className={cn(
+            "p-3 border-l-4 transition-all hover:shadow-md",
+            type === 'confirmed' ? "border-l-emerald-500 bg-white opacity-80" :
+                type === 'review' ? "border-l-blue-400 bg-blue-50/30" : "border-l-amber-400 bg-white"
+        )}>
+            <div className="flex justify-between items-start">
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                        <h3 className="font-bold text-slate-800 truncate text-sm">{tx.clean_merchant || tx.merchant}</h3>
+                        {tx.recurring && <RefreshCw className="w-3 h-3 text-blue-500" />}
+                        {tx.planned && <Calendar className="w-3 h-3 text-indigo-500" />}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <p className="text-[10px] text-slate-500 font-medium">{tx.date} • {formatCurrency(tx.amount, settings.currency)}</p>
+                        {tx.description && <span className="text-[10px] text-slate-400 italic truncate max-w-[150px]">• {tx.description}</span>}
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                    {type === 'confirmed' ? (
+                        <Check className="w-4 h-4 text-emerald-500" />
+                    ) : (
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0 text-emerald-500 hover:bg-emerald-50"
+                            onClick={() => handleVerifySingle(tx)}
+                        >
+                            <Check className="w-4 h-4" />
+                        </Button>
+                    )}
+                </div>
+            </div>
+
+            {type === 'review' && tx.category && (
+                <div className="mt-2 flex items-center justify-between">
+                    <Badge variant="secondary" className="bg-white text-slate-700 text-[10px] h-5">
+                        {tx.category} {tx.sub_category && `> ${tx.sub_category}`}
+                    </Badge>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[10px] text-blue-600 hover:bg-blue-50 gap-1 px-2"
+                        onClick={() => openRuleDialog(tx.clean_merchant || tx.merchant, [tx])}
+                    >
+                        <Save className="w-3 h-3" /> Save Rule
+                    </Button>
+                </div>
+            )}
+        </Card>
+    );
+
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[calc(100vh-120px)]">
-            {/* Left Column: Triage */}
-            <Card className="flex flex-col h-full">
-                <CardHeader>
-                    <CardTitle className="flex items-center">
-                        <AlertCircle className="w-5 h-5 mr-2 text-yellow-500" />
-                        Triage ({unmatchedTransactions.length})
-                    </CardTitle>
-                    <CardDescription>Review and categorize unmatched transactions</CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1 overflow-y-auto space-y-4">
-                    {unmatchedTransactions.map((tx: any) => (
-                        <Card key={tx.id} className="p-4 border-l-4 border-l-yellow-400">
-                            <div className="flex justify-between items-start mb-2">
-                                <div>
-                                    <h3 className="font-semibold">{tx.clean_description || tx.description}</h3>
-                                    <p className="text-sm text-gray-500">{tx.date} • {tx.amount} DKK</p>
-                                </div>
-                                <div className="flex space-x-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8 h-[calc(100vh-140px)] p-2">
+            {/* Left Column: Triage (Two Sections) */}
+            <div className="flex flex-col gap-6 h-full overflow-hidden">
+                {/* 1. Triage - Merchant Matches (Smart Matches) */}
+                <Card className="flex flex-col h-[40%] border-blue-200 shadow-sm overflow-hidden">
+                    <CardHeader className="py-3 bg-blue-50/50 border-b">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle className="text-base flex items-center gap-2 text-blue-800">
+                                    <Zap className="w-4 h-4 text-blue-500" />
+                                    Smart Matches ({triageReviewItems.length})
+                                </CardTitle>
+                            </div>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="flex-1 overflow-y-auto p-3 space-y-3">
+                        {triageReviewItems.map(tx => <TransactionCard key={tx.id} tx={tx} type="review" />)}
+                        {triageReviewItems.length === 0 && (
+                            <div className="flex flex-col items-center justify-center h-full text-slate-400 italic py-8">
+                                <Check className="w-10 h-10 mb-2 opacity-10" />
+                                <p className="text-sm">No smart matches to review</p>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* 2. Unidentified Merchants */}
+                <Card className="flex flex-col h-[60%] border-amber-200 shadow-sm overflow-hidden">
+                    <CardHeader className="py-3 bg-amber-50/50 border-b">
+                        <CardTitle className="text-base flex items-center gap-2 text-amber-800">
+                            <HelpCircle className="w-4 h-4 text-amber-500" />
+                            Merchant Triage ({Object.keys(groupedNoIdea).length} groups)
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex-1 overflow-y-auto p-4 space-y-6">
+                        {Object.entries(groupedNoIdea).map(([merchant, txs]) => (
+                            <div key={merchant} className="space-y-3 p-4 bg-white border rounded-xl shadow-sm border-slate-200 animate-in fade-in duration-300">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <h4 className="font-black text-slate-900 leading-none">{merchant}</h4>
+                                            <Badge variant="outline" className="h-4 px-1 text-[9px] font-bold border-slate-200 bg-slate-50">{txs.length} tx</Badge>
+                                        </div>
+                                        <SearchLink name={merchant} />
+                                    </div>
                                     <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleAISuggestion(tx)}
-                                        disabled={loadingAI === tx.id}
+                                        size="sm"
+                                        className="h-8 bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-lg shadow-blue-100"
+                                        onClick={() => openRuleDialog(merchant, txs)}
                                     >
-                                        <Sparkles className={`w-4 h-4 text-purple-500 ${loadingAI === tx.id ? 'animate-pulse' : ''}`} />
+                                        <Save className="w-4 h-4" /> Save Rule
                                     </Button>
                                 </div>
-                            </div>
 
-                            {/* AI Suggestion Area */}
-                            {tx.suggested_category && (
-                                <div className="bg-purple-50 p-2 rounded-md mb-3 text-sm border border-purple-100">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <Sparkles className="w-3 h-3 text-purple-600" />
-                                        <span className="font-medium text-purple-900">AI Suggestion</span>
-                                    </div>
-                                    <p className="text-purple-800 mb-1">{tx.merchant_description}</p>
-                                    <div className="flex items-center justify-between mt-2">
-                                        <Badge variant="outline" className="bg-white text-purple-700 border-purple-200">
-                                            {tx.suggested_category} {tx.suggested_sub_category ? `> ${tx.suggested_sub_category}` : ''}
-                                        </Badge>
-                                        <Button
-                                            size="sm"
-                                            variant="secondary"
-                                            className="h-7 text-xs bg-purple-100 hover:bg-purple-200 text-purple-800"
-                                            onClick={() => handleVerify(tx.id, tx.suggested_category!, tx.suggested_sub_category)}
-                                        >
-                                            Accept
-                                        </Button>
-                                    </div>
+                                <div className="space-y-2 pt-2 border-t border-slate-50">
+                                    {txs.map(tx => (
+                                        <div key={tx.id} className="flex items-center justify-between text-xs p-1 px-2 hover:bg-slate-50 rounded-md transition-colors">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-slate-400 font-mono">{tx.date}</span>
+                                                <span className="text-slate-700 font-medium truncate max-w-[120px]">{tx.description || 'No description'}</span>
+                                            </div>
+                                            <span className={cn("font-bold", tx.amount < 0 ? "text-slate-700" : "text-emerald-600")}>
+                                                {formatCurrency(tx.amount, settings.currency)}
+                                            </span>
+                                        </div>
+                                    ))}
                                 </div>
-                            )}
+                            </div>
+                        ))}
+                        {Object.keys(groupedNoIdea).length === 0 && (
+                            <div className="flex flex-col items-center justify-center h-full text-slate-400 italic py-8">
+                                <Zap className="w-10 h-10 mb-2 opacity-10" />
+                                <p className="text-sm">All merchants known!</p>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
 
-                            {/* Manual Actions if no suggestion or override */}
-                            {!tx.suggested_category && (
-                                <div className="text-sm text-gray-500 italic">No AI suggestion yet. Click the sparkle icon.</div>
-                            )}
-                        </Card>
-                    ))}
-                    {unmatchedTransactions.length === 0 && (
-                        <div className="text-center py-10 text-gray-500">
-                            All caught up! No unmatched transactions.
+            {/* Right Column: Confirmed Area */}
+            <Card className="flex flex-col h-full bg-slate-50/50 border-emerald-100 shadow-sm overflow-hidden">
+                <CardHeader className="py-4 bg-white border-b">
+                    <div>
+                        <CardTitle className="text-lg flex items-center gap-2 text-emerald-800">
+                            <div className="bg-emerald-500 rounded-full p-1">
+                                <Check className="w-3.5 h-3.5 text-white" />
+                            </div>
+                            Confirmed & Verified ({confirmedItems.length})
+                        </CardTitle>
+                    </div>
+                </CardHeader>
+                <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {confirmedItems.map(tx => <TransactionCard key={tx.id} tx={tx} type="confirmed" />)}
+                    {confirmedItems.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-300 italic opacity-50">
+                            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm">
+                                <Check className="w-8 h-8" />
+                            </div>
+                            <p>Verification queue is empty</p>
                         </div>
                     )}
                 </CardContent>
             </Card>
 
-            {/* Right Column: Verified */}
-            <Card className="flex flex-col h-full bg-gray-50/50">
-                <CardHeader>
-                    <CardTitle className="flex items-center">
-                        <Check className="w-5 h-5 mr-2 text-green-500" />
-                        Recently Verified
-                    </CardTitle>
-                    <CardDescription>Quick sanity check of recent actions</CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1 overflow-y-auto space-y-2">
-                    {verifiedTransactions.map((tx: any) => (
-                        <div key={tx.id} className="flex items-center justify-between p-3 bg-white rounded-lg border shadow-sm opacity-75 hover:opacity-100 transition-opacity">
-                            <div>
-                                <p className="font-medium text-sm">{tx.clean_description || tx.description}</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <Badge variant="secondary" className="text-xs font-normal">
-                                        {tx.category}
-                                    </Badge>
-                                    <span className="text-xs text-gray-400">{tx.amount} DKK</span>
-                                </div>
+            {/* Rule Configuration Dialog */}
+            <Dialog open={ruleDialogOpen} onOpenChange={setRuleDialogOpen}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Create Merchant Rule</DialogTitle>
+                        <DialogDescription>Apply auto-categorization for <span className="font-bold text-slate-900">{selectedMerchantRule?.name}</span></DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-6 py-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label className="text-xs uppercase font-bold text-slate-500">Category</Label>
+                                <Select
+                                    value={selectedMerchantRule?.category}
+                                    onValueChange={(v) => setSelectedMerchantRule(p => p ? { ...p, category: v } : null)}
+                                >
+                                    <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        {settings.categories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
                             </div>
-                            <div className="text-xs text-gray-400">{tx.status}</div>
+                            <div className="space-y-2">
+                                <Label className="text-xs uppercase font-bold text-slate-500">Sub-category</Label>
+                                <Input
+                                    className="bg-white"
+                                    placeholder="Optional"
+                                    value={selectedMerchantRule?.sub_category}
+                                    onChange={(e) => setSelectedMerchantRule(p => p ? { ...p, sub_category: e.target.value } : null)}
+                                />
+                            </div>
                         </div>
-                    ))}
-                </CardContent>
-            </Card>
+
+                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                            <div className="space-y-1">
+                                <Label className="text-sm font-bold text-slate-700">Auto-verify</Label>
+                                <p className="text-[10px] text-slate-400 font-medium">
+                                    {selectedMerchantRule?.auto_verify
+                                        ? "Always confirm on import"
+                                        : "Always Confirm (requires review)"}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase">{selectedMerchantRule?.auto_verify ? 'ON' : 'OFF'}</span>
+                                <Switch
+                                    checked={selectedMerchantRule?.auto_verify}
+                                    onCheckedChange={(v) => setSelectedMerchantRule(p => p ? { ...p, auto_verify: v } : null)}
+                                />
+                            </div>
+                        </div>
+
+                        <Alert className="bg-blue-50 border-blue-100">
+                            <Info className="w-4 h-4 text-blue-600" />
+                            <AlertDescription className="text-xs text-blue-700">
+                                This rule will be applied to the {selectedMerchantRule?.transactionIds.length} current matching transactions and all future imports.
+                            </AlertDescription>
+                        </Alert>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="ghost" onClick={() => setRuleDialogOpen(false)}>Cancel</Button>
+                        <Button onClick={handleSaveRule} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-8">Confirm & Save</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
+
+

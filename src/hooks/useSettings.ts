@@ -2,30 +2,24 @@
 import { useState, useEffect } from 'react';
 
 export interface CategoryConfig {
-    overflowCategory?: string;
     description?: string;
 }
 
 export interface AppSettings {
-    sidAmount: number;
-    specialAmount: string | number;
     categories: string[];
     subCategories: Record<string, string[]>; // category -> [sub1, sub2]
     categoryConfigs: Record<string, CategoryConfig>; // category -> config
     accounts: string[];
-    statuses: string[];
     budgetTypes: string[];
-    recurringOptions: string[];
-    categoryBudgets: Record<string, number>;
-    dateFormat: 'dd-mm-yyyy' | 'mm-dd-yyyy' | 'yyyy-mm-dd';
-    amountFormat: 'us' | 'eu';
+    categoryBudgets: Record<string, number | string>; // Allow number or "50%"
+    subCategoryBudgets: Record<string, Record<string, number | string>>; // cat -> sub -> budget
+    balancingSubCategory?: { category: string, subCategory: string };
     currency: string;
+    darkMode: boolean;
     updatedAt: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-    sidAmount: 5000,
-    specialAmount: '15%',
     categories: ['Income', 'Housing', 'Food', 'Transport', 'Entertainment', 'Healthcare', 'Utilities', 'Savings'],
     subCategories: {
         'Income': ['Salary', 'Bonus', 'Interest'],
@@ -47,15 +41,16 @@ const DEFAULT_SETTINGS: AppSettings = {
         'Healthcare': 1500,
         'Other': 1000
     },
+    subCategoryBudgets: {},
+    balancingSubCategory: { category: 'Savings', subCategory: 'Investments' },
     accounts: ['Master', 'Joint', 'Savings', 'Investment'],
-    statuses: ['Complete', 'Pending', 'Pending Marcus', 'Pending Sarah'],
     budgetTypes: ['Budgeted', 'Special', 'Klintemarken', 'Exclude'],
-    recurringOptions: ['No', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'],
-    dateFormat: 'dd-mm-yyyy',
-    amountFormat: 'eu',
     currency: 'DKK',
+    darkMode: false,
     updatedAt: new Date().toISOString()
 };
+
+export const APP_STATUSES = ['Pending Triage', 'Pending Person/Event', 'Reconciled', 'Complete'];
 
 const STORAGE_KEY = 'financeSettings';
 
@@ -97,11 +92,23 @@ export const useSettings = () => {
         }
     };
 
-    const updateCategoryBudget = (category: string, amount: number) => {
+    const updateCategoryBudget = (category: string, amount: number | string) => {
         saveSettings({
             categoryBudgets: {
                 ...settings.categoryBudgets,
                 [category]: amount
+            }
+        });
+    };
+
+    const updateSubCategoryBudget = (category: string, subCategory: string, amount: number | string) => {
+        saveSettings({
+            subCategoryBudgets: {
+                ...settings.subCategoryBudgets,
+                [category]: {
+                    ...(settings.subCategoryBudgets[category] || {}),
+                    [subCategory]: amount
+                }
             }
         });
     };
@@ -140,6 +147,78 @@ export const useSettings = () => {
         });
     };
 
+    // Reorder items in a list (for categories/subcategories reordering)
+    const reorderItems = (field: 'categories' | 'subCategories', items: string[] | Record<string, string[]>, category?: string) => {
+        if (field === 'categories' && Array.isArray(items)) {
+            saveSettings({ categories: items });
+        } else if (field === 'subCategories' && category && Array.isArray(items)) {
+            // For subcategories, input items should be the new array for that category
+            saveSettings({
+                subCategories: {
+                    ...settings.subCategories,
+                    [category]: items as unknown as string[]
+                }
+            });
+        }
+    };
+
+    const moveSubCategory = (subCategory: string, fromCategory: string, toCategory: string, newSubCategoryName?: string) => {
+        const finalSubName = newSubCategoryName || subCategory;
+        if (fromCategory === toCategory && subCategory === finalSubName) return;
+
+        const oldCatSubs = (settings.subCategories[fromCategory] || []).filter(s => s !== subCategory);
+        const newCatSubs = [...(settings.subCategories[toCategory] || [])];
+        if (!newCatSubs.includes(finalSubName)) {
+            newCatSubs.push(finalSubName);
+        }
+
+        const newSubCategoryBudgets = { ...settings.subCategoryBudgets };
+        const subBudget = newSubCategoryBudgets[fromCategory]?.[subCategory];
+
+        if (subBudget !== undefined) {
+            // Remove from old
+            const { [subCategory]: _, ...remainingOldSpecs } = newSubCategoryBudgets[fromCategory] || {};
+            newSubCategoryBudgets[fromCategory] = remainingOldSpecs;
+
+            // Add to new (potentially with new name)
+            newSubCategoryBudgets[toCategory] = {
+                ...(newSubCategoryBudgets[toCategory] || {}),
+                [finalSubName]: subBudget
+            };
+        }
+
+        saveSettings({
+            subCategories: {
+                ...settings.subCategories,
+                [fromCategory]: oldCatSubs,
+                [toCategory]: newCatSubs
+            },
+            subCategoryBudgets: newSubCategoryBudgets
+        });
+    };
+
+    const renameSubCategory = (category: string, oldName: string, newName: string) => {
+        if (oldName === newName) return;
+
+        const currentSubs = settings.subCategories[category] || [];
+        const newSubs = currentSubs.map(s => s === oldName ? newName : s);
+
+        const newSubCategoryBudgets = { ...settings.subCategoryBudgets };
+        if (newSubCategoryBudgets[category]?.[oldName] !== undefined) {
+            const budget = newSubCategoryBudgets[category][oldName];
+            delete newSubCategoryBudgets[category][oldName];
+            newSubCategoryBudgets[category][newName] = budget;
+        }
+
+        saveSettings({
+            subCategories: {
+                ...settings.subCategories,
+                [category]: newSubs
+            },
+            subCategoryBudgets: newSubCategoryBudgets
+        });
+    };
+
     return {
         settings,
         loading,
@@ -147,8 +226,12 @@ export const useSettings = () => {
         addItem,
         removeItem,
         updateCategoryBudget,
+        updateSubCategoryBudget,
         addSubCategory,
         removeSubCategory,
-        updateCategoryConfig
+        updateCategoryConfig,
+        reorderItems,
+        moveSubCategory,
+        renameSubCategory
     };
 };

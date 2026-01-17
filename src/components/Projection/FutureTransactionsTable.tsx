@@ -31,7 +31,7 @@ const FutureTransactionsTable = ({ transactions, onDelete }: FutureTransactionsT
             <thead>
               <tr className="border-b border-gray-200">
                 <th className="text-left py-3 px-2 font-semibold text-gray-700">Date</th>
-                <th className="text-left py-3 px-2 font-semibold text-gray-700">Description</th>
+                <th className="text-left py-3 px-2 font-semibold text-gray-700">Merchant</th>
                 <th className="text-right py-3 px-2 font-semibold text-gray-700">Amount</th>
                 <th className="text-left py-3 px-2 font-semibold text-gray-700">Account</th>
                 <th className="text-left py-3 px-2 font-semibold text-gray-700">Status</th>
@@ -57,15 +57,14 @@ const FutureTransactionsTable = ({ transactions, onDelete }: FutureTransactionsT
                     <tr key={transaction.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-2 text-sm">{transaction.date}</td>
                       <td className="py-3 px-2">
-                        <div className="font-medium">{transaction.description}</div>
-                        {transaction.note && (
-                          <div className="text-xs text-gray-500 mt-1">{transaction.note}</div>
+                        <div className="font-medium">{transaction.merchant}</div>
+                        {transaction.description && (
+                          <div className="text-xs text-gray-500 mt-1">{transaction.description}</div>
                         )}
                       </td>
                       <td className="py-3 px-2 text-right">
-                        <span className={`font-bold ${
-                          transaction.amount >= 0 ? 'text-green-600' : 'text-red-600'
-                        }`}>
+                        <span className={`font-bold ${transaction.amount >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
                           {transaction.amount.toLocaleString()} DKK
                         </span>
                       </td>

@@ -1,25 +1,27 @@
-
 import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
+import { useSettings } from '@/hooks/useSettings';
 import { usePeriod } from '@/contexts/PeriodContext';
 import { filterByPeriod } from '@/lib/dateUtils';
 import { parseISO, format } from 'date-fns';
 import { da } from 'date-fns/locale';
+import { formatCurrency } from '@/lib/formatUtils';
 
 export const SpecialOverview = () => {
   const { transactions } = useTransactionTable();
-  const { selectedPeriod } = usePeriod();
+  const { settings } = useSettings();
+  const { selectedPeriod, customDateRange } = usePeriod();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   // Filter for 'Special' budget type
   const specialTransactions = useMemo(() => {
-    const periodFiltered = filterByPeriod(transactions, selectedPeriod);
-    return periodFiltered.filter(t => t.budget === 'Special');
-  }, [transactions, selectedPeriod]);
+    const periodFiltered = filterByPeriod(transactions, selectedPeriod, customDateRange);
+    return periodFiltered.filter(t => t.budget === 'Special' && !t.excluded);
+  }, [transactions, selectedPeriod, customDateRange]);
 
   // Aggregate by category and subcategory
   const categories = useMemo(() => {
@@ -52,7 +54,7 @@ export const SpecialOverview = () => {
 
   // Special trend - group by month
   const trendData = useMemo(() => {
-    const months: Record<string, Record<string, number>> = {};
+    const months: Record<string, any> = {};
     const categoriesList = Array.from(new Set(specialTransactions.map(t => t.category || 'Other')));
 
     specialTransactions.forEach(t => {
@@ -76,51 +78,57 @@ export const SpecialOverview = () => {
 
   const totalAmount = specialTransactions.reduce((sum, t) => sum + t.amount, 0);
 
+  const chartColors = useMemo(() => ({
+    grid: settings.darkMode ? '#1e293b' : '#f0f0f0',
+    text: settings.darkMode ? '#94a3b8' : '#64748b',
+    tooltip: settings.darkMode ? '#0f172a' : '#fff',
+  }), [settings.darkMode]);
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="shadow-md border-none">
-          <CardHeader className="bg-slate-50/50 rounded-t-xl">
-            <CardTitle className="flex items-center justify-between text-lg">
+        <Card className="shadow-md border-none bg-card transition-colors">
+          <CardHeader className="bg-muted/30 rounded-t-xl transition-colors">
+            <CardTitle className="flex items-center justify-between text-lg text-foreground">
               Special Budget Items
-              <div className={`text-xl font-bold ${totalAmount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {totalAmount >= 0 ? '+' : ''}{totalAmount.toLocaleString('da-DK')} DKK
+              <div className={`text-xl font-bold ${totalAmount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {totalAmount >= 0 ? '+' : ''}{formatCurrency(totalAmount, settings.currency)}
               </div>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6">
             <div className="space-y-3">
               {categories.map((category) => (
-                <div key={category.name} className="border border-slate-100 rounded-xl overflow-hidden shadow-sm">
+                <div key={category.name} className="border border-border/50 rounded-xl overflow-hidden shadow-sm bg-background/50">
                   <div
-                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 transition-colors"
+                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-accent/50 transition-colors"
                     onClick={() => toggleCategory(category.name)}
                   >
                     <div className="flex items-center space-x-4">
-                      <div className="bg-slate-100 p-1 rounded-md">
-                        {expandedCategories.has(category.name) ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                      <div className="bg-muted p-1 rounded-md">
+                        {expandedCategories.has(category.name) ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                       </div>
                       <div>
-                        <h3 className="font-bold text-slate-800">{category.name}</h3>
-                        <p className="text-xs text-slate-500 font-medium uppercase tracking-tight">{category.transactions} transactions</p>
+                        <h3 className="font-bold text-foreground/90">{category.name}</h3>
+                        <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">{category.transactions} transactions</p>
                       </div>
                     </div>
-                    <div className={`text-right font-black text-lg ${category.total >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {category.total >= 0 ? '+' : ''}{category.total.toLocaleString()}
+                    <div className={`text-right font-black text-lg ${category.total >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {category.total >= 0 ? '+' : ''}{formatCurrency(category.total, settings.currency)}
                     </div>
                   </div>
 
                   {expandedCategories.has(category.name) && (
-                    <div className="px-4 pb-4 bg-slate-50/30 border-t border-slate-50">
+                    <div className="px-4 pb-4 bg-muted/20 border-t border-border/30">
                       <div className="space-y-2 mt-4">
                         {category.subcategories.map((subcat) => (
-                          <div key={subcat.name} className="flex items-center justify-between py-2.5 px-4 bg-white rounded-lg border border-slate-100 shadow-xs">
+                          <div key={subcat.name} className="flex items-center justify-between py-2.5 px-4 bg-background rounded-lg border border-border/50 shadow-sm">
                             <div>
-                              <div className="font-bold text-slate-700 text-sm">{subcat.name}</div>
-                              <div className="text-[10px] text-slate-400 font-bold uppercase">{subcat.transactions} ops</div>
+                              <div className="font-bold text-foreground/80 text-sm">{subcat.name}</div>
+                              <div className="text-[10px] text-muted-foreground font-bold uppercase">{subcat.transactions} ops</div>
                             </div>
                             <div className={`font-bold text-sm ${subcat.amount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                              {subcat.amount >= 0 ? '+' : ''}{subcat.amount.toLocaleString()} DKK
+                              {subcat.amount >= 0 ? '+' : ''}{formatCurrency(subcat.amount, settings.currency)}
                             </div>
                           </div>
                         ))}
@@ -130,27 +138,33 @@ export const SpecialOverview = () => {
                 </div>
               ))}
               {categories.length === 0 && (
-                <div className="text-center py-20 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                  <p className="text-slate-400 font-medium">No special items found for {selectedPeriod.toLowerCase()}</p>
+                <div className="text-center py-20 bg-muted/30 rounded-xl border border-dashed border-border transition-colors">
+                  <p className="text-muted-foreground font-medium">No special items found for {(selectedPeriod === 'Custom' ? 'custom range' : selectedPeriod).toLowerCase()}</p>
                 </div>
               )}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-md border-none">
-          <CardHeader className="bg-slate-50/50 rounded-t-xl">
-            <CardTitle className="text-lg">Special Spend Trends</CardTitle>
+        <Card className="shadow-md border-none bg-card transition-colors">
+          <CardHeader className="bg-muted/30 rounded-t-xl transition-colors">
+            <CardTitle className="text-lg text-foreground">Special Spend Trends</CardTitle>
           </CardHeader>
           <CardContent className="p-6">
             <div className="h-[350px] w-full mt-4">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartColors.grid} />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: chartColors.text, fontSize: 12 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: chartColors.text, fontSize: 12 }} />
                   <Tooltip
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    contentStyle={{
+                      borderRadius: '12px',
+                      border: 'none',
+                      boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                      backgroundColor: chartColors.tooltip,
+                      color: settings.darkMode ? '#f1f5f9' : '#1e293b'
+                    }}
                   />
                   {/* Dynamic lines for each category found */}
                   {Array.from(new Set(specialTransactions.map(t => t.category || 'Other'))).slice(0, 5).map((cat, i) => (
@@ -160,7 +174,7 @@ export const SpecialOverview = () => {
                       dataKey={cat}
                       stroke={['#10b981', '#3b82f6', '#f59e0b', '#f43f5e', '#8b5cf6'][i % 5]}
                       strokeWidth={3}
-                      dot={{ r: 4, strokeWidth: 2, stroke: '#fff' }}
+                      dot={{ r: 4, strokeWidth: 2, stroke: settings.darkMode ? '#0f172a' : '#fff' }}
                     />
                   ))}
                 </LineChart>
@@ -172,4 +186,3 @@ export const SpecialOverview = () => {
     </div>
   );
 };
-import React from 'react';

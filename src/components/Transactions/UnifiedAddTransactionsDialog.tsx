@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Upload, FileText, Clipboard, AlertCircle, Archive, ArrowRight, CheckCircle2, AlertTriangle, Check, ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 import { processTransaction, MerchantRule } from '@/lib/importBrain';
 import { parseDate, parseAmount } from '@/lib/importUtils';
 import { useQuery } from '@tanstack/react-query';
@@ -28,8 +29,8 @@ interface UnifiedAddTransactionsDialogProps {
 }
 
 const transactionColumns = [
-    'date', 'description', 'amount', 'account', 'status',
-    'budget', 'category', 'subCategory', 'planned', 'recurring', 'note', 'budgetYear'
+    'date', 'merchant', 'amount', 'account', 'status',
+    'budget', 'category', 'subCategory', 'planned', 'recurring', 'description', 'budgetYear'
 ];
 
 export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImport }: UnifiedAddTransactionsDialogProps) => {
@@ -42,7 +43,7 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
     // --- MANUAL ENTRY STATE ---
     const [formData, setFormData] = useState({
         date: new Date().toISOString().split('T')[0],
-        description: '',
+        merchant: '',
         amount: '',
         account: settings.accounts[0] || 'Master',
         status: 'Complete',
@@ -50,8 +51,8 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
         category: settings.categories[0] || 'Other',
         subCategory: '',
         planned: false,
-        recurring: 'No',
-        note: ''
+        recurring: false,
+        description: ''
     });
 
     // --- IMPORT STATE ---
@@ -71,10 +72,19 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
     const [accountResolutions, setAccountResolutions] = useState<Record<string, string>>({});
 
     // Fetch rules
-    const { data: rulesData } = useQuery({
+    const { data: rulesData, error: rulesError, isError: isRulesError } = useQuery({
         queryKey: ['merchant_rules'],
-        queryFn: async () => [],
-        enabled: false
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from('merchant_rules')
+                .select('*');
+            if (error) {
+                console.error("Supabase error fetching rules:", error);
+                throw error;
+            }
+            return data || [];
+        },
+        retry: 1
     });
     const rules = rulesData || [];
 
@@ -96,27 +106,34 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
     }, [open]);
 
     // --- MANUAL ENTRY HANDLER ---
-    const handleManualSubmit = (e: React.FormEvent) => {
+    const handleManualSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        onAdd({
-            ...formData,
-            amount: parseFloat(formData.amount) || 0
-        });
-        onOpenChange(false);
-        // Reset form
-        setFormData({
-            date: new Date().toISOString().split('T')[0],
-            description: '',
-            amount: '',
-            account: settings.accounts[0] || 'Master',
-            status: 'Complete',
-            budget: 'Budgeted',
-            category: settings.categories[0] || 'Other',
-            subCategory: '',
-            planned: false,
-            recurring: 'No',
-            note: ''
-        });
+        try {
+            setIsProcessing(true);
+            await onAdd({
+                ...formData,
+                amount: parseFloat(formData.amount) || 0
+            });
+            onOpenChange(false);
+            // Reset form
+            setFormData({
+                date: new Date().toISOString().split('T')[0],
+                merchant: '',
+                amount: '',
+                account: settings.accounts[0] || 'Master',
+                status: 'Complete',
+                budget: 'Budgeted',
+                category: settings.categories[0] || 'Other',
+                subCategory: '',
+                planned: false,
+                recurring: false,
+                description: ''
+            });
+        } catch (err: any) {
+            setErrors([`Failed to add transaction: ${err.message}`]);
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     // --- IMPORT LOGIC ---
@@ -161,13 +178,18 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
 
                 if (hasHeadersDetected) {
                     const autoMapping: Record<string, string> = {};
+                    const usedFields = new Set<string>();
                     firstRow.forEach((header, index) => {
                         const normalizedHeader = header.toLowerCase().replace(/[^a-z]/g, '');
                         const match = transactionColumns.find(col =>
-                            col.toLowerCase().includes(normalizedHeader) ||
-                            normalizedHeader.includes(col.toLowerCase())
+                            (col.toLowerCase().includes(normalizedHeader) ||
+                                normalizedHeader.includes(col.toLowerCase())) &&
+                            !usedFields.has(col)
                         );
-                        if (match) autoMapping[index.toString()] = match;
+                        if (match) {
+                            autoMapping[index.toString()] = match;
+                            usedFields.add(match);
+                        }
                     });
                     setColumnMapping(autoMapping);
                 }
@@ -198,18 +220,27 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
             try {
                 const dataRows = hasHeaders ? csvData.slice(1) : csvData;
                 const previewRows = dataRows.slice(0, 5);
-                const previewData = previewRows.map((row, index) => {
-                    const transaction: any = { id: index.toString() };
+                const newErrors: string[] = [];
+
+                const previewData = previewRows.map((row, rowIndex) => {
+                    const transaction: any = { id: rowIndex.toString() };
                     Object.entries(columnMapping).forEach(([csvIndex, transactionField]) => {
                         const indexNum = parseInt(csvIndex);
                         if (indexNum < row.length) {
                             const value = row[indexNum];
-                            const config = fieldConfigs?.[transactionField] || {};
 
                             if (transactionField === 'amount') {
-                                transaction[transactionField] = parseAmount(value, (config.amountFormat || settings.amountFormat) as any);
+                                const parsed = parseAmount(value);
+                                if (parsed === null) {
+                                    newErrors.push(`Row ${rowIndex + 1}: Could not read amount "${value}"`);
+                                }
+                                transaction[transactionField] = parsed;
                             } else if (transactionField === 'date') {
-                                transaction[transactionField] = parseDate(value, (config.dateFormat || settings.dateFormat) as any);
+                                const parsed = parseDate(value);
+                                if (parsed === null) {
+                                    newErrors.push(`Row ${rowIndex + 1}: Date format "${value}" was not readable`);
+                                }
+                                transaction[transactionField] = parsed;
                             } else {
                                 transaction[transactionField] = value || '';
                             }
@@ -220,10 +251,10 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                 });
 
                 setPreview(previewData);
-                const newErrors: string[] = [];
-                if (!Object.values(columnMapping).includes('description')) newErrors.push("Missing 'description'");
-                if (!Object.values(columnMapping).includes('amount')) newErrors.push("Missing 'amount'");
-                if (!Object.values(columnMapping).includes('account') && !defaultAccount) newErrors.push("Missing 'account'");
+
+                if (!Object.values(columnMapping).includes('merchant')) newErrors.push("Missing 'merchant' mapping (Who did you pay?)");
+                if (!Object.values(columnMapping).includes('amount')) newErrors.push("Missing 'amount' mapping");
+                if (!Object.values(columnMapping).includes('account') && !defaultAccount) newErrors.push("Missing 'account' mapping");
 
                 setErrors(newErrors);
                 if (newErrors.length === 0) setStep(3);
@@ -264,46 +295,113 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
 
     const executeImport = async () => {
         setIsProcessing(true);
+        setErrors([]);
+
+        // Use a short delay to allow the processing animation to show
         setTimeout(async () => {
             try {
                 const dataRows = hasHeaders ? csvData.slice(1) : csvData;
+                if (dataRows.length === 0) {
+                    throw new Error("No data rows found to import.");
+                }
+
+                const importErrors: string[] = [];
+                const merchantColIdx = Object.entries(columnMapping).find(([_, f]) => f === 'merchant')?.[0];
+
                 const processedData = await Promise.all(dataRows.map(async (row, index) => {
-                    const transaction: any = { id: (Date.now() + index).toString() };
+                    const transaction: any = {
+                        id: crypto.randomUUID(), // Use robust UUIDs
+                        date: new Date().toISOString().split('T')[0],
+                        merchant: '',
+                        amount: 0,
+                        account: defaultAccount,
+                        status: 'New',
+                        budget: 'Budgeted',
+                        category: 'Other',
+                        subCategory: '',
+                        planned: false,
+                        recurring: false,
+                        description: ''
+                    };
+
                     Object.entries(columnMapping).forEach(([csvIndex, transactionField]) => {
                         const indexNum = parseInt(csvIndex);
                         if (indexNum < row.length) {
                             const value = row[indexNum];
-                            const config = fieldConfigs?.[transactionField] || {};
 
                             if (transactionField === 'amount') {
-                                transaction[transactionField] = parseAmount(value, (config.amountFormat || settings.amountFormat) as any);
+                                const parsed = parseAmount(value);
+                                if (parsed === null) {
+                                    if (importErrors.length < 10) importErrors.push(`Row ${index + 1}: Invalid amount format "${value}"`);
+                                }
+                                transaction[transactionField] = parsed || 0;
                             } else if (transactionField === 'date') {
-                                transaction[transactionField] = parseDate(value, (config.dateFormat || settings.dateFormat) as any);
+                                const parsed = parseDate(value);
+                                if (parsed === null) {
+                                    if (importErrors.length < 10) importErrors.push(`Row ${index + 1}: Invalid date format "${value}"`);
+                                }
+                                transaction[transactionField] = parsed || transaction.date;
                             } else {
                                 transaction[transactionField] = value || '';
                             }
                         }
                     });
-                    if (!transaction.account && defaultAccount) transaction.account = defaultAccount;
 
-                    let processed = processTransaction(transaction.description || '', transaction.date, rules as MerchantRule[]);
+                    // Handle account mapping from resolutions or default
+                    const rawAccount = transaction.account || "";
+                    if (rawAccount && accountResolutions[rawAccount]) {
+                        transaction.account = accountResolutions[rawAccount];
+                    } else if (!rawAccount || !settings.accounts.includes(rawAccount)) {
+                        transaction.account = defaultAccount || settings.accounts[0] || 'Master';
+                    }
+
+                    // CRITICAL: use 'merchant' field for processing rules, fallback to 'description'
+                    const identificationString = (transaction.merchant || transaction.description || "").trim();
+                    let processed = processTransaction(identificationString, transaction.date, rules as MerchantRule[]);
+
                     if (trustCsvCategories && transaction.category) {
                         processed = { ...processed, category: transaction.category, sub_category: transaction.subCategory || processed.sub_category };
                     }
                     return { ...transaction, ...processed };
                 }));
 
-                onImport(processedData);
-                onOpenChange(false);
+                if (importErrors.length > 0) {
+                    setErrors(importErrors);
+                    setIsProcessing(false);
+                    return;
+                }
+
+                if (processedData.length === 0) {
+                    throw new Error("Processing failed: No transactions generated.");
+                }
+
+                // Final safety check: try to call onImport and catch any internal errors
+                try {
+                    console.log(`Importing ${processedData.length} transactions...`);
+                    await onImport(processedData);
+                    console.log("Import successful!");
+                    onOpenChange(false);
+                } catch (importFnError: any) {
+                    console.error("onImport failed:", importFnError);
+                    setErrors([`Database error: ${importFnError.message || "Failed to save transactions"}`]);
+                }
+
+            } catch (err: any) {
+                console.error("Import execution failed:", err);
+                setErrors([`Execution error: ${err.message || "An unexpected error occurred during import"}`]);
             } finally {
                 setIsProcessing(false);
             }
-        }, 100);
+        }, 300); // 300ms delay to ensure UI transition is smooth
     };
 
     const handleResolutionSave = () => {
+        console.log("Saving account resolutions:", accountResolutions);
         Object.values(accountResolutions).forEach(targetAcc => {
-            if (!settings.accounts.includes(targetAcc)) addItem('accounts', targetAcc);
+            if (!settings.accounts.includes(targetAcc)) {
+                console.log(`Adding new account to settings: ${targetAcc}`);
+                addItem('accounts', targetAcc);
+            }
         });
         executeImport();
     };
@@ -316,6 +414,27 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                         <DialogTitle className="text-2xl font-semibold">{mode === 'entry' ? 'Add New Transaction' : 'Import Transactions'}</DialogTitle>
                         {mode === 'import' && <div className="text-sm text-slate-500">Step {step} of 4</div>}
                     </div>
+                    {errors.length > 0 && (
+                        <Alert variant="destructive" className="mt-4 animate-in fade-in slide-in-from-top-2 border-red-200 bg-red-50">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertTitle className="font-bold">Attention Needed</AlertTitle>
+                            <AlertDescription>
+                                <ul className="list-disc list-inside text-xs mt-1 space-y-1">
+                                    {errors.map((e, i) => <li key={i}>{e}</li>)}
+                                </ul>
+                                <Button variant="link" size="sm" onClick={() => setErrors([])} className="p-0 h-auto mt-2 text-red-700 font-bold decoration-red-700">Clear errors and try again</Button>
+                            </AlertDescription>
+                        </Alert>
+                    )}
+                    {isRulesError && (
+                        <Alert className="mt-4 border-amber-200 bg-amber-50">
+                            <AlertTriangle className="h-4 w-4 text-amber-600" />
+                            <AlertTitle className="text-amber-800">Rule Matching Offline</AlertTitle>
+                            <AlertDescription className="text-amber-700 text-xs text-balance">
+                                We couldn't load your auto-categorization rules. Import will still work, but you'll have to categorize manually.
+                            </AlertDescription>
+                        </Alert>
+                    )}
                 </DialogHeader>
 
                 {mode === 'entry' ? (
@@ -339,8 +458,8 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label htmlFor="description" className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Description</Label>
-                                    <Input id="description" className="bg-white border-slate-200 focus:ring-blue-500 h-11 text-lg" placeholder="What was this for?" value={formData.description} onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))} required />
+                                    <Label htmlFor="merchant" className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Merchant</Label>
+                                    <Input id="merchant" className="bg-white border-slate-200 focus:ring-blue-500 h-11 text-lg" placeholder="e.g. Amazon, Supermarket..." value={formData.merchant} onChange={(e) => setFormData(p => ({ ...p, merchant: e.target.value }))} required />
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
@@ -366,6 +485,49 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                                             </SelectContent>
                                         </Select>
                                     </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Sub-category</Label>
+                                        <Input
+                                            className="bg-white border-slate-200 focus:ring-blue-500"
+                                            value={formData.subCategory}
+                                            onChange={(e) => setFormData(p => ({ ...p, subCategory: e.target.value }))}
+                                            placeholder="Optional"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-8 py-2">
+                                    <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-sm font-bold text-slate-700">Planned</Label>
+                                            <p className="text-[10px] text-slate-400 font-medium">Is this a future expense?</p>
+                                        </div>
+                                        <Switch
+                                            checked={formData.planned}
+                                            onCheckedChange={(v) => setFormData(p => ({ ...p, planned: v }))}
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-sm font-bold text-slate-700">Recurring</Label>
+                                            <p className="text-[10px] text-slate-400 font-medium">Does this repeat?</p>
+                                        </div>
+                                        <Switch
+                                            checked={formData.recurring}
+                                            onCheckedChange={(v) => setFormData(p => ({ ...p, recurring: v }))}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="description" className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Description (Optional)</Label>
+                                    <Textarea
+                                        id="description"
+                                        className="bg-white border-slate-200 focus:ring-blue-500"
+                                        value={formData.description}
+                                        onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))}
+                                        placeholder="Add any additional details or notes..."
+                                    />
                                 </div>
 
                                 <div className="flex justify-end pt-6 border-t border-slate-200 mt-6">
@@ -462,7 +624,7 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                                         <MappingCard
                                             key={field}
                                             field={field}
-                                            mandatory={['date', 'description', 'amount'].includes(field)}
+                                            mandatory={['date', 'merchant', 'amount'].includes(field)}
                                             columnMapping={columnMapping}
                                             setColumnMapping={setColumnMapping}
                                             csvHeaders={hasHeaders ? csvData[0] : undefined}
@@ -496,27 +658,29 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                                         <table className="w-full text-sm">
                                             <thead className="bg-slate-50 border-b border-slate-100">
                                                 <tr>
-                                                    {Object.values(columnMapping).map(col => (
-                                                        <th key={col} className="p-4 text-left font-bold text-slate-600 uppercase text-[10px] tracking-widest">{col}</th>
+                                                    {Object.entries(columnMapping).map(([idx, col]) => (
+                                                        <th key={`${idx}-${col}`} className="p-4 text-left font-bold text-slate-600 uppercase text-[10px] tracking-widest">{col}</th>
                                                     ))}
-                                                    {!Object.values(columnMapping).includes('account') && <th className="p-4 text-left font-bold text-slate-600 uppercase text-[10px] tracking-widest">Account</th>}
+                                                    {!Object.values(columnMapping).includes('account') && <th key="col-account" className="p-4 text-left font-bold text-slate-600 uppercase text-[10px] tracking-widest">Account</th>}
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {preview.map((row, i) => (
-                                                    <tr key={i} className="border-b last:border-0 border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                                        {Object.values(columnMapping).map(col => (
-                                                            <td key={col} className="p-4 font-medium text-slate-700">
+                                                    <tr key={`row-${i}`} className="border-b last:border-0 border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                                        {Object.entries(columnMapping).map(([idx, col]) => (
+                                                            <td key={`${idx}-${col}`} className="p-4 font-medium text-slate-700">
                                                                 {col === 'amount' ? (
                                                                     <span className={cn("font-bold", row[col] < 0 ? "text-red-500" : "text-emerald-500")}>
-                                                                        {row[col]?.toLocaleString('da-DK', { style: 'currency', currency: settings.currency || 'DKK' })}
+                                                                        {row[col] !== null ? row[col].toLocaleString('da-DK', { style: 'currency', currency: settings.currency || 'DKK' }) : 'Invalid'}
                                                                     </span>
                                                                 ) : col === 'date' ? (
-                                                                    <span>{row[col] ? format(new Date(row[col]), 'dd-MM-yyyy') : '-'}</span>
+                                                                    <span className={cn(!row[col] && "text-red-500 font-bold")}>
+                                                                        {row[col] ? format(new Date(row[col]), 'dd-MM-yyyy') : 'Invalid Date'}
+                                                                    </span>
                                                                 ) : row[col]}
                                                             </td>
                                                         ))}
-                                                        {!Object.values(columnMapping).includes('account') && <td className="p-4 text-slate-500 italic">{defaultAccount}</td>}
+                                                        {!Object.values(columnMapping).includes('account') && <td key="cell-account" className="p-4 text-slate-500 italic">{defaultAccount}</td>}
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -581,19 +745,7 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                     </div>
                 )}
 
-                {errors.length > 0 && (
-                    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-[110] animate-in slide-in-from-bottom-5">
-                        <Alert variant="destructive" className="shadow-2xl border-2 border-red-200 bg-white relative overflow-hidden">
-                            <div className="absolute left-0 top-0 h-full w-2 bg-red-500" />
-                            <AlertCircle className="h-5 w-5" />
-                            <AlertTitle className="font-bold text-red-700">Import Blocked</AlertTitle>
-                            <AlertDescription>
-                                <ul className="list-disc list-inside mt-2 text-red-600 font-medium space-y-1 text-xs">{errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-                            </AlertDescription>
-                            <Button variant="ghost" size="sm" onClick={() => setErrors([])} className="absolute top-2 right-2 h-8 w-8 rounded-full hover:bg-red-50 text-red-400">×</Button>
-                        </Alert>
-                    </div>
-                )}
+                {/* Floating errors removed in favor of inline ones above */}
             </DialogContent>
         </Dialog>
     );

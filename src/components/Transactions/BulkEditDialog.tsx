@@ -28,6 +28,8 @@ export const BulkEditDialog = ({
         subCategory: false,
         planned: false,
         recurring: false,
+        merchant: false,
+        description: false,
     });
 
     const [values, setValues] = useState<Partial<Transaction>>({
@@ -36,7 +38,9 @@ export const BulkEditDialog = ({
         category: '',
         subCategory: '',
         planned: false,
-        recurring: 'No',
+        recurring: false,
+        merchant: '',
+        description: '',
     });
 
     const handleToggleField = (field: string) => {
@@ -60,8 +64,45 @@ export const BulkEditDialog = ({
                 <DialogHeader>
                     <DialogTitle>Bulk Edit {selectedCount} Transactions</DialogTitle>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
+                <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
                     <div className="space-y-4">
+                        {/* Merchant */}
+                        <div className="flex items-center space-x-4">
+                            <Checkbox
+                                id="edit-merchant"
+                                checked={enabledFields.merchant}
+                                onCheckedChange={() => handleToggleField('merchant')}
+                            />
+                            <div className="grid flex-1 gap-1.5">
+                                <Label htmlFor="merchant">Merchant</Label>
+                                <Input
+                                    id="merchant"
+                                    disabled={!enabledFields.merchant}
+                                    value={values.merchant}
+                                    onChange={(e) => setValues({ ...values, merchant: e.target.value })}
+                                    placeholder="e.g. Amazon"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Description */}
+                        <div className="flex items-center space-x-4">
+                            <Checkbox
+                                id="edit-description"
+                                checked={enabledFields.description}
+                                onCheckedChange={() => handleToggleField('description')}
+                            />
+                            <div className="grid flex-1 gap-1.5">
+                                <Label htmlFor="description">Description</Label>
+                                <Input
+                                    id="description"
+                                    disabled={!enabledFields.description}
+                                    value={values.description}
+                                    onChange={(e) => setValues({ ...values, description: e.target.value })}
+                                    placeholder="Details..."
+                                />
+                            </div>
+                        </div>
                         {/* Status */}
                         <div className="flex items-center space-x-4">
                             <Checkbox
@@ -170,29 +211,20 @@ export const BulkEditDialog = ({
                             </div>
                         </div>
 
-                        {/* Recurring */}
                         <div className="flex items-center space-x-4">
                             <Checkbox
                                 id="edit-recurring"
                                 checked={enabledFields.recurring}
                                 onCheckedChange={() => handleToggleField('recurring')}
                             />
-                            <div className="grid flex-1 gap-1.5">
-                                <Label htmlFor="recurring">Recurring</Label>
-                                <Select
+                            <div className="flex items-center space-x-2">
+                                <Checkbox
+                                    id="recurring"
                                     disabled={!enabledFields.recurring}
-                                    value={values.recurring}
-                                    onValueChange={(v) => setValues({ ...values, recurring: v })}
-                                >
-                                    <SelectTrigger id="recurring">
-                                        <SelectValue placeholder="Select recurring" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="No">No</SelectItem>
-                                        <SelectItem value="Monthly">Monthly</SelectItem>
-                                        <SelectItem value="Weekly">Weekly</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                                    checked={values.recurring}
+                                    onCheckedChange={(v) => setValues({ ...values, recurring: !!v })}
+                                />
+                                <Label htmlFor="recurring">Recurring transaction</Label>
                             </div>
                         </div>
                     </div>

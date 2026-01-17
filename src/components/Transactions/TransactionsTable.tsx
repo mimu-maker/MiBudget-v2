@@ -12,6 +12,7 @@ import { BulkActionBar } from './BulkActionBar';
 import { BulkEditDialog } from './BulkEditDialog';
 import { usePeriod } from '@/contexts/PeriodContext';
 import { filterByPeriod } from '@/lib/dateUtils';
+import { PeriodSelector } from '@/components/PeriodSelector';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,30 +43,49 @@ export const TransactionsTable = () => {
     selectAll,
     clearSelection,
     bulkUpdate,
-    bulkDelete
+    bulkDelete,
+    deleteTransaction,
+    isLoading,
+    isError
   } = useTransactionTable();
 
-  const { selectedPeriod } = usePeriod();
+  const { selectedPeriod, customDateRange } = usePeriod();
   const [addTransactionsOpen, setAddTransactionsOpen] = useState(false);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'table' | 'validation'>('table');
+  const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
 
   const filteredAndSortedTransactions = useMemo(() => {
-    const periodFiltered = filterByPeriod(transactions, selectedPeriod);
+    let periodFiltered = filterByPeriod(transactions, selectedPeriod, customDateRange);
+
+    // Always filter out budget === 'Exclude'
+    periodFiltered = periodFiltered.filter(t => t.budget !== 'Exclude');
+
     const tableFiltered = filterTransactions(periodFiltered, filters);
     return sortTransactions(tableFiltered, sortBy, sortOrder);
-  }, [transactions, selectedPeriod, filters, sortBy, sortOrder]);
+  }, [transactions, selectedPeriod, customDateRange, filters, sortBy, sortOrder]);
 
   const handleStartEdit = (id: string, field: keyof typeof transactions[0]) => {
     setEditingCell({ id, field });
   };
 
+  const handleSingleDelete = () => {
+    if (transactionToDelete) {
+      deleteTransaction(transactionToDelete); // Call the delete function from useTransactionTable
+      setTransactionToDelete(null);
+    }
+  };
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
+        <h1 className="text-2xl font-bold text-foreground">Transactions</h1>
+
         <div className="flex items-center space-x-2">
+          <div className="mr-2">
+            <PeriodSelector />
+          </div>
           <Button
             size="lg"
             onClick={() => setAddTransactionsOpen(true)}
@@ -76,6 +96,22 @@ export const TransactionsTable = () => {
           </Button>
         </div>
       </div>
+
+      {isLoading && (
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-100 rounded-lg animate-pulse flex items-center">
+          <div className="w-2 h-2 bg-blue-500 rounded-full mr-3" />
+          <span className="text-blue-700 text-sm font-medium">Syncing with cloud database... This may take a moment for large datasets.</span>
+        </div>
+      )}
+
+      {isError && (
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-100 rounded-lg flex items-center justify-between">
+          <div className="flex items-center">
+            <div className="w-2 h-2 bg-amber-500 rounded-full mr-3" />
+            <span className="text-amber-700 text-sm font-medium">Running in Local Mode. Cloud sync is currently unavailable.</span>
+          </div>
+        </div>
+      )}
 
       {viewMode === 'table' ? (
         <>
@@ -121,6 +157,7 @@ export const TransactionsTable = () => {
                         onCellEdit={handleCellEdit}
                         onStartEdit={handleStartEdit}
                         onStopEdit={() => setEditingCell(null)}
+                        onDelete={(id) => setTransactionToDelete(id)}
                       />
                     ))}
                   </tbody>
@@ -162,6 +199,31 @@ export const TransactionsTable = () => {
           bulkUpdate({ ids: Array.from(selectedIds), updates });
         }}
       />
+
+      <AlertDialog open={!!transactionToDelete} onOpenChange={() => setTransactionToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Transaction?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this transaction? This action cannot be undone.
+              {transactionToDelete && (
+                <div className="mt-2 p-2 bg-muted rounded border border-border text-xs font-mono">
+                  {transactions.find(t => t.id === transactionToDelete)?.description}
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleSingleDelete}
+              className="bg-red-600 hover:bg-red-700 text-white border-red-600 focus:ring-red-600"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent>

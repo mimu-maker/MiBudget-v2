@@ -1,0 +1,1 @@
+ALTER TABLE merchant_rules ADD COLUMN skip_triage BOOLEAN DEFAULT FALSE;
