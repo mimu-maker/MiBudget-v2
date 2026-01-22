@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,9 +16,10 @@ import { Upload, FileText, Clipboard, AlertCircle, Archive, ArrowRight, CheckCir
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { processTransaction, MerchantRule } from '@/lib/importBrain';
-import { parseDate, parseAmount } from '@/lib/importUtils';
+import { getCachedRules, saveRulesCache } from '@/lib/rulesCache';
+import { parseDate, parseAmount, fuzzyMatchField, parseRecurringValue } from '@/lib/importUtils';
 import { useQuery } from '@tanstack/react-query';
-import { useSettings } from '@/hooks/useSettings';
+import { APP_STATUSES, useSettings } from '@/hooks/useSettings';
 import { MappingCard } from './MappingCard';
 
 interface UnifiedAddTransactionsDialogProps {
@@ -51,7 +52,7 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
         category: settings.categories[0] || 'Other',
         subCategory: '',
         planned: false,
-        recurring: false,
+        recurring: 'N/A', // Changed from boolean to string
         description: ''
     });
 
@@ -70,8 +71,16 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
     const [defaultAccount, setDefaultAccount] = useState<string>('');
     const [unknownAccounts, setUnknownAccounts] = useState<string[]>([]);
     const [accountResolutions, setAccountResolutions] = useState<Record<string, string>>({});
+    
+    // Progress tracking for bulk import
+    const [processingProgress, setProcessingProgress] = useState({
+        current: 0,
+        total: 0,
+        stage: 'idle' as 'idle' | 'parsing' | 'processing' | 'validating' | 'saving' | 'complete' | 'error'
+    });
 
     // Fetch rules
+    const cachedRules = getCachedRules();
     const { data: rulesData, error: rulesError, isError: isRulesError } = useQuery({
         queryKey: ['merchant_rules'],
         queryFn: async () => {
@@ -82,11 +91,14 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                 console.error("Supabase error fetching rules:", error);
                 throw error;
             }
+            if (data && data.length > 0) {
+                saveRulesCache(data as MerchantRule[]);
+            }
             return data || [];
         },
         retry: 1
     });
-    const rules = rulesData || [];
+    const rules = (rulesData && rulesData.length > 0) ? rulesData : cachedRules?.rules || [];
 
     // Reset state on open/close
     useEffect(() => {
@@ -126,7 +138,7 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                 category: settings.categories[0] || 'Other',
                 subCategory: '',
                 planned: false,
-                recurring: false,
+                recurring: 'N/A', // Changed from boolean to string
                 description: ''
             });
         } catch (err: any) {
@@ -169,23 +181,23 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                 setErrors([]);
 
                 const firstRow = rows[0];
+                console.log('CSV headers detected:', firstRow);
+                console.log('Transaction columns available:', transactionColumns);
+                
                 const hasHeadersDetected = firstRow.some(cell =>
                     transactionColumns.some(col =>
                         cell.toLowerCase().includes(col.toLowerCase())
                     )
                 );
+                
+                console.log('Headers detected?', hasHeadersDetected);
                 setHasHeaders(hasHeadersDetected);
 
                 if (hasHeadersDetected) {
                     const autoMapping: Record<string, string> = {};
                     const usedFields = new Set<string>();
                     firstRow.forEach((header, index) => {
-                        const normalizedHeader = header.toLowerCase().replace(/[^a-z]/g, '');
-                        const match = transactionColumns.find(col =>
-                            (col.toLowerCase().includes(normalizedHeader) ||
-                                normalizedHeader.includes(col.toLowerCase())) &&
-                            !usedFields.has(col)
-                        );
+                        const match = fuzzyMatchField(header, transactionColumns.filter(col => !usedFields.has(col)));
                         if (match) {
                             autoMapping[index.toString()] = match;
                             usedFields.add(match);
@@ -247,6 +259,34 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                         }
                     });
                     if (!transaction.account && defaultAccount) transaction.account = defaultAccount;
+                    if (!transaction.date) transaction.date = new Date().toISOString().split('T')[0];
+
+                    // Apply auto-categorization for preview
+                    const identificationString = (transaction.merchant || transaction.description || "").trim();
+                    if (identificationString) {
+                        const processed = processTransaction(identificationString, transaction.date, rules as MerchantRule[]);
+                        const suggestedCategory = processed.category || '';
+                        const suggestedSubCategory = processed.sub_category || '';
+
+                        if (suggestedCategory) {
+                            transaction[`suggested_category`] = suggestedCategory;
+                        }
+                        if (suggestedSubCategory) {
+                            transaction[`suggested_subCategory`] = suggestedSubCategory;
+                        }
+                        transaction.confidence = processed.confidence;
+
+                        const shouldApplyCategory = (!transaction.category || !trustCsvCategories) && suggestedCategory;
+                        const shouldApplySubCategory = (!transaction.subCategory || !trustCsvCategories) && suggestedSubCategory;
+
+                        if (shouldApplyCategory) {
+                            transaction.category = suggestedCategory;
+                        }
+                        if (shouldApplySubCategory) {
+                            transaction.subCategory = suggestedSubCategory;
+                        }
+                    }
+
                     return transaction;
                 });
 
@@ -296,6 +336,23 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
     const executeImport = async () => {
         setIsProcessing(true);
         setErrors([]);
+        
+        // Initialize progress tracking
+        setProcessingProgress({
+            current: 0,
+            total: 0,
+            stage: 'parsing'
+        });
+
+        // Add timeout protection - fail after 15 minutes for larger files
+        const timeoutId = setTimeout(() => {
+            setErrors(['Import timed out after 15 minutes. Please try again with a smaller file or check your network connection.']);
+            setProcessingProgress(prev => ({
+                ...prev,
+                stage: 'error'
+            }));
+            setIsProcessing(false);
+        }, 15 * 60 * 1000); // 15 minutes
 
         // Use a short delay to allow the processing animation to show
         setTimeout(async () => {
@@ -304,23 +361,59 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                 if (dataRows.length === 0) {
                     throw new Error("No data rows found to import.");
                 }
+                
+                // Update progress with total
+                setProcessingProgress({
+                    current: 0,
+                    total: dataRows.length,
+                    stage: 'processing'
+                });
+
+                // Ensure default accounts exist
+                const defaultAccounts = ['Fixed', 'Credit Card', 'Master'];
+                const availableAccounts = settings.accounts && settings.accounts.length > 0 ? settings.accounts : defaultAccounts;
+                
+                console.log('Available accounts for import:', availableAccounts);
+                console.log('Default account:', defaultAccount || availableAccounts[0]);
 
                 const importErrors: string[] = [];
                 const merchantColIdx = Object.entries(columnMapping).find(([_, f]) => f === 'merchant')?.[0];
 
-                const processedData = await Promise.all(dataRows.map(async (row, index) => {
+                // Process in smaller batches to avoid browser freezing
+                const batchSize = 50;
+                const processedData: any[] = [];
+                
+                for (let batchStart = 0; batchStart < dataRows.length; batchStart += batchSize) {
+                    const batchEnd = Math.min(batchStart + batchSize, dataRows.length);
+                    const batch = dataRows.slice(batchStart, batchEnd);
+                    
+                    const batchProcessed = await Promise.all(batch.map(async (row, index) => {
+                        const actualIndex = batchStart + index;
+                    // Update progress every 10 transactions
+                    if (actualIndex % 10 === 0) {
+                        setProcessingProgress(prev => ({
+                            ...prev,
+                            current: actualIndex + 1,
+                            stage: 'processing'
+                        }));
+                    }
+                    
+                    // Ensure default accounts exist
+                    const defaultAccounts = ['Fixed', 'Credit Card', 'Master'];
+                    const availableAccounts = settings.accounts && settings.accounts.length > 0 ? settings.accounts : defaultAccounts;
+                    
                     const transaction: any = {
                         id: crypto.randomUUID(), // Use robust UUIDs
                         date: new Date().toISOString().split('T')[0],
                         merchant: '',
                         amount: 0,
-                        account: defaultAccount,
-                        status: 'New',
+                        account: defaultAccount || availableAccounts[0] || 'Master',
+                        status: 'Pending', // Default to Pending, not Complete
                         budget: 'Budgeted',
                         category: 'Other',
                         subCategory: '',
                         planned: false,
-                        recurring: false,
+                        recurring: 'N/A', // Changed from boolean to string
                         description: ''
                     };
 
@@ -337,10 +430,29 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                                 transaction[transactionField] = parsed || 0;
                             } else if (transactionField === 'date') {
                                 const parsed = parseDate(value);
+                                console.log(`Parsing date: "${value}" -> "${parsed}"`);
                                 if (parsed === null) {
+                                    console.error(`Failed to parse date: "${value}"`);
                                     if (importErrors.length < 10) importErrors.push(`Row ${index + 1}: Invalid date format "${value}"`);
                                 }
                                 transaction[transactionField] = parsed || transaction.date;
+                            } else if (transactionField === 'planned') {
+                                // Handle boolean field for planned only
+                                const truthyValues = ['yes', 'y', 'true', '1', 'on', 'checked', 'x'];
+                                const falsyValues = ['no', 'n', 'false', '0', 'off', 'unchecked', ''];
+                                const cleanValue = value?.toString().toLowerCase().trim();
+                                
+                                if (truthyValues.includes(cleanValue)) {
+                                    transaction[transactionField] = true;
+                                } else if (falsyValues.includes(cleanValue)) {
+                                    transaction[transactionField] = false;
+                                } else {
+                                    // If it's not a clear boolean, try to parse as boolean
+                                    transaction[transactionField] = Boolean(cleanValue) && cleanValue !== 'false';
+                                }
+                            } else if (transactionField === 'recurring') {
+                                // Handle recurring as string field
+                                transaction[transactionField] = parseRecurringValue(value);
                             } else {
                                 transaction[transactionField] = value || '';
                             }
@@ -351,58 +463,185 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                     const rawAccount = transaction.account || "";
                     if (rawAccount && accountResolutions[rawAccount]) {
                         transaction.account = accountResolutions[rawAccount];
-                    } else if (!rawAccount || !settings.accounts.includes(rawAccount)) {
-                        transaction.account = defaultAccount || settings.accounts[0] || 'Master';
+                    } else if (!rawAccount || !availableAccounts.includes(rawAccount)) {
+                        transaction.account = defaultAccount || availableAccounts[0] || 'Master';
                     }
 
+                    // Validate and map category/sub-category to dropdown choices
+                    if (transaction.category && !settings.categories.includes(transaction.category)) {
+                        console.warn(`Invalid category "${transaction.category}" - not in dropdown options`);
+                        // Try fuzzy match to existing categories
+                        const categoryMatch = fuzzyMatchField(transaction.category, settings.categories, 0.5);
+                        if (categoryMatch) {
+                            transaction.category = categoryMatch;
+                            console.log(`Fuzzy matched category: "${transaction.category}" -> "${categoryMatch}"`);
+                        } else {
+                            transaction.category = 'Other'; // Fallback to default
+                            console.log(`Category "${transaction.category}" not found, using "Other"`);
+                        }
+                    }
+                    
+                    if (transaction.subCategory && transaction.subCategory.trim()) {
+                        // For sub-category, we don't have a predefined list, so keep as-is but clean it
+                        transaction.subCategory = transaction.subCategory.trim();
+                    }
+                    
+                    // Validate budget against available budget options
+                    const budgetOptions = settings.budgetTypes || ['Budgeted', 'Special', 'Klintemarken', 'Exclude'];
+                    if (transaction.budget && !budgetOptions.includes(transaction.budget)) {
+                        const budgetMatch = fuzzyMatchField(transaction.budget, budgetOptions, 0.6);
+                        if (budgetMatch) {
+                            transaction.budget = budgetMatch;
+                        } else {
+                            transaction.budget = 'Budgeted'; // Fallback
+                        }
+                    }
+                    
+                    // Validate status against available status options
+                    const statusOptions = ['Complete', 'Pending', 'New', 'Reconciled'];
+                    if (transaction.status && !statusOptions.includes(transaction.status)) {
+                        const statusMatch = fuzzyMatchField(transaction.status, statusOptions, 0.6);
+                        if (statusMatch) {
+                            transaction.status = statusMatch;
+                        } else {
+                            transaction.status = 'Pending'; // Fallback to Pending
+                        }
+                    }
+                    
                     // CRITICAL: use 'merchant' field for processing rules, fallback to 'description'
                     const identificationString = (transaction.merchant || transaction.description || "").trim();
                     let processed = processTransaction(identificationString, transaction.date, rules as MerchantRule[]);
 
-                    if (trustCsvCategories && transaction.category) {
-                        processed = { ...processed, category: transaction.category, sub_category: transaction.subCategory || processed.sub_category };
+                    // Only override CSV values if trustCsvCategories is FALSE (meaning we want AI categorization)
+                    // If CSV has valid categories and trustCsvCategories is true, keep them
+                    if (!trustCsvCategories || !transaction.category) {
+                        processed.category = processed.category || transaction.category || 'Other';
+                    } else {
+                        processed.category = transaction.category; // Keep CSV category
                     }
-                    return { ...transaction, ...processed };
-                }));
+                    
+                    // Map sub-category properly - processed uses sub_category, transaction uses subCategory
+                    if (!trustCsvCategories || !transaction.subCategory) {
+                        // Use AI processed sub_category if available, otherwise keep CSV value
+                        transaction.subCategory = processed.sub_category || transaction.subCategory || '';
+                    } else {
+                        // Keep CSV sub-category, ignore AI processed one
+                        transaction.subCategory = transaction.subCategory;
+                    }
+                    
+                    // Remove the processed sub_category to avoid conflicts in the merge
+                    const { sub_category, ...processedWithoutSubCategory } = processed;
+                    
+                    return { ...transaction, ...processedWithoutSubCategory };
+                    }));
+                    
+                    processedData.push(...batchProcessed);
+                    
+                    // Update progress for this batch
+                    setProcessingProgress(prev => ({
+                        ...prev,
+                        current: batchEnd,
+                        stage: 'processing'
+                    }));
+                    
+                    // Small delay to allow UI updates
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
 
                 if (importErrors.length > 0) {
-                    setErrors(importErrors);
-                    setIsProcessing(false);
-                    return;
+                    console.warn('Import warnings:', importErrors);
+                    // Don't block import for warnings, just log them
+                    setErrors([]); // Clear errors so import can proceed
                 }
 
                 if (processedData.length === 0) {
                     throw new Error("Processing failed: No transactions generated.");
                 }
 
+                // Update progress for validation
+                setProcessingProgress(prev => ({
+                    ...prev,
+                    current: prev.total,
+                    stage: 'validating'
+                }));
+
                 // Final safety check: try to call onImport and catch any internal errors
                 try {
                     console.log(`Importing ${processedData.length} transactions...`);
+                    
+                    // Update progress for saving
+                    setProcessingProgress(prev => ({
+                        ...prev,
+                        current: prev.total,
+                        stage: 'saving'
+                    }));
+                    
                     await onImport(processedData);
                     console.log("Import successful!");
-                    onOpenChange(false);
+                    
+                    // Mark as complete and show success screen
+                    setProcessingProgress(prev => ({
+                        ...prev,
+                        stage: 'complete'
+                    }));
+                    
+                    // Don't close immediately - show success screen
+                    setTimeout(() => {
+                        onOpenChange(false);
+                    }, 3000); // Show success for 3 seconds
                 } catch (importFnError: any) {
                     console.error("onImport failed:", importFnError);
                     setErrors([`Database error: ${importFnError.message || "Failed to save transactions"}`]);
+                    
+                    // Mark as error
+                    setProcessingProgress(prev => ({
+                        ...prev,
+                        stage: 'error'
+                    }));
                 }
 
             } catch (err: any) {
                 console.error("Import execution failed:", err);
                 setErrors([`Execution error: ${err.message || "An unexpected error occurred during import"}`]);
+                
+                // Mark as error
+                setProcessingProgress(prev => ({
+                    ...prev,
+                    stage: 'error'
+                }));
             } finally {
+                // Clear the timeout
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                }
                 setIsProcessing(false);
             }
         }, 300); // 300ms delay to ensure UI transition is smooth
     };
 
-    const handleResolutionSave = () => {
+    const handleResolutionSave = async () => {
         console.log("Saving account resolutions:", accountResolutions);
+        
+        // Ensure default accounts exist
+        const defaultAccounts = ['Fixed', 'CC', 'Master', 'Joint'];
+        const availableAccounts = settings.accounts && settings.accounts.length > 0 ? settings.accounts : defaultAccounts;
+        
+        // Add all missing accounts
+        const accountsToAdd: string[] = [];
         Object.values(accountResolutions).forEach(targetAcc => {
-            if (!settings.accounts.includes(targetAcc)) {
+            if (!availableAccounts.includes(targetAcc)) {
                 console.log(`Adding new account to settings: ${targetAcc}`);
                 addItem('accounts', targetAcc);
+                accountsToAdd.push(targetAcc);
             }
         });
+        
+        // Wait a moment for settings to update if we added accounts
+        if (accountsToAdd.length > 0) {
+            console.log('Waiting for settings to update...');
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
         executeImport();
     };
 
@@ -411,7 +650,15 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
             <DialogContent className={cn("bg-slate-50 transition-all duration-300", mode === 'import' && step > 1 ? "w-[95vw] max-w-7xl max-h-[95vh] overflow-y-auto" : "max-w-2xl")}>
                 <DialogHeader>
                     <div className="flex items-center justify-between">
-                        <DialogTitle className="text-2xl font-semibold">{mode === 'entry' ? 'Add New Transaction' : 'Import Transactions'}</DialogTitle>
+                        <div>
+                            <DialogTitle className="text-2xl font-semibold">{mode === 'entry' ? 'Add New Transaction' : 'Import Transactions'}</DialogTitle>
+                            <DialogDescription>
+                                {mode === 'entry' 
+                                    ? 'Add a new transaction manually with all required details.'
+                                    : 'Import transactions from a CSV file and map the columns.'
+                                }
+                            </DialogDescription>
+                        </div>
                         {mode === 'import' && <div className="text-sm text-slate-500">Step {step} of 4</div>}
                     </div>
                     {errors.length > 0 && (
@@ -510,12 +757,22 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                                     <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
                                         <div className="space-y-0.5">
                                             <Label className="text-sm font-bold text-slate-700">Recurring</Label>
-                                            <p className="text-[10px] text-slate-400 font-medium">Does this repeat?</p>
+                                            <p className="text-[10px] text-slate-400 font-medium">Frequency?</p>
                                         </div>
-                                        <Switch
-                                            checked={formData.recurring}
-                                            onCheckedChange={(v) => setFormData(p => ({ ...p, recurring: v }))}
-                                        />
+                                        <Select value={formData.recurring} onValueChange={(v) => setFormData(p => ({ ...p, recurring: v }))}>
+                                            <SelectTrigger className="w-32">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="Annually">Annually</SelectItem>
+                                                <SelectItem value="Bi-annually">Bi-annually</SelectItem>
+                                                <SelectItem value="Quarterly">Quarterly</SelectItem>
+                                                <SelectItem value="Monthly">Monthly</SelectItem>
+                                                <SelectItem value="Weekly">Weekly</SelectItem>
+                                                <SelectItem value="One-off">One-off</SelectItem>
+                                                <SelectItem value="N/A">N/A</SelectItem>
+                                            </SelectContent>
+                                        </Select>
                                     </div>
                                 </div>
 
@@ -667,19 +924,37 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                                             <tbody>
                                                 {preview.map((row, i) => (
                                                     <tr key={`row-${i}`} className="border-b last:border-0 border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                                        {Object.entries(columnMapping).map(([idx, col]) => (
-                                                            <td key={`${idx}-${col}`} className="p-4 font-medium text-slate-700">
-                                                                {col === 'amount' ? (
-                                                                    <span className={cn("font-bold", row[col] < 0 ? "text-red-500" : "text-emerald-500")}>
-                                                                        {row[col] !== null ? row[col].toLocaleString('da-DK', { style: 'currency', currency: settings.currency || 'DKK' }) : 'Invalid'}
-                                                                    </span>
-                                                                ) : col === 'date' ? (
-                                                                    <span className={cn(!row[col] && "text-red-500 font-bold")}>
-                                                                        {row[col] ? format(new Date(row[col]), 'dd-MM-yyyy') : 'Invalid Date'}
-                                                                    </span>
-                                                                ) : row[col]}
-                                                            </td>
-                                                        ))}
+                                                        {Object.entries(columnMapping).map(([idx, col]) => {
+                                                            const isCategory = col === 'category' || col === 'subCategory';
+                                                            const hasSuggestion = isCategory && row[`suggested_${col}`] && row[`suggested_${col}`] !== row[col];
+                                                            
+                                                            return (
+                                                                <td key={`${idx}-${col}`} className="p-4 font-medium text-slate-700">
+                                                                    {col === 'amount' ? (
+                                                                        <span className={cn("font-bold", row[col] < 0 ? "text-red-500" : "text-emerald-500")}>
+                                                                            {row[col] !== null ? row[col].toLocaleString('da-DK', { style: 'currency', currency: settings.currency || 'DKK' }) : 'Invalid'}
+                                                                        </span>
+                                                                    ) : col === 'date' ? (
+                                                                        <span className={cn(!row[col] && "text-red-500 font-bold")}>
+                                                                            {row[col] ? format(new Date(row[col]), 'dd-MM-yyyy') : 'Invalid Date'}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <div className="flex flex-col">
+                                                                            <span>{row[col] || '-'}</span>
+                                                                            {hasSuggestion && (
+                                                                                <span className="text-xs text-blue-600 mt-1 flex items-center">
+                                                                                    <span className="inline-block w-2 h-2 rounded-full bg-blue-300 mr-1"></span>
+                                                                                    {row[`suggested_${col}`]}
+                                                                                    <span className="text-xs text-blue-400 ml-1">
+                                                                                        ({Math.round((row.confidence || 0) * 100)}%)
+                                                                                    </span>
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                            );
+                                                        })}
                                                         {!Object.values(columnMapping).includes('account') && <td key="cell-account" className="p-4 text-slate-500 italic">{defaultAccount}</td>}
                                                     </tr>
                                                 ))}
@@ -740,8 +1015,66 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                             <Loader2 className="h-16 w-16 text-blue-600 animate-spin absolute" />
                             <FileText className="h-6 w-6 text-blue-400 animate-pulse" />
                         </div>
-                        <p className="text-xl font-bold bg-gradient-to-r from-blue-700 to-indigo-800 bg-clip-text text-transparent animate-pulse mt-4">Analyzing Data...</p>
-                        <p className="text-slate-400 text-sm font-medium">This will only take a moment</p>
+                        
+                        {/* Progress Display */}
+                        <div className="text-center mt-4 space-y-2">
+                            <p className="text-xl font-bold bg-gradient-to-r from-blue-700 to-indigo-800 bg-clip-text text-transparent">
+                                {processingProgress.stage === 'parsing' && 'Parsing Data...'}
+                                {processingProgress.stage === 'processing' && `Processing Transactions: ${processingProgress.current}/${processingProgress.total}`}
+                                {processingProgress.stage === 'validating' && 'Validating Data...'}
+                                {processingProgress.stage === 'saving' && 'Saving Transactions...'}
+                                {processingProgress.stage === 'complete' && 'Import Complete!'}
+                                {processingProgress.stage === 'error' && 'Error Occurred'}
+                            </p>
+                            
+                            {/* Progress Bar */}
+                            {processingProgress.total > 0 && (
+                                <div className="w-64 bg-gray-200 rounded-full h-2 mx-auto">
+                                    <div 
+                                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                        style={{ width: `${(processingProgress.current / processingProgress.total) * 100}%` }}
+                                    />
+                                </div>
+                            )}
+                            
+                            {/* Additional Details */}
+                            <div className="text-sm text-slate-600 space-y-1">
+                                {processingProgress.stage === 'processing' && (
+                                    <p>Processing {processingProgress.total} transactions...</p>
+                                )}
+                                {processingProgress.stage === 'complete' && (
+                                    <div className="space-y-2">
+                                        <p className="text-green-600 font-medium">
+                                            ✅ Successfully imported {processingProgress.total} transactions!
+                                        </p>
+                                        <p className="text-xs text-slate-500">
+                                            Dialog will close automatically in 3 seconds...
+                                        </p>
+                                    </div>
+                                )}
+                                {processingProgress.stage === 'error' && (
+                                    <div className="space-y-2">
+                                        <p className="text-red-600 font-medium">
+                                            ❌ Import failed
+                                        </p>
+                                        <p className="text-xs text-slate-500">
+                                            Check console for error details
+                                        </p>
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
+                                            onClick={() => setIsProcessing(false)}
+                                            className="mt-2"
+                                        >
+                                            Close and Try Again
+                                        </Button>
+                                    </div>
+                                )}
+                                {processingProgress.stage !== 'complete' && processingProgress.stage !== 'error' && (
+                                    <p className="text-slate-400">This will only take a moment</p>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 )}
 

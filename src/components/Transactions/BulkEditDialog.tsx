@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Transaction } from './hooks/useTransactionTable';
+import { useSettings } from '@/hooks/useSettings';
 
 interface BulkEditDialogProps {
     open: boolean;
@@ -21,6 +22,7 @@ export const BulkEditDialog = ({
     onApply,
     selectedCount,
 }: BulkEditDialogProps) => {
+    const { settings, addSubCategory } = useSettings();
     const [enabledFields, setEnabledFields] = useState<Record<string, boolean>>({
         status: false,
         budget: false,
@@ -38,13 +40,29 @@ export const BulkEditDialog = ({
         category: '',
         subCategory: '',
         planned: false,
-        recurring: false,
+        recurring: 'N/A', // Changed from boolean to string
         merchant: '',
         description: '',
     });
 
     const handleToggleField = (field: string) => {
         setEnabledFields(prev => ({ ...prev, [field]: !prev[field] }));
+    };
+
+    const handleCategoryChange = (newCategory: string) => {
+        setValues(prev => ({ ...prev, category: newCategory, subCategory: '' }));
+    };
+
+    const handleSubCategoryChange = (newValue: string) => {
+        if (newValue === 'add-new') {
+            const newSubCategory = prompt('Enter new sub-category:');
+            if (newSubCategory && values.category) {
+                addSubCategory(values.category, newSubCategory);
+                setValues(prev => ({ ...prev, subCategory: newSubCategory }));
+            }
+        } else {
+            setValues(prev => ({ ...prev, subCategory: newValue }));
+        }
     };
 
     const handleApply = () => {
@@ -164,13 +182,20 @@ export const BulkEditDialog = ({
                             />
                             <div className="grid flex-1 gap-1.5">
                                 <Label htmlFor="category">Category</Label>
-                                <Input
-                                    id="category"
+                                <Select
                                     disabled={!enabledFields.category}
                                     value={values.category}
-                                    onChange={(e) => setValues({ ...values, category: e.target.value })}
-                                    placeholder="e.g. Food"
-                                />
+                                    onValueChange={handleCategoryChange}
+                                >
+                                    <SelectTrigger id="category">
+                                        <SelectValue placeholder="Select category" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {settings.categories.map(cat => (
+                                            <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                         </div>
 
@@ -183,13 +208,25 @@ export const BulkEditDialog = ({
                             />
                             <div className="grid flex-1 gap-1.5">
                                 <Label htmlFor="subCategory">Sub-category</Label>
-                                <Input
-                                    id="subCategory"
-                                    disabled={!enabledFields.subCategory}
+                                <Select
+                                    disabled={!enabledFields.subCategory || !values.category}
                                     value={values.subCategory}
-                                    onChange={(e) => setValues({ ...values, subCategory: e.target.value })}
-                                    placeholder="e.g. Groceries"
-                                />
+                                    onValueChange={handleSubCategoryChange}
+                                >
+                                    <SelectTrigger id="subCategory">
+                                        <SelectValue placeholder={values.category ? "Select sub-category" : "Select a category first"} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {settings.subCategories?.[values.category || '']?.map(sub => (
+                                            <SelectItem key={sub} value={sub}>{sub}</SelectItem>
+                                        ))}
+                                        {values.category && (
+                                            <SelectItem value="add-new" className="text-blue-600 font-medium">
+                                                + Add New Sub-category
+                                            </SelectItem>
+                                        )}
+                                    </SelectContent>
+                                </Select>
                             </div>
                         </div>
 
@@ -217,14 +254,26 @@ export const BulkEditDialog = ({
                                 checked={enabledFields.recurring}
                                 onCheckedChange={() => handleToggleField('recurring')}
                             />
-                            <div className="flex items-center space-x-2">
-                                <Checkbox
-                                    id="recurring"
+                            <div className="grid flex-1 gap-1.5">
+                                <Label htmlFor="recurring">Recurring</Label>
+                                <Select
                                     disabled={!enabledFields.recurring}
-                                    checked={values.recurring}
-                                    onCheckedChange={(v) => setValues({ ...values, recurring: !!v })}
-                                />
-                                <Label htmlFor="recurring">Recurring transaction</Label>
+                                    value={values.recurring}
+                                    onValueChange={(v) => setValues({ ...values, recurring: v })}
+                                >
+                                    <SelectTrigger id="recurring">
+                                        <SelectValue placeholder="Select frequency" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="Annually">Annually</SelectItem>
+                                        <SelectItem value="Bi-annually">Bi-annually</SelectItem>
+                                        <SelectItem value="Quarterly">Quarterly</SelectItem>
+                                        <SelectItem value="Monthly">Monthly</SelectItem>
+                                        <SelectItem value="Weekly">Weekly</SelectItem>
+                                        <SelectItem value="One-off">One-off</SelectItem>
+                                        <SelectItem value="N/A">N/A</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </div>
                         </div>
                     </div>

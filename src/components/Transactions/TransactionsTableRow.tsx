@@ -149,11 +149,13 @@ export const TransactionsTableRow = ({
         />
       </td>
       <td className="py-3 px-2 text-center">
-        <input
-          type="checkbox"
-          checked={transaction.excluded || false}
-          onChange={(e) => onCellEdit(transaction.id, 'excluded', e.target.checked)}
-          className="rounded border-input bg-background text-primary focus:ring-ring"
+        <EditableCell
+          transaction={transaction}
+          field="excluded"
+          isEditing={isEditing('excluded')}
+          onEdit={onCellEdit}
+          onStartEdit={onStartEdit}
+          onStopEdit={onStopEdit}
         />
       </td>
       <td className="py-3 px-2 text-center">

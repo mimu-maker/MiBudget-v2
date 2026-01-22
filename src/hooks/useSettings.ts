@@ -43,7 +43,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     },
     subCategoryBudgets: {},
     balancingSubCategory: { category: 'Savings', subCategory: 'Investments' },
-    accounts: ['Master', 'Joint', 'Savings', 'Investment'],
+    accounts: ['Fixed', 'CC', 'Master', 'Joint'],
     budgetTypes: ['Budgeted', 'Special', 'Klintemarken', 'Exclude'],
     currency: 'DKK',
     darkMode: false,

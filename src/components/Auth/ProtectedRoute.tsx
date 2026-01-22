@@ -1,17 +1,21 @@
 import React from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import SignInScreen from './SignInScreen';
+import { useUnifiedAuth } from '@/contexts/UnifiedAuthContext';
+import SignInScreen from '@/components/Auth/SignInScreen';
+import UserSetup from '@/components/Auth/UserSetup';
+import { LocalLogin } from './LocalLogin';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { user, userProfile, loading, isLocalAuth } = useUnifiedAuth();
   const bypass = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
 
   console.log('🧪 [ProtectedRoute] bypass?', bypass);
+  console.log('🧪 [ProtectedRoute] isLocalAuth?', isLocalAuth);
   console.log('🧪 [ProtectedRoute] user?', user);
+  console.log('🧪 [ProtectedRoute] userProfile?', userProfile);
 
   if (bypass) {
     return <>{children}</>;
@@ -26,9 +30,16 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }
 
   if (!user) {
+    if (isLocalAuth) {
+      return <LocalLogin />;
+    }
     return <SignInScreen />;
   }
 
+  // Completely bypass UserSetup for simplified implementation
+  // Users go directly to main app after authentication
+  // No setup screens should ever show for Michael and Tanja
+  
   return <>{children}</>;
 };
 

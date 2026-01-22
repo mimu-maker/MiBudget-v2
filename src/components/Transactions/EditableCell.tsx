@@ -24,16 +24,17 @@ export const EditableCell = ({
   onStartEdit,
   onStopEdit
 }: EditableCellProps) => {
-  const { settings } = useSettings();
+  const { settings, addSubCategory } = useSettings();
   const value = transaction[field];
 
   if (isEditing) {
-    if (field === 'account' || field === 'status' || field === 'budget' || field === 'category') {
+    if (field === 'account' || field === 'status' || field === 'budget' || field === 'category' || field === 'subCategory') {
       const options = {
         account: settings.accounts,
         status: APP_STATUSES,
         budget: settings.budgetTypes,
-        category: settings.categories
+        category: settings.categories,
+        subCategory: settings.subCategories?.[transaction.category] || []
       };
 
       const handleStatusChange = (newStatus: string) => {
@@ -47,6 +48,27 @@ export const EditableCell = ({
         }
       };
 
+      // Handle category change - clear sub-category when category changes
+      const handleCategoryChange = (newCategory: string) => {
+        onEdit(transaction.id, 'category', newCategory);
+        // Clear sub-category when category changes
+        onEdit(transaction.id, 'subCategory', '');
+      };
+
+      // Handle sub-category change with "+ New" option
+      const handleSubCategoryChange = (newValue: string) => {
+        if (newValue === 'add-new') {
+          const newSubCategory = prompt('Enter new sub-category:');
+          if (newSubCategory && transaction.category) {
+            // Add the new sub-category to settings
+            addSubCategory(transaction.category, newSubCategory);
+            onEdit(transaction.id, 'subCategory', newSubCategory);
+          }
+        } else {
+          onEdit(transaction.id, 'subCategory', newValue);
+        }
+      };
+
       // Ensure that 'Pending: John' matches 'Pending Person/Event' in the Select value
       const displayValue = field === 'status' && String(value).startsWith('Pending: ')
         ? 'Pending Person/Event'
@@ -55,26 +77,59 @@ export const EditableCell = ({
       return (
         <Select
           value={displayValue}
-          onValueChange={(newValue) => field === 'status' ? handleStatusChange(newValue) : onEdit(transaction.id, field, newValue)}
+          onValueChange={(newValue) => {
+            if (field === 'status') {
+              handleStatusChange(newValue);
+            } else if (field === 'category') {
+              handleCategoryChange(newValue);
+            } else if (field === 'subCategory') {
+              handleSubCategoryChange(newValue);
+            } else {
+              onEdit(transaction.id, field, newValue);
+            }
+          }}
           onOpenChange={(open) => !open && onStopEdit()}
+          disabled={field === 'subCategory' && !transaction.category}
         >
           <SelectTrigger className="h-8">
-            <SelectValue />
+            <SelectValue placeholder={field === 'subCategory' && !transaction.category ? "Select a category first" : "Select..."} />
           </SelectTrigger>
           <SelectContent>
             {options[field].map(option => (
               <SelectItem key={option} value={option}>{option}</SelectItem>
             ))}
+            {field === 'subCategory' && transaction.category && (
+              <SelectItem value="add-new" className="text-blue-600 font-medium">
+                + Add New Sub-category
+              </SelectItem>
+            )}
           </SelectContent>
         </Select>
       );
-    } else if (field === 'planned' || field === 'recurring') {
+    } else if (field === 'excluded' || field === 'planned') {
       return (
         <Switch
           checked={Boolean(value)}
           onCheckedChange={(checked) => onEdit(transaction.id, field, checked)}
           className="data-[state=checked]:bg-emerald-500"
         />
+      );
+    } else if (field === 'recurring') {
+      return (
+        <Select value={String(value)} onValueChange={(newValue) => onEdit(transaction.id, field, newValue)}>
+          <SelectTrigger className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Annually">Annually</SelectItem>
+            <SelectItem value="Bi-annually">Bi-annually</SelectItem>
+            <SelectItem value="Quarterly">Quarterly</SelectItem>
+            <SelectItem value="Monthly">Monthly</SelectItem>
+            <SelectItem value="Weekly">Weekly</SelectItem>
+            <SelectItem value="One-off">One-off</SelectItem>
+            <SelectItem value="N/A">N/A</SelectItem>
+          </SelectContent>
+        </Select>
       );
     } else {
       return (
@@ -106,9 +161,13 @@ export const EditableCell = ({
         <Badge variant={getStatusBadgeVariant(String(value))}>{String(value)}</Badge>
       ) : field === 'budget' ? (
         <Badge variant={getBudgetBadgeVariant(String(value))}>{String(value)}</Badge>
-      ) : (field === 'planned' || field === 'recurring') ? (
+      ) : (field === 'planned' || field === 'excluded') ? (
         <Badge variant={Boolean(value) ? 'default' : 'outline'}>
           {Boolean(value) ? 'Yes' : 'No'}
+        </Badge>
+      ) : field === 'recurring' ? (
+        <Badge variant={value === 'N/A' ? 'outline' : 'default'}>
+          {String(value)}
         </Badge>
       ) : (
         String(value || '')

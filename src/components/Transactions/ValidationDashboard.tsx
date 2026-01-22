@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Check, X, Search, AlertCircle, HelpCircle, Save, ArrowRight, Zap, RefreshCw, Calendar, ExternalLink, MoreVertical, Info } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Check, X, Search, AlertCircle, HelpCircle, Save, ArrowRight, Zap, RefreshCw, Calendar, ExternalLink, MoreVertical, Info, Store } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
@@ -42,6 +43,21 @@ export const ValidationDashboard = () => {
         }
     });
 
+    // 2. Fetch transactions without clean merchant names
+    const { data: merchantsNeedingRules = [] } = useQuery({
+        queryKey: ['transactions', 'no-clean-merchant'],
+        queryFn: async () => {
+            const { data } = await supabase
+                .from('transactions')
+                .select('*')
+                .or('clean_merchant.is.null,clean_merchant.eq."",clean_merchant.eq." "')
+                .neq('budget', 'Exclude')
+                .or('excluded.is.null,excluded.eq.false')
+                .order('date', { ascending: false });
+            return data || [];
+        }
+    });
+
     // 2. Separate into the three requested buckets
     const confirmedItems = useMemo(() =>
         transactions.filter(tx => tx.status === 'Verified'),
@@ -66,6 +82,17 @@ export const ValidationDashboard = () => {
         return groups;
     }, [triageNoIdeaItems]);
 
+    // Group merchants needing rules by raw merchant name
+    const groupedMerchantsNeedingRules = useMemo(() => {
+        const groups: Record<string, any[]> = {};
+        merchantsNeedingRules.forEach(tx => {
+            const name = tx.merchant || 'Unknown Merchant';
+            if (!groups[name]) groups[name] = [];
+            groups[name].push(tx);
+        });
+        return groups;
+    }, [merchantsNeedingRules]);
+
     const updateMutation = useMutation({
         mutationFn: async ({ id, updates }: { id: string, updates: any }) => {
             const { error } = await supabase
@@ -76,6 +103,7 @@ export const ValidationDashboard = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions', 'no-clean-merchant'] });
         }
     });
 
@@ -89,6 +117,7 @@ export const ValidationDashboard = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions', 'no-clean-merchant'] });
         }
     });
 
@@ -105,6 +134,8 @@ export const ValidationDashboard = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['merchant_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions', 'no-clean-merchant'] });
             setRuleDialogOpen(false);
         }
     });
@@ -222,109 +253,176 @@ export const ValidationDashboard = () => {
     );
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8 h-[calc(100vh-140px)] p-2">
-            {/* Left Column: Triage (Two Sections) */}
-            <div className="flex flex-col gap-6 h-full overflow-hidden">
-                {/* 1. Triage - Merchant Matches (Smart Matches) */}
-                <Card className="flex flex-col h-[40%] border-blue-200 shadow-sm overflow-hidden">
-                    <CardHeader className="py-3 bg-blue-50/50 border-b">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <CardTitle className="text-base flex items-center gap-2 text-blue-800">
-                                    <Zap className="w-4 h-4 text-blue-500" />
-                                    Smart Matches ({triageReviewItems.length})
-                                </CardTitle>
-                            </div>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="flex-1 overflow-y-auto p-3 space-y-3">
-                        {triageReviewItems.map(tx => <TransactionCard key={tx.id} tx={tx} type="review" />)}
-                        {triageReviewItems.length === 0 && (
-                            <div className="flex flex-col items-center justify-center h-full text-slate-400 italic py-8">
-                                <Check className="w-10 h-10 mb-2 opacity-10" />
-                                <p className="text-sm">No smart matches to review</p>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* 2. Unidentified Merchants */}
-                <Card className="flex flex-col h-[60%] border-amber-200 shadow-sm overflow-hidden">
-                    <CardHeader className="py-3 bg-amber-50/50 border-b">
-                        <CardTitle className="text-base flex items-center gap-2 text-amber-800">
-                            <HelpCircle className="w-4 h-4 text-amber-500" />
-                            Merchant Triage ({Object.keys(groupedNoIdea).length} groups)
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex-1 overflow-y-auto p-4 space-y-6">
-                        {Object.entries(groupedNoIdea).map(([merchant, txs]) => (
-                            <div key={merchant} className="space-y-3 p-4 bg-white border rounded-xl shadow-sm border-slate-200 animate-in fade-in duration-300">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <h4 className="font-black text-slate-900 leading-none">{merchant}</h4>
-                                            <Badge variant="outline" className="h-4 px-1 text-[9px] font-bold border-slate-200 bg-slate-50">{txs.length} tx</Badge>
+        <>
+            <Tabs defaultValue="validation" className="h-full">
+                <TabsList className="grid w-full grid-cols-2 mb-4">
+                    <TabsTrigger value="validation">Validation</TabsTrigger>
+                    <TabsTrigger value="merchants">Merchants</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="validation" className="h-full mt-0">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8 h-[calc(100vh-200px)] p-2">
+                        {/* Left Column: Triage (Two Sections) */}
+                        <div className="flex flex-col gap-6 h-full overflow-hidden">
+                            {/* 1. Triage - Merchant Matches (Smart Matches) */}
+                            <Card className="flex flex-col h-[40%] border-blue-200 shadow-sm overflow-hidden">
+                                <CardHeader className="py-3 bg-blue-50/50 border-b">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <CardTitle className="text-base flex items-center gap-2 text-blue-800">
+                                                <Zap className="w-4 h-4 text-blue-500" />
+                                                Smart Matches ({triageReviewItems.length})
+                                            </CardTitle>
                                         </div>
-                                        <SearchLink name={merchant} />
                                     </div>
-                                    <Button
-                                        size="sm"
-                                        className="h-8 bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-lg shadow-blue-100"
-                                        onClick={() => openRuleDialog(merchant, txs)}
-                                    >
-                                        <Save className="w-4 h-4" /> Save Rule
-                                    </Button>
-                                </div>
+                                </CardHeader>
+                                <CardContent className="flex-1 overflow-y-auto p-3 space-y-3">
+                                    {triageReviewItems.map(tx => <TransactionCard key={tx.id} tx={tx} type="review" />)}
+                                    {triageReviewItems.length === 0 && (
+                                        <div className="flex flex-col items-center justify-center h-full text-slate-400 italic py-8">
+                                            <Check className="w-10 h-10 mb-2 opacity-10" />
+                                            <p className="text-sm">No smart matches to review</p>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
 
-                                <div className="space-y-2 pt-2 border-t border-slate-50">
-                                    {txs.map(tx => (
-                                        <div key={tx.id} className="flex items-center justify-between text-xs p-1 px-2 hover:bg-slate-50 rounded-md transition-colors">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-slate-400 font-mono">{tx.date}</span>
-                                                <span className="text-slate-700 font-medium truncate max-w-[120px]">{tx.description || 'No description'}</span>
+                            {/* 2. Unidentified Merchants */}
+                            <Card className="flex flex-col h-[60%] border-amber-200 shadow-sm overflow-hidden">
+                                <CardHeader className="py-3 bg-amber-50/50 border-b">
+                                    <CardTitle className="text-base flex items-center gap-2 text-amber-800">
+                                        <HelpCircle className="w-4 h-4 text-amber-500" />
+                                        Merchant Triage ({Object.keys(groupedNoIdea).length} groups)
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="flex-1 overflow-y-auto p-4 space-y-6">
+                                    {Object.entries(groupedNoIdea).map(([merchant, txs]) => (
+                                        <div key={merchant} className="space-y-3 p-4 bg-white border rounded-xl shadow-sm border-slate-200 animate-in fade-in duration-300">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <h4 className="font-black text-slate-900 leading-none">{merchant}</h4>
+                                                        <Badge variant="outline" className="h-4 px-1 text-[9px] font-bold border-slate-200 bg-slate-50">{txs.length} tx</Badge>
+                                                    </div>
+                                                    <SearchLink name={merchant} />
+                                                </div>
+                                                <Button
+                                                    size="sm"
+                                                    className="h-8 bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-lg shadow-blue-100"
+                                                    onClick={() => openRuleDialog(merchant, txs)}
+                                                >
+                                                    <Save className="w-4 h-4" /> Save Rule
+                                                </Button>
                                             </div>
-                                            <span className={cn("font-bold", tx.amount < 0 ? "text-slate-700" : "text-emerald-600")}>
-                                                {formatCurrency(tx.amount, settings.currency)}
-                                            </span>
+
+                                            <div className="space-y-2 pt-2 border-t border-slate-50">
+                                                {txs.map(tx => (
+                                                    <div key={tx.id} className="flex items-center justify-between text-xs p-1 px-2 hover:bg-slate-50 rounded-md transition-colors">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-slate-400 font-mono">{tx.date}</span>
+                                                            <span className="text-slate-700 font-medium truncate max-w-[120px]">{tx.description || 'No description'}</span>
+                                                        </div>
+                                                        <span className={cn("font-bold", tx.amount < 0 ? "text-slate-700" : "text-emerald-600")}>
+                                                            {formatCurrency(tx.amount, settings.currency)}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     ))}
-                                </div>
-                            </div>
-                        ))}
-                        {Object.keys(groupedNoIdea).length === 0 && (
-                            <div className="flex flex-col items-center justify-center h-full text-slate-400 italic py-8">
-                                <Zap className="w-10 h-10 mb-2 opacity-10" />
-                                <p className="text-sm">All merchants known!</p>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Right Column: Confirmed Area */}
-            <Card className="flex flex-col h-full bg-slate-50/50 border-emerald-100 shadow-sm overflow-hidden">
-                <CardHeader className="py-4 bg-white border-b">
-                    <div>
-                        <CardTitle className="text-lg flex items-center gap-2 text-emerald-800">
-                            <div className="bg-emerald-500 rounded-full p-1">
-                                <Check className="w-3.5 h-3.5 text-white" />
-                            </div>
-                            Confirmed & Verified ({confirmedItems.length})
-                        </CardTitle>
-                    </div>
-                </CardHeader>
-                <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">
-                    {confirmedItems.map(tx => <TransactionCard key={tx.id} tx={tx} type="confirmed" />)}
-                    {confirmedItems.length === 0 && (
-                        <div className="flex flex-col items-center justify-center h-full text-slate-300 italic opacity-50">
-                            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm">
-                                <Check className="w-8 h-8" />
-                            </div>
-                            <p>Verification queue is empty</p>
+                                    {Object.keys(groupedNoIdea).length === 0 && (
+                                        <div className="flex flex-col items-center justify-center h-full text-slate-400 italic py-8">
+                                            <Zap className="w-10 h-10 mb-2 opacity-10" />
+                                            <p className="text-sm">All merchants known!</p>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
                         </div>
-                    )}
-                </CardContent>
-            </Card>
+
+                        {/* Right Column: Confirmed Area */}
+                        <Card className="flex flex-col h-full bg-slate-50/50 border-emerald-100 shadow-sm overflow-hidden">
+                            <CardHeader className="py-4 bg-white border-b">
+                                <div>
+                                    <CardTitle className="text-lg flex items-center gap-2 text-emerald-800">
+                                        <div className="bg-emerald-500 rounded-full p-1">
+                                            <Check className="w-3.5 h-3.5 text-white" />
+                                        </div>
+                                        Confirmed & Verified ({confirmedItems.length})
+                                    </CardTitle>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">
+                                {confirmedItems.map(tx => <TransactionCard key={tx.id} tx={tx} type="confirmed" />)}
+                                {confirmedItems.length === 0 && (
+                                    <div className="flex flex-col items-center justify-center h-full text-slate-300 italic opacity-50">
+                                        <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm">
+                                            <Check className="w-8 h-8" />
+                                        </div>
+                                        <p>Verification queue is empty</p>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </div>
+                </TabsContent>
+
+                <TabsContent value="merchants" className="h-full mt-0">
+                    <Card className="flex flex-col h-full border-red-200 shadow-sm overflow-hidden">
+                        <CardHeader className="py-4 bg-red-50/50 border-b">
+                            <CardTitle className="text-lg flex items-center gap-2 text-red-800">
+                                <Store className="w-5 h-5 text-red-500" />
+                                Merchants Needing Rules ({Object.keys(groupedMerchantsNeedingRules).length} groups)
+                            </CardTitle>
+                            <CardDescription>
+                                These transactions have no clean merchant name and need merchant rules created.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex-1 overflow-y-auto p-4 space-y-6">
+                            {Object.entries(groupedMerchantsNeedingRules).map(([merchant, txs]) => (
+                                <div key={merchant} className="space-y-3 p-4 bg-white border rounded-xl shadow-sm border-slate-200 animate-in fade-in duration-300">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h4 className="font-black text-slate-900 leading-none">{merchant}</h4>
+                                                <Badge variant="outline" className="h-4 px-1 text-[9px] font-bold border-slate-200 bg-slate-50">{txs.length} tx</Badge>
+                                            </div>
+                                            <SearchLink name={merchant} />
+                                        </div>
+                                        <Button
+                                            size="sm"
+                                            className="h-8 bg-red-600 hover:bg-red-700 text-white font-bold gap-2 shadow-lg shadow-red-100"
+                                            onClick={() => openRuleDialog(merchant, txs)}
+                                        >
+                                            <Save className="w-4 h-4" /> Create Rule
+                                        </Button>
+                                    </div>
+
+                                    <div className="space-y-2 pt-2 border-t border-slate-50">
+                                        {txs.map(tx => (
+                                            <div key={tx.id} className="flex items-center justify-between text-xs p-1 px-2 hover:bg-slate-50 rounded-md transition-colors">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-slate-400 font-mono">{tx.date}</span>
+                                                    <span className="text-slate-700 font-medium truncate max-w-[120px]">{tx.description || 'No description'}</span>
+                                                </div>
+                                                <span className={cn("font-bold", tx.amount < 0 ? "text-slate-700" : "text-emerald-600")}>
+                                                    {formatCurrency(tx.amount, settings.currency)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                            {Object.keys(groupedMerchantsNeedingRules).length === 0 && (
+                                <div className="flex flex-col items-center justify-center h-full text-slate-400 italic py-8">
+                                    <Store className="w-10 h-10 mb-2 opacity-10" />
+                                    <p className="text-sm">All merchants have clean names!</p>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+            </Tabs>
 
             {/* Rule Configuration Dialog */}
             <Dialog open={ruleDialogOpen} onOpenChange={setRuleDialogOpen}>
@@ -380,7 +478,7 @@ export const ValidationDashboard = () => {
                         <Alert className="bg-blue-50 border-blue-100">
                             <Info className="w-4 h-4 text-blue-600" />
                             <AlertDescription className="text-xs text-blue-700">
-                                This rule will be applied to the {selectedMerchantRule?.transactionIds.length} current matching transactions and all future imports.
+                                This rule will be applied to {selectedMerchantRule?.transactionIds.length} current matching transactions and all future imports.
                             </AlertDescription>
                         </Alert>
                     </div>
@@ -391,7 +489,7 @@ export const ValidationDashboard = () => {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </div>
+        </>
     );
 };
 

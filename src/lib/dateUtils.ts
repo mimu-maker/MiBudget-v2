@@ -2,6 +2,7 @@ import { startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, subQ
 import { DateRange } from 'react-day-picker';
 
 export type Period =
+    | 'All'
     | 'This month'
     | 'Last Month'
     | 'This Quarter'
@@ -21,6 +22,8 @@ export const getPeriodInterval = (period: Period, customRange?: DateRange): { st
     }
 
     switch (period) {
+        case 'All':
+            return { start: new Date(2000, 0, 1), end: new Date(2030, 11, 31, 23, 59, 59) };
         case 'Custom':
             if (customRange?.from) {
                 return { start: customRange.from, end: customRange.to || customRange.from };
