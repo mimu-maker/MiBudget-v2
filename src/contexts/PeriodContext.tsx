@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { DateRange } from 'react-day-picker';
 
 export type Period =
+    | 'All'
     | 'This month'
     | 'Last Month'
     | 'This Quarter'
@@ -26,7 +27,7 @@ const STORAGE_KEY = 'mibudget_selected_period';
 export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [selectedPeriod, setSelectedPeriodState] = useState<Period>(() => {
         const saved = localStorage.getItem(STORAGE_KEY);
-        return (saved as Period) || 'This Year';
+        return (saved as Period) || 'All'; // Show all transactions by default
     });
     const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>();
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,48 +7,211 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Trash2, Plus, Sparkles, Settings as SettingsIcon, Info, ArrowUp, ArrowDown, ExternalLink, Store, Search, Forward, Check, ChevronRight } from 'lucide-react';
+import { Trash2, Plus, Sparkles, Settings as SettingsIcon, Info, ArrowUp, ArrowDown, ExternalLink, Store, Search, Forward, Check, ChevronRight, Users } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { useSettings, AppSettings } from '@/hooks/useSettings';
 import { useTransactionTable, Transaction } from '@/components/Transactions/hooks/useTransactionTable';
+import { useBudgetCategoriesManager } from '@/hooks/useBudgetCategories';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from '@/lib/utils';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+// import UserManagement from '@/components/Settings/UserManagement';
 
 const Settings = () => {
-  const { settings, saveSettings, addItem, removeItem, updateCategoryBudget, updateSubCategoryBudget, addSubCategory, removeSubCategory, updateCategoryConfig, reorderItems, moveSubCategory } = useSettings();
-  const { transactions, bulkUpdate } = useTransactionTable();
+  const {
+    settings,
+    saveSettings,
+    addItem,
+    removeItem,
+    updateCategoryBudget: updateCategoryBudgetLocal,
+    updateSubCategoryBudget: updateSubCategoryBudgetLocal,
+    addSubCategory: addSubCategoryLocal,
+    removeSubCategory: removeSubCategoryLocal,
+    updateCategoryConfig,
+    reorderItems,
+    moveSubCategory: moveSubCategoryLocal
+  } = useSettings();
+  const { transactions, bulkUpdate, emergencyClearAll } = useTransactionTable();
+  const {
+    categories: dbCategories,
+    isLoading: categoriesLoading,
+    error: categoriesError,
+    addCategory: addCategoryMutation,
+    renameCategory: renameCategoryMutation,
+    deleteCategory: deleteCategoryMutation,
+    reorderCategories: reorderCategoriesMutation,
+    addSubCategory: addSubCategoryMutation,
+    renameSubCategory: renameSubCategoryMutation,
+    deleteSubCategory: deleteSubCategoryMutation,
+    reorderSubCategories: reorderSubCategoriesMutation,
+    moveSubCategory: moveSubCategoryMutation,
+    updateCategoryBudget: updateCategoryBudgetMutation,
+    updateSubCategoryBudget: updateSubCategoryBudgetMutation
+  } = useBudgetCategoriesManager();
+
+  const hasSupabaseCategories = dbCategories.length > 0;
+  const categoryMap = dbCategories.reduce<Record<string, (typeof dbCategories)[number]>>((acc, cat) => {
+    acc[cat.name] = cat;
+    return acc;
+  }, {});
+
+  // Use database categories if available, fallback to localStorage
+  const displayCategories = hasSupabaseCategories ? dbCategories.map(c => c.name) : settings.categories;
+  const displaySubCategories = hasSupabaseCategories
+    ? dbCategories.reduce((acc, cat) => {
+        acc[cat.name] = cat.sub_categories?.map((sub: any) => sub.name) || [];
+        return acc;
+      }, {} as Record<string, string[]>)
+    : settings.subCategories;
 
   const [saveMessage, setSaveMessage] = useState('');
 
 
 
   const handleMoveCategory = (index: number, direction: 'up' | 'down') => {
-    const newCats = [...settings.categories];
+    const newCats = [...displayCategories];
     if (direction === 'up' && index > 0) {
       [newCats[index - 1], newCats[index]] = [newCats[index], newCats[index - 1]];
-      reorderItems('categories', newCats);
     } else if (direction === 'down' && index < newCats.length - 1) {
       [newCats[index + 1], newCats[index]] = [newCats[index], newCats[index + 1]];
+    }
+    if (hasSupabaseCategories) {
+      const orderedIds = newCats
+        .map((name) => categoryMap[name]?.id)
+        .filter(Boolean) as string[];
+      reorderCategoriesMutation.mutate({ orderedIds });
+    } else {
       reorderItems('categories', newCats);
     }
   };
 
   const handleMoveSubCategory = (category: string, index: number, direction: 'up' | 'down') => {
-    const currentSubs = settings.subCategories[category] || [];
+    const currentSubs = displaySubCategories[category] || [];
     const newSubs = [...currentSubs];
     if (direction === 'up' && index > 0) {
       [newSubs[index - 1], newSubs[index]] = [newSubs[index], newSubs[index - 1]];
       reorderItems('subCategories', newSubs, category);
     } else if (direction === 'down' && index < newSubs.length - 1) {
       [newSubs[index + 1], newSubs[index]] = [newSubs[index], newSubs[index + 1]];
+    }
+    if (hasSupabaseCategories && categoryMap[category]) {
+      const orderedIds = newSubs
+        .map((subName) => categoryMap[category]?.sub_categories.find((sub: any) => sub.name === subName)?.id)
+        .filter(Boolean) as string[];
+      reorderSubCategoriesMutation.mutate({ categoryId: categoryMap[category]!.id, orderedIds });
+    } else {
       reorderItems('subCategories', newSubs, category);
     }
+  };
+
+  const handleAddCategory = (name: string) => {
+    if (!name.trim()) return;
+    if (hasSupabaseCategories) {
+      addCategoryMutation.mutate({ name: name.trim() });
+    } else {
+      addItem('categories', name.trim());
+    }
+  };
+
+  const handleRenameCategory = (categoryName: string, newName: string) => {
+    if (!newName || newName === categoryName) return;
+    if (hasSupabaseCategories && categoryMap[categoryName]) {
+      renameCategoryMutation.mutate({ categoryId: categoryMap[categoryName].id, name: newName });
+    } else {
+      const newCategories = [...displayCategories];
+      const idx = newCategories.indexOf(categoryName);
+      if (idx >= 0) {
+        newCategories[idx] = newName;
+        reorderItems('categories', newCategories);
+      }
+    }
+  };
+
+  const handleDeleteCategory = (categoryName: string) => {
+    if (hasSupabaseCategories && categoryMap[categoryName]) {
+      deleteCategoryMutation.mutate({ categoryId: categoryMap[categoryName].id });
+    } else {
+      removeItem('categories', categoryName);
+    }
+  };
+
+  const getSubCategoryRecord = (categoryName: string, subName: string) => {
+    return categoryMap[categoryName]?.sub_categories.find((sub: any) => sub.name === subName);
+  };
+
+  const handleAddSubCategory = (categoryName: string, subName: string) => {
+    if (!subName.trim()) return;
+    if (hasSupabaseCategories && categoryMap[categoryName]) {
+      addSubCategoryMutation.mutate({ categoryId: categoryMap[categoryName].id, name: subName.trim() });
+    } else {
+      addSubCategoryLocal(categoryName, subName.trim());
+    }
+  };
+
+  const handleRenameSubCategory = (categoryName: string, subName: string, newName: string) => {
+    if (!newName || newName === subName) return;
+    const subRecord = getSubCategoryRecord(categoryName, subName);
+    if (hasSupabaseCategories && subRecord) {
+      renameSubCategoryMutation.mutate({ subCategoryId: subRecord.id, name: newName });
+    } else {
+      const currentSubs = displaySubCategories[categoryName] || [];
+      const newSubs = currentSubs.map((s) => (s === subName ? newName : s));
+      reorderItems('subCategories', newSubs, categoryName);
+    }
+  };
+
+  const handleRemoveSubCategory = (categoryName: string, subName: string) => {
+    const subRecord = getSubCategoryRecord(categoryName, subName);
+    if (hasSupabaseCategories && subRecord) {
+      deleteSubCategoryMutation.mutate({ subCategoryId: subRecord.id });
+    } else {
+      removeSubCategoryLocal(categoryName, subName);
+    }
+  };
+
+  const handleMoveSubCategoryPersist = (subCategory: string, fromCategory: string, toCategory: string, newSubCategoryName?: string) => {
+    const subRecord = getSubCategoryRecord(fromCategory, subCategory);
+    const targetCategoryId = categoryMap[toCategory]?.id;
+    if (hasSupabaseCategories && subRecord && targetCategoryId) {
+      moveSubCategoryMutation.mutate({
+        subCategoryId: subRecord.id,
+        targetCategoryId,
+        newName: newSubCategoryName
+      });
+    } else {
+      moveSubCategoryLocal(subCategory, fromCategory, toCategory, newSubCategoryName);
+    }
+  };
+
+  const handleSubCategoryBudgetChange = (
+    categoryName: string,
+    subName: string,
+    value: string,
+    onSuccess?: () => void,
+    onError?: () => void
+  ) => {
+    const amount = parseFloat(value) || 0;
+    const subRecord = getSubCategoryRecord(categoryName, subName);
+    if (hasSupabaseCategories && subRecord) {
+      updateSubCategoryBudgetMutation.mutate(
+        { subCategoryId: subRecord.id, amount },
+        {
+          onSuccess: () => {
+            updateSubCategoryBudgetLocal(categoryName, subName, value);
+            onSuccess?.();
+          },
+          onError
+        }
+      );
+      return;
+    }
+    updateSubCategoryBudgetLocal(categoryName, subName, value);
+    onSuccess?.();
   };
 
   const SimpleListSection = ({ title, field, items }: { title: string, field: keyof AppSettings, items: string[] }) => {
@@ -106,325 +269,354 @@ const Settings = () => {
     const [migrationMode, setMigrationMode] = useState<'all' | 'individual'>('all');
     const [targetSubCategory, setTargetSubCategory] = useState<string>('');
     const [individualMappings, setIndividualMappings] = useState<Record<string, { category: string, subCategory: string }>>({});
+    const [subBudgetDrafts, setSubBudgetDrafts] = useState<Record<string, string>>({});
+    const [subBudgetSaving, setSubBudgetSaving] = useState<Record<string, 'saving' | 'saved'>>({});
 
-    const handleInitialMove = (sub: string, from: string, to: string) => {
-      if (from === to) return;
+    const subBudgetKey = (categoryName: string, subCategoryName: string) => `${categoryName}::${subCategoryName}`;
 
-      const matching = transactions.filter(t => t.category === from && (t.subCategory === sub || t.sub_category === sub));
+    const getPersistedSubBudgetValue = (categoryName: string, subCategoryName: string): string => {
+      if (hasSupabaseCategories) {
+        const subRecord = getSubCategoryRecord(categoryName, subCategoryName);
+        if (typeof subRecord?.budget_amount === 'number' && !Number.isNaN(subRecord.budget_amount)) {
+          return subRecord.budget_amount === 0 ? '' : subRecord.budget_amount.toString();
+        }
+        return '';
+      }
+      const storedValue = settings.subCategoryBudgets?.[categoryName]?.[subCategoryName];
+      if (storedValue === undefined || storedValue === null) return '';
+      const storedString = storedValue.toString();
+      return storedString === '0' ? '' : storedString;
+    };
 
-      if (matching.length === 0) {
-        moveSubCategory(sub, from, to);
+    useEffect(() => {
+      setSubBudgetDrafts((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        Object.keys(prev).forEach((key) => {
+          const [categoryName, subName] = key.split('::');
+          if (getPersistedSubBudgetValue(categoryName, subName) === prev[key]) {
+            delete next[key];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }, [hasSupabaseCategories, dbCategories, settings.subCategoryBudgets]);
+
+    const commitSubBudgetValue = (categoryName: string, subCategoryName: string) => {
+      const key = subBudgetKey(categoryName, subCategoryName);
+      if (!(key in subBudgetDrafts)) return;
+      const pendingValue = subBudgetDrafts[key];
+      const persistedValue = getPersistedSubBudgetValue(categoryName, subCategoryName);
+      if (pendingValue === persistedValue) {
+        cancelSubBudgetDraft(categoryName, subCategoryName);
         return;
       }
+      setSubBudgetSaving((prev) => ({ ...prev, [key]: 'saving' }));
+      handleSubCategoryBudgetChange(categoryName, subCategoryName, pendingValue, () => {
+        setSubBudgetSaving((prev) => ({ ...prev, [key]: 'saved' }));
+        cancelSubBudgetDraft(categoryName, subCategoryName);
+        setTimeout(() => {
+          setSubBudgetSaving((prev) => {
+            const next = { ...prev };
+            if (next[key] === 'saved') {
+              delete next[key];
+            }
+            return next;
+          });
+        }, 1500);
+      }, () => {
+        setSubBudgetSaving((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      });
+    };
 
+    const cancelSubBudgetDraft = (categoryName: string, subCategoryName: string) => {
+      const key = subBudgetKey(categoryName, subCategoryName);
+      setSubBudgetDrafts((prev) => {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    };
+
+    const handleInitialMove = (sub: string, from: string, to: string) => {
+      if (!to) return;
       setMoveDialog({
         open: true,
         subCategory: sub,
         fromCategory: from,
         toCategory: to,
-        matchingTransactions: matching
+        matchingTransactions: []
       });
-      setMigrationMode('all');
-      setTargetSubCategory(sub); // Default to same sub-category name
-
-      // Initialize individual mappings
-      const initialMappings: any = {};
-      matching.forEach(t => {
-        initialMappings[t.id] = { category: to, subCategory: sub };
-      });
-      setIndividualMappings(initialMappings);
-    };
-
-    const confirmMigration = async () => {
-      if (migrationMode === 'all') {
-        const ids = moveDialog.matchingTransactions.map(t => t.id);
-        await bulkUpdate({
-          ids,
-          updates: {
-            category: moveDialog.toCategory,
-            subCategory: targetSubCategory
-          }
-        });
-      } else {
-        // Handle individual updates
-        for (const t of moveDialog.matchingTransactions) {
-          const mapping = individualMappings[t.id];
-          await bulkUpdate({
-            ids: [t.id],
-            updates: {
-              category: mapping.category,
-              subCategory: mapping.subCategory
-            }
-          });
-        }
-      }
-
-      moveSubCategory(moveDialog.subCategory, moveDialog.fromCategory, moveDialog.toCategory, migrationMode === 'all' ? targetSubCategory : undefined);
-      setMoveDialog({ ...moveDialog, open: false });
     };
 
     return (
-      <div className="space-y-4">
-        <Dialog open={moveDialog.open} onOpenChange={(open) => setMoveDialog(prev => ({ ...prev, open }))}>
-          <DialogContent className={cn("sm:max-w-[600px] transition-all duration-300", migrationMode === 'individual' && "sm:max-w-[900px]")}>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Forward className="w-5 h-5 text-blue-500" />
-                Move Sub-category
-              </DialogTitle>
-              <DialogDescription>
-                Moving <strong>{moveDialog.subCategory}</strong> from <strong>{moveDialog.fromCategory}</strong> to <strong>{moveDialog.toCategory}</strong>.
-                There are {moveDialog.matchingTransactions.length} existing transactions in this sub-category.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="py-6 space-y-6">
-              <RadioGroup value={migrationMode} onValueChange={(v: any) => setMigrationMode(v)} className="grid grid-cols-1 gap-4">
-                <div className={cn(
-                  "flex items-center space-x-3 p-4 border rounded-lg cursor-pointer transition-colors",
-                  migrationMode === 'all' ? "border-blue-500 bg-blue-50 hover:bg-blue-100" : "border-slate-200 hover:bg-slate-50"
-                )} onClick={() => setMigrationMode('all')}>
-                  <RadioGroupItem value="all" id="mode-all" />
-                  <div className="flex-1">
-                    <Label htmlFor="mode-all" className="font-bold cursor-pointer">Move all existing records</Label>
-                    <p className="text-xs text-slate-500">All {moveDialog.matchingTransactions.length} transactions will be updated to the new category and selected sub-category.</p>
-                  </div>
-                </div>
-
-                <div className={cn(
-                  "flex items-center space-x-3 p-4 border rounded-lg cursor-pointer transition-colors",
-                  migrationMode === 'individual' ? "border-blue-500 bg-blue-50 hover:bg-blue-100" : "border-slate-200 hover:bg-slate-50"
-                )} onClick={() => setMigrationMode('individual')}>
-                  <RadioGroupItem value="individual" id="mode-individual" />
-                  <div className="flex-1">
-                    <Label htmlFor="mode-individual" className="font-bold cursor-pointer">Review each transaction individually</Label>
-                    <p className="text-xs text-slate-500">Manually select a new category for each record before moving.</p>
-                  </div>
-                </div>
-              </RadioGroup>
-
-              {migrationMode === 'all' && (
-                <div className="animate-in slide-in-from-top-2">
-                  <Label className="text-xs uppercase font-bold text-slate-500 mb-2 block">New Sub-category name in {moveDialog.toCategory}</Label>
-                  <Input
-                    value={targetSubCategory}
-                    onChange={(e) => setTargetSubCategory(e.target.value)}
-                    placeholder="Sub-category name..."
-                  />
-                </div>
-              )}
-
-              {migrationMode === 'individual' && (
-                <div className="border rounded-lg overflow-hidden animate-in fade-in duration-500 shadow-inner">
-                  <ScrollArea className="h-[350px]">
-                    <Table>
-                      <TableHeader className="bg-slate-50/80 sticky top-0 z-10 backdrop-blur-sm">
-                        <TableRow>
-                          <TableHead className="text-[10px] py-2">Date</TableHead>
-                          <TableHead className="text-[10px] py-2">Merchant</TableHead>
-                          <TableHead className="text-[10px] py-2 text-right">Amount</TableHead>
-                          <TableHead className="text-[10px] py-2">New Cat / Sub</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {moveDialog.matchingTransactions.map(t => (
-                          <TableRow key={t.id} className="hover:bg-slate-50/50">
-                            <TableCell className="py-2 text-[11px] whitespace-nowrap">{t.date}</TableCell>
-                            <TableCell className="py-2 text-[11px] font-medium max-w-[150px] truncate">{t.merchant}</TableCell>
-                            <TableCell className="py-2 text-[11px] text-right font-mono">{t.amount.toLocaleString()} {settings.currency}</TableCell>
-                            <TableCell className="py-2">
-                              <div className="flex gap-1 items-center">
-                                <Select
-                                  value={individualMappings[t.id]?.category}
-                                  onValueChange={(val) => setIndividualMappings(prev => ({
-                                    ...prev,
-                                    [t.id]: { ...prev[t.id], category: val }
-                                  }))}
-                                >
-                                  <SelectTrigger className="h-7 text-[10px] w-28 bg-white">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {settings.categories.map(c => <SelectItem key={c} value={c} className="text-[10px]">{c}</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                                <ChevronRight className="w-3 h-3 text-slate-300" />
-                                <Input
-                                  className="h-7 text-[10px] w-28 bg-white"
-                                  value={individualMappings[t.id]?.subCategory}
-                                  onChange={(e) => setIndividualMappings(prev => ({
-                                    ...prev,
-                                    [t.id]: { ...prev[t.id], subCategory: e.target.value }
-                                  }))}
-                                />
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                </div>
-              )}
-            </div>
-
-            <DialogFooter className="bg-slate-50/50 -mx-6 -mb-6 p-6 border-t mt-4">
-              <Button variant="ghost" onClick={() => setMoveDialog(prev => ({ ...prev, open: false }))}>Cancel</Button>
-              <Button onClick={confirmMigration} className="bg-blue-600 hover:bg-blue-700 gap-2 px-6">
-                <Check className="w-4 h-4" /> Confirm & Move Records
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Card className="border-slate-200 shadow-sm bg-white overflow-hidden">
-          <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
+      <Card className="border-slate-200 shadow-sm bg-white overflow-hidden">
+        <div className="p-4 bg-slate-50 border-b flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
             <h3 className="text-lg font-bold text-slate-800">Budget Categories</h3>
-            <div className="flex gap-2">
-              <Input
-                placeholder="New Category..."
-                className="w-48 bg-white h-9"
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && newCatName.trim()) {
-                    addItem('categories', newCatName.trim());
-                    setNewCatName('');
-                  }
-                }}
-              />
-              <Button size="sm" onClick={() => {
-                if (newCatName.trim()) {
-                  addItem('categories', newCatName.trim());
+            <p className="text-xs text-slate-500">Manage categories backed by Supabase or local settings.</p>
+          </div>
+          <div className="flex gap-2 w-full md:w-auto">
+            <Input
+              placeholder="New Category..."
+              className="bg-white h-9"
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newCatName.trim()) {
+                  handleAddCategory(newCatName.trim());
                   setNewCatName('');
                 }
-              }}>Add Category</Button>
-            </div>
+              }}
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                if (newCatName.trim()) {
+                  handleAddCategory(newCatName.trim());
+                  setNewCatName('');
+                }
+              }}
+            >
+              Add Category
+            </Button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-slate-50/50 border-b border-slate-100 text-xs uppercase text-slate-500 font-bold tracking-wider">
-                  <th className="py-3 px-4 w-14 text-center"></th>
-                  <th className="py-3 px-4">Category / Subcategory</th>
-                  <th className="py-3 px-4 w-32 text-right">Budget</th>
-                  <th className="py-3 px-4 w-40 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {settings.categories.map((cat, idx) => {
-                  const subCats = settings.subCategories[cat] || [];
-                  const catBudget = settings.categoryBudgets[cat];
-                  const catConfig = settings.categoryConfigs[cat] || {};
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50/50 border-b border-slate-100 text-xs uppercase text-slate-500 font-bold tracking-wider">
+                <th className="py-3 px-4 w-14 text-center"></th>
+                <th className="py-3 px-4">Category / Subcategory</th>
+                <th className="py-3 px-4 text-right">Budget</th>
+                <th className="py-3 px-4 w-40 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {displayCategories.map((cat, idx) => {
+                const subCats = displaySubCategories[cat] || [];
+                const catBudget = hasSupabaseCategories && categoryMap[cat]
+                  ? categoryMap[cat].budget_amount ?? ''
+                  : settings.categoryBudgets[cat];
 
-                  return (
-                    <div key={cat} style={{ display: 'contents' }}>
-                      {/* Category Row */}
-                      <tr className="bg-white hover:bg-slate-50 group border-b border-slate-100/50">
-                        <td className="py-3 px-4">
-                          <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button disabled={idx === 0} onClick={() => handleMoveCategory(idx, 'up')} className="text-slate-400 hover:text-blue-600 disabled:opacity-20"><ArrowUp className="w-4 h-4" /></button>
-                            <button disabled={idx === settings.categories.length - 1} onClick={() => handleMoveCategory(idx, 'down')} className="text-slate-400 hover:text-blue-600 disabled:opacity-20"><ArrowDown className="w-4 h-4" /></button>
+                return (
+                  <Fragment key={cat}>
+                    <tr className="bg-white hover:bg-slate-50 group border-b border-slate-100/50">
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button disabled={idx === 0} onClick={() => handleMoveCategory(idx, 'up')} className="text-slate-400 hover:text-blue-600 disabled:opacity-20"><ArrowUp className="w-4 h-4" /></button>
+                          <button disabled={idx === displayCategories.length - 1} onClick={() => handleMoveCategory(idx, 'down')} className="text-slate-400 hover:text-blue-600 disabled:opacity-20"><ArrowDown className="w-4 h-4" /></button>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="font-bold text-slate-800 hover:text-blue-600 hover:bg-blue-50 px-2 py-1 rounded"
+                            onClick={() => {
+                              const newName = prompt('Edit category name:', cat);
+                              if (newName && newName !== cat) {
+                                handleRenameCategory(cat, newName);
+                              }
+                            }}
+                          >
+                            {cat}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="text-sm font-semibold text-slate-700">
+                          {catBudget ? catBudget.toString() : '-'}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50 group">
+                                  <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Add subcategory to {cat}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50">
+                                <Plus className="w-4 h-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Add Subcategory to {cat}</DialogTitle>
+                                <DialogDescription>
+                                  Add a new subcategory under {cat}
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="grid gap-4 py-4">
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                  <Label htmlFor="subcategory-name" className="text-right">
+                                    Name
+                                  </Label>
+                                  <Input
+                                    id="subcategory-name"
+                                    className="col-span-3"
+                                    placeholder="Enter subcategory name"
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                                        handleAddSubCategory(cat, e.currentTarget.value.trim());
+                                        e.currentTarget.value = '';
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <DialogFooter>
+                                <Button
+                                  type="submit"
+                                  onClick={() => {
+                                    const input = document.getElementById('subcategory-name') as HTMLInputElement;
+                                    if (input?.value.trim()) {
+                                      handleAddSubCategory(cat, input.value.trim());
+                                      input.value = '';
+                                    }
+                                  }}
+                                >
+                                  Add Subcategory
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-red-400 hover:bg-red-50 hover:text-red-600"
+                            onClick={() => handleDeleteCategory(cat)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {subCats.map((sub, subIdx) => (
+                      <tr key={`${cat}-${sub}`} className="bg-slate-50/40 hover:bg-slate-50 group/sub border-b border-slate-100/30">
+                        <td className="py-2 px-4">
+                          <div className="flex flex-col gap-0.5 opacity-0 group-hover/sub:opacity-100 transition-opacity">
+                            <button disabled={subIdx === 0} onClick={() => handleMoveSubCategory(cat, subIdx, 'up')} className="text-slate-300 hover:text-blue-500 disabled:opacity-10"><ArrowUp className="w-3 h-3" /></button>
+                            <button disabled={subIdx === subCats.length - 1} onClick={() => handleMoveSubCategory(cat, subIdx, 'down')} className="text-slate-300 hover:text-blue-500 disabled:opacity-10"><ArrowDown className="w-3 h-3" /></button>
                           </div>
                         </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-800">{cat}</span>
+                        <td className="py-2 px-4 pl-12 flex items-center gap-2 group/subcat">
+                          <span className="w-6 border-l-2 border-b-2 border-slate-200 h-3 inline-block rounded-bl-md mr-1 -mt-2"></span>
+                          <button
+                            className="text-slate-600 text-sm font-medium hover:text-blue-600 hover:bg-blue-50 px-1.5 py-0.5 rounded"
+                            onClick={() => {
+                              const newName = prompt('Edit subcategory name:', sub);
+                              if (newName && newName !== sub) {
+                                handleRenameSubCategory(cat, sub, newName);
+                              }
+                            }}
+                          >
+                            {sub}
+                          </button>
+                        </td>
+                        <td className="py-2 px-4 text-right">
+                          <div className="relative inline-flex items-center gap-1 justify-end w-32">
+                            <Input
+                              className="h-7 text-right text-xs bg-white"
+                              value={subBudgetDrafts[subBudgetKey(cat, sub)] ?? getPersistedSubBudgetValue(cat, sub)}
+                              placeholder="0"
+                              onFocus={(e) => {
+                                e.target.select();
+                                const key = subBudgetKey(cat, sub);
+                                setSubBudgetDrafts((prev) => ({
+                                  ...prev,
+                                  [key]: prev[key] ?? getPersistedSubBudgetValue(cat, sub)
+                                }));
+                              }}
+                              onChange={(e) => {
+                                const key = subBudgetKey(cat, sub);
+                                const nextValue = e.target.value;
+                                setSubBudgetDrafts((prev) => ({
+                                  ...prev,
+                                  [key]: nextValue
+                                }));
+                              }}
+                              onBlur={() => commitSubBudgetValue(cat, sub)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  e.currentTarget.blur();
+                                } else if (e.key === 'Escape') {
+                                  cancelSubBudgetDraft(cat, sub);
+                                  e.currentTarget.value = getPersistedSubBudgetValue(cat, sub);
+                                  e.currentTarget.blur();
+                                }
+                              }}
+                            />
+                            {subBudgetSaving[subBudgetKey(cat, sub)] === 'saving' && (
+                              <span className="text-[10px] text-amber-500 font-medium">Saving…</span>
+                            )}
+                            {subBudgetSaving[subBudgetKey(cat, sub)] === 'saved' && (
+                              <span className="text-[10px] text-emerald-500 font-medium">Saved</span>
+                            )}
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="text-sm font-bold text-slate-700">
-                            {(() => {
-                              const subs = settings.subCategoryBudgets[cat] || {};
-                              const total = Object.values(subs).reduce((sum: number, val) => {
-                                if (typeof val === 'number') return sum + val;
-                                if (typeof val === 'string' && !val.includes('%')) return sum + (parseFloat(val) || 0);
-                                return sum;
-                              }, 0);
-                              return total.toLocaleString();
-                            })()} {settings.currency}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50" onClick={() => {
-                              const name = prompt(`New subcategory for ${cat}:`);
-                              if (name) addSubCategory(cat, name);
-                            }}>
-                              <Plus className="w-4 h-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-400 hover:bg-red-50 hover:text-red-600" onClick={() => removeItem('categories', cat)}>
-                              <Trash2 className="w-4 h-4" />
+                        <td className="py-2 px-4 text-right">
+                          <div className="flex justify-end gap-1 items-center">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="inline-block">
+                                    <Select onValueChange={(val) => handleInitialMove(sub, cat, val)}>
+                                      <SelectTrigger className="h-7 w-7 p-0 border-none bg-transparent hover:bg-blue-50 text-blue-400 hover:text-blue-600 transition-colors">
+                                        <Forward className="w-3.5 h-3.5" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem disabled value={cat} className="text-xs font-bold">Move to:</SelectItem>
+                                        {displayCategories.filter(c => c !== cat).map(c => (
+                                          <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Move to different category</p></TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                              onClick={() => handleRemoveSubCategory(cat, sub)}
+                            >
+                              <Trash2 className="w-3 h-3" />
                             </Button>
                           </div>
                         </td>
                       </tr>
-
-                      {/* Subcategory Rows */}
-                      {subCats.map((sub, subIdx) => (
-                        <tr key={`${cat}-${sub}`} className="bg-slate-50/40 hover:bg-slate-50 group/sub border-b border-slate-100/30">
-                          <td className="py-2 px-4">
-                            <div className="flex flex-col gap-0.5 opacity-0 group-hover/sub:opacity-100 transition-opacity">
-                              <button disabled={subIdx === 0} onClick={() => handleMoveSubCategory(cat, subIdx, 'up')} className="text-slate-300 hover:text-blue-500 disabled:opacity-10"><ArrowUp className="w-3 h-3" /></button>
-                              <button disabled={subIdx === subCats.length - 1} onClick={() => handleMoveSubCategory(cat, subIdx, 'down')} className="text-slate-300 hover:text-blue-500 disabled:opacity-10"><ArrowDown className="w-3 h-3" /></button>
-                            </div>
-                          </td>
-                          <td className="py-2 px-4 pl-12 flex items-center gap-2">
-                            <span className="w-6 border-l-2 border-b-2 border-slate-200 h-3 inline-block rounded-bl-md mr-1 -mt-2"></span>
-                            <span className="text-slate-600 text-sm font-medium">{sub}</span>
-                          </td>
-                          <td className="py-2 px-4 text-right">
-                            <div className="relative inline-block w-24">
-                              <Input
-                                className="h-7 text-right text-xs bg-white"
-                                value={settings.subCategoryBudgets?.[cat]?.[sub] ?? ''}
-                                placeholder="0"
-                                onChange={(e) => updateSubCategoryBudget(cat, sub, e.target.value)}
-                              />
-                            </div>
-                          </td>
-                          <td className="py-2 px-4 text-right">
-                            <div className="flex justify-end gap-1 items-center">
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div className="inline-block">
-                                      <Select onValueChange={(val) => handleInitialMove(sub, cat, val)}>
-                                        <SelectTrigger className="h-7 w-7 p-0 border-none bg-transparent hover:bg-blue-50 text-blue-400 group-hover/sub:text-blue-600 transition-colors [&>svg]:hidden">
-                                          <Forward className="w-3.5 h-3.5" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem disabled value={cat} className="text-xs font-bold">Move to:</SelectItem>
-                                          {settings.categories.filter(c => c !== cat).map(c => (
-                                            <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent><p>Move to different category</p></TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors" onClick={() => removeSubCategory(cat, sub)}>
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </div>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
+                    ))}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     );
-  };
+};
 
-  const MerchantManager = () => {
+const MerchantManager = () => {
     const queryClient = useQueryClient();
     const [search, setSearch] = useState('');
     const [newRule, setNewRule] = useState({ name: '', category: '', sub_category: '', skip_triage: false });
@@ -499,7 +691,7 @@ const Settings = () => {
               <Select value={newRule.category} onValueChange={(v) => setNewRule({ ...newRule, category: v })}>
                 <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
                 <SelectContent>
-                  {settings.categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {displayCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -611,10 +803,9 @@ const Settings = () => {
       )}
 
 
-      <Tabs defaultValue="budget" className="w-full">
-        <TabsList className="mb-6 bg-slate-100 p-1">
+      <Tabs defaultValue="general" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="general" className="px-6">General</TabsTrigger>
-          <TabsTrigger value="budget" className="px-6">Budget Configuration</TabsTrigger>
           <TabsTrigger value="merchants" className="px-6">Merchant Rules</TabsTrigger>
           <TabsTrigger value="lists" className="px-6">System Lists</TabsTrigger>
         </TabsList>
@@ -634,6 +825,36 @@ const Settings = () => {
                   className="data-[state=checked]:bg-emerald-500"
                 />
                 <Label htmlFor="dark-mode" className="text-slate-600 font-medium font-bold">Dark Mode</Label>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Emergency Clear Card */}
+          <Card className="border-red-200 shadow-sm bg-white">
+            <CardHeader className="pb-4 border-b bg-red-50/50">
+              <CardTitle className="text-lg font-semibold text-red-800">🚨 Emergency Data Management</CardTitle>
+              <CardDescription>Dangerous operations - use with caution.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="space-y-4">
+                <Alert className="border-red-200 bg-red-50">
+                  <AlertTitle className="text-red-800">⚠️ Warning</AlertTitle>
+                  <AlertDescription className="text-red-700">
+                    This will permanently delete all transactions from your local cache and refresh your data. This action cannot be undone.
+                  </AlertDescription>
+                </Alert>
+                
+                <Button
+                  onClick={emergencyClearAll}
+                  variant="destructive"
+                  className="bg-red-600 hover:bg-red-700 text-white border-red-600"
+                >
+                  🚨 Clear All Transaction Data
+                </Button>
+                
+                <p className="text-xs text-slate-500">
+                  Use this when you need to completely reset the transaction system and start fresh.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -662,7 +883,7 @@ const Settings = () => {
                       <SelectValue placeholder="Select Category..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {settings.categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      {displayCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -695,6 +916,7 @@ const Settings = () => {
         <TabsContent value="merchants">
           <MerchantManager />
         </TabsContent>
+
 
         <TabsContent value="lists">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

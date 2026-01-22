@@ -36,6 +36,7 @@ export const PeriodSelector = () => {
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                        <SelectItem value="All">All</SelectItem>
                         <SelectItem value="This month">This month</SelectItem>
                         <SelectItem value="Last Month">Last Month</SelectItem>
                         <SelectItem value="This Quarter">This Quarter</SelectItem>

@@ -46,7 +46,10 @@ export const TransactionsTable = () => {
     bulkDelete,
     deleteTransaction,
     isLoading,
-    isError
+    isError,
+    isBulkUpdating,
+    isBulkDeleting,
+    emergencyClearAll
   } = useTransactionTable();
 
   const { selectedPeriod, customDateRange } = usePeriod();
@@ -189,6 +192,8 @@ export const TransactionsTable = () => {
         onClearSelection={clearSelection}
         onEdit={() => setBulkEditOpen(true)}
         onDelete={() => setDeleteConfirmOpen(true)}
+        isBulkUpdating={isBulkUpdating}
+        isBulkDeleting={isBulkDeleting}
       />
 
       <BulkEditDialog

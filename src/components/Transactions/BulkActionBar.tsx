@@ -1,12 +1,14 @@
 
 import { Button } from '@/components/ui/button';
-import { Trash2, Edit2, X } from 'lucide-react';
+import { Trash2, Edit2, X, Loader2 } from 'lucide-react';
 
 interface BulkActionBarProps {
     selectedCount: number;
     onClearSelection: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    isBulkUpdating?: boolean;
+    isBulkDeleting?: boolean;
 }
 
 export const BulkActionBar = ({
@@ -14,6 +16,8 @@ export const BulkActionBar = ({
     onClearSelection,
     onEdit,
     onDelete,
+    isBulkUpdating = false,
+    isBulkDeleting = false,
 }: BulkActionBarProps) => {
     if (selectedCount === 0) return null;
 
@@ -39,18 +43,28 @@ export const BulkActionBar = ({
                     variant="outline"
                     size="sm"
                     onClick={onEdit}
+                    disabled={isBulkUpdating || isBulkDeleting}
                     className="bg-white hover:bg-gray-50 text-gray-700 border-gray-200 h-9"
                 >
-                    <Edit2 className="w-4 h-4 mr-2" />
+                    {isBulkUpdating ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                        <Edit2 className="w-4 h-4 mr-2" />
+                    )}
                     Edit
                 </Button>
                 <Button
                     variant="destructive"
                     size="sm"
                     onClick={onDelete}
+                    disabled={isBulkUpdating || isBulkDeleting}
                     className="h-9"
                 >
-                    <Trash2 className="w-4 h-4 mr-2" />
+                    {isBulkDeleting ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                        <Trash2 className="w-4 h-4 mr-2" />
+                    )}
                     Delete
                 </Button>
             </div>
