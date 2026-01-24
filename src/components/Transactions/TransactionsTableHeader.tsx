@@ -150,22 +150,16 @@ export const TransactionsTableHeader = ({
             <FilterableHeader field="status" onFilter={onFilter} onClearFilter={onClearFilter} />
           </div>
         </SortableHeader>
-        <SortableHeader field="budget" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort}>
-          <div className="flex items-center space-x-1">
-            <span>Budget</span>
-            <FilterableHeader field="budget" onFilter={onFilter} onClearFilter={onClearFilter} />
-          </div>
-        </SortableHeader>
         <SortableHeader field="category" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort}>
           <div className="flex items-center space-x-1">
             <span>Category</span>
             <FilterableHeader field="category" onFilter={onFilter} onClearFilter={onClearFilter} />
           </div>
         </SortableHeader>
-        <SortableHeader field="subCategory" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort}>
+        <SortableHeader field="sub_category" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort}>
           <div className="flex items-center space-x-1">
             <span>Sub-category</span>
-            <FilterableHeader field="subCategory" onFilter={onFilter} onClearFilter={onClearFilter} />
+            <FilterableHeader field="sub_category" onFilter={onFilter} onClearFilter={onClearFilter} />
           </div>
         </SortableHeader>
         <SortableHeader field="planned" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} className="text-center">

@@ -7,25 +7,28 @@ import { getLocalTransactions, saveLocalTransactions, clearLocalTransactions } f
 
 export interface Transaction {
   id: string;
+  user_id: string;
   date: string;
   merchant: string;
   amount: number;
   account: string;
   status: string;
-  budget: string;
   category: string;
-  subCategory: string;
+  sub_category: string | null;
   planned: boolean;
-  recurring: string; // Changed from boolean to string
-  description: string;
-  budgetYear?: string;
-  sub_category?: string;
+  recurring: boolean; // Changed back to boolean to match database
+  description: string | null;
+  budget_year?: number;
   clean_merchant?: string;
   budget_month?: string;
   suggested_category?: string;
   suggested_sub_category?: string;
   merchant_description?: string;
   excluded?: boolean;
+  fingerprint?: string;
+  confidence?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 const generateFingerprint = (t: any) => {
@@ -96,7 +99,6 @@ const useTransactions = () => {
               amount: t.amount || 0,
               account: t.account || 'Unknown',
               status: t.status || 'Pending Triage',
-              budget: t.budget || 'Budgeted',
               category: t.category || 'Other', // ✅ Ensure required category
               sub_category: t.sub_category || null,
               description: t.description || "",
@@ -180,8 +182,7 @@ export const useTransactionTable = () => {
 
   const updateTransactionMutation = useMutation({
     mutationFn: async ({ id, field, value }: { id: string, field: keyof Transaction, value: any }) => {
-      const dbField = field === 'subCategory' ? 'sub_category' : field;
-      const updates: any = { [dbField]: value };
+      const updates: any = { [field]: value };
 
       // Auto-exclude logic
       if (field === 'status') {
@@ -198,10 +199,65 @@ export const useTransactionTable = () => {
         .eq('user_id', userId); // ✅ Use actual authenticated user ID
 
       if (error) throw error;
+      return { id, field, value };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    onMutate: async ({ id, field, value }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['transactions'] });
+      
+      // Snapshot the previous value
+      const previousTransactions = queryClient.getQueryData(['transactions']);
+      
+      // Optimistically update to the new value
+      queryClient.setQueryData(['transactions'], (old: any) => 
+        old?.map((t: Transaction) => 
+          t.id === id ? { ...t, [field]: value } : t
+        )
+      );
+      
+      return { previousTransactions };
     },
+    onError: (err, variables, context) => {
+      // If the mutation fails, use the context returned from onMutate to roll back
+      if (context?.previousTransactions) {
+        queryClient.setQueryData(['transactions'], context.previousTransactions);
+      }
+    },
+    // Remove onSettled to prevent full sync - optimistic update should be sufficient
+  });
+
+  const bulkUpdateTransactionMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string, updates: Partial<Transaction> }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData.user?.id;
+      
+      const { error } = await (supabase as any)
+        .from('transactions')
+        .update(updates)
+        .eq('id', id)
+        .eq('user_id', userId);
+
+      if (error) throw error;
+      return { id, updates };
+    },
+    onMutate: async ({ id, updates }) => {
+      await queryClient.cancelQueries({ queryKey: ['transactions'] });
+      const previousTransactions = queryClient.getQueryData(['transactions']);
+      
+      queryClient.setQueryData(['transactions'], (old: any) => 
+        old?.map((t: Transaction) => 
+          t.id === id ? { ...t, ...updates } : t
+        )
+      );
+      
+      return { previousTransactions };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousTransactions) {
+        queryClient.setQueryData(['transactions'], context.previousTransactions);
+      }
+    },
+    // Remove onSettled to prevent full sync - optimistic update should be sufficient
   });
 
   const addTransactionMutation = useMutation({
@@ -212,13 +268,9 @@ export const useTransactionTable = () => {
       const transaction = {
         ...newTransaction,
         fingerprint: generateFingerprint(newTransaction),
-        sub_category: newTransaction.subCategory || newTransaction.sub_category,
         user_id: userId, // ✅ Use actual authenticated user ID
         id: crypto.randomUUID()
       };
-      
-      // Remove subCategory from transaction object (database only has sub_category)
-      delete transaction.subCategory;
 
       const { error } = await (supabase as any).from('transactions').insert([transaction]);
       if (error) throw error;
@@ -254,6 +306,11 @@ export const useTransactionTable = () => {
     setEditingCell(null);
   };
 
+  const handleBulkCellEdit = (id: string, updates: Partial<Transaction>) => {
+    bulkUpdateTransactionMutation.mutate({ id, updates });
+    setEditingCell(null);
+  };
+
   const handleImport = async (importedTransactions: any[]) => {
     console.log(`Starting bulk import of ${importedTransactions.length} transactions...`);
     
@@ -286,15 +343,11 @@ export const useTransactionTable = () => {
         amount: parseAmount(t.amount.toString()) || 0,
         fingerprint,
         status: status, // ✅ Guaranteed valid status
-        budget: t.budget || 'Budgeted',
         category: t.category || 'Other', // ✅ Ensure category is included
         planned: t.planned || false,
-        recurring: parseRecurringValue(t.recurring), // Parse recurring value
-        sub_category: t.subCategory || t.sub_category
+        recurring: t.recurring || false,
+        sub_category: t.sub_category || null
       };
-      
-      // Remove subCategory from transaction object (database only has sub_category)
-      delete transaction.subCategory;
       
       // Debug: Check status value
       console.log('Transaction status being inserted:', transaction.status);
@@ -393,10 +446,6 @@ export const useTransactionTable = () => {
       }
       
       const dbUpdates = { ...updates } as any;
-      if (dbUpdates.subCategory) {
-        dbUpdates.sub_category = dbUpdates.subCategory;
-        delete dbUpdates.subCategory; // Remove subCategory, database only has sub_category
-      }
       
       // Auto-exclude logic
       if (updates.status) {
@@ -483,6 +532,7 @@ export const useTransactionTable = () => {
     handleFilter,
     clearFilter,
     handleCellEdit,
+    handleBulkCellEdit,
     handleImport,
     handleAddTransaction,
     toggleSelection,

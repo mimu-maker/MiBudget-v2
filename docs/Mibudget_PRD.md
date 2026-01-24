@@ -196,7 +196,192 @@ This PRD reflects the current implementation state of MiBudget as a streamlined 
 
 ---
 
-## 🔍 Validation Checklist & Architecture Readiness
+## � User Stories & Implementation Status
+
+### 🔴 **Critical Issues - Blocking**
+
+#### Story: BUD-001 - Fix Sub-Category Auto-Clearing Bug
+**User Story:** As a user managing my budget, I want to edit sub-category amounts without them auto-clearing after entering a value, so that I can accurately set my budget allocations.
+
+**Current Status:** ❌ **BLOCKING**  
+**Confidence:** 🟢 **HIGH** (Issue confirmed in code)  
+**Problem:** Sub-category input fields clear immediately after entering values due to state management issues in `handleUpdateBudget` function.
+
+**Technical Details:**
+- Issue in `/src/pages/Budget.tsx` lines 109-120
+- `setEditingBudget(null)` called immediately after update, causing input to unmount
+- `refreshBudget()` call may be resetting the form state
+- Input fields lose focus and clear value on blur/enter
+
+**Acceptance Criteria:**
+- [ ] User can click to edit sub-category annual/monthly/percent fields
+- [ ] Input field retains focus and value during editing
+- [ ] Value persists after blur/enter key press
+- [ ] Auto-calculation updates other two columns correctly
+- [ ] No form state reset during update process
+
+---
+
+#### Story: BUD-002 - Remove Main Category Amount Fields
+**User Story:** As a user viewing my budget structure, I want main categories to show calculated totals only (not editable), so that I understand they're aggregates of sub-categories.
+
+**Current Status:** ❌ **BLOCKING**  
+**Confidence:** 🟢 **HIGH** (Confirmed in current UI)  
+**Problem:** Main categories still display as editable amounts instead of read-only calculated totals.
+
+**Technical Details:**
+- Issue in `/src/pages/Budget.tsx` lines 313-322
+- Main categories show formatted amounts but should be clearly non-interactive
+- Need to remove any click handlers or edit capabilities from main category rows
+- Should display calculated sum of sub-categories, not independent budget_amount
+
+**Acceptance Criteria:**
+- [ ] Main category amounts are displayed as read-only text
+- [ ] No hover effects or click interactions on main category amounts
+- [ ] Main category totals correctly sum all sub-category amounts
+- [ ] Visual distinction between editable sub-categories and read-only main categories
+- [ ] Tooltips or visual indicators showing main categories are calculated
+
+---
+
+### 🟡 **High Priority - In Progress**
+
+#### Story: AUTH-001 - Complete Authentication Flow Testing
+**User Story:** As a user, I want to sign in seamlessly with Google OAuth and access my budget data, so that I can manage my finances without authentication issues.
+
+**Current Status:** 🟡 **IN PROGRESS**  
+**Confidence:** 🟡 **MEDIUM** (Fixes applied but needs validation)  
+**Recent Changes:** Fixed user ID mismatch in profile creation, restored device trust security.
+
+**Technical Details:**
+- Fixed `fetchUserProfile` user ID consistency in `/src/contexts/AuthContext.tsx`
+- Restored device trust prompts and session timeouts
+- Server running on http://localhost:8080/
+
+**Acceptance Criteria:**
+- [ ] Google OAuth login works for both allowed emails
+- [ ] User profile creation succeeds on first login
+- [ ] Device trust prompts appear for new devices
+- [ ] Session timeouts work correctly (45 days trusted, 15 minutes untrusted)
+- [ ] No authentication redirect loops
+
+---
+
+### 🟢 **Medium Priority - Up Next**
+
+#### Story: BUD-003 - Implement Three-Column Auto-Calculation
+**User Story:** As a user setting budget amounts, I want to edit any of the three columns (annual/monthly/percent) and have the others auto-calculate, so that I can work with my preferred budgeting method.
+
+**Current Status:** 🟢 **UP NEXT**  
+**Confidence:** 🟡 **MEDIUM** (Logic exists but may need refinement)  
+**Technical Details:**
+- Auto-calculation logic exists in `handleUpdateBudget` function
+- Need to verify calculations work correctly after fixing BUD-001
+- Should handle edge cases (zero income, invalid inputs)
+
+**Acceptance Criteria:**
+- [ ] Edit annual → monthly ÷ 12, % calculated automatically
+- [ ] Edit monthly → annual × 12, % calculated automatically  
+- [ ] Edit % → monthly and annual calculated based on total income
+- [ ] Calculations respect DKK formatting and decimal precision
+- [ ] Error handling for invalid inputs (negative numbers, text)
+
+---
+
+#### Story: CAT-001 - Complete Category Management System
+**User Story:** As a budget administrator, I want to manage budget categories and sub-categories through a proper interface, so that I can customize my budget structure.
+
+**Current Status:** 🟢 **UP NEXT**  
+**Confidence:** 🟡 **MEDIUM** (Referenced in conversation but not implemented)  
+**Technical Details:**
+- Need to implement category creation/editing interface
+- Should integrate with existing budget structure
+- Need proper validation and constraints
+
+**Acceptance Criteria:**
+- [ ] Add new main categories with proper grouping
+- [ ] Add/edit/delete sub-categories within main categories
+- [ ] Category management UI accessible from budget page
+- [ ] Validation for category names and budget allocations
+- [ ] Proper database updates and state management
+
+---
+
+### 🔵 **Low Priority - Backlog**
+
+#### Story: UI-001 - Enhance Budget Visual Design
+**User Story:** As a user, I want a clear, visually appealing budget interface, so that I can easily understand my financial situation at a glance.
+
+**Current Status:** 🔵 **BACKLOG**  
+**Confidence:** 🟢 **HIGH** (UI improvements identified)  
+
+**Acceptance Criteria:**
+- [ ] Improved visual hierarchy between main categories and sub-categories
+- [ ] Better color coding for different budget types
+- [ ] Responsive design improvements for mobile devices
+- [ ] Enhanced tooltips and help text
+- [ ] Loading states and error handling improvements
+
+---
+
+#### Story: PERF-001 - Optimize Budget Loading Performance
+**User Story:** As a user, I want the budget page to load quickly and respond fast to edits, so that I can manage my budget efficiently.
+
+**Current Status:** 🔵 **BACKLOG**  
+**Confidence:** 🟡 **MEDIUM** (Performance not yet measured)  
+
+**Acceptance Criteria:**
+- [ ] Budget data loads within 2 seconds
+- [ ] Sub-category updates reflect immediately without full page refresh
+- [ ] Optimized database queries for budget calculations
+- [ ] Proper caching of budget data
+- [ ] Loading indicators for async operations
+
+---
+
+## 🎯 Implementation Priority Matrix
+
+### **Sprint Focus (Next 2-3 days)**
+1. **BUD-001** - Fix sub-category auto-clearing (CRITICAL)
+2. **BUD-002** - Remove main category editing (CRITICAL)  
+3. **AUTH-001** - Complete authentication testing (HIGH)
+
+### **Next Sprint (Following week)**
+4. **BUD-003** - Three-column auto-calculation (MEDIUM)
+5. **CAT-001** - Category management system (MEDIUM)
+
+### **Future Enhancements**
+6. **UI-001** - Visual design improvements (LOW)
+7. **PERF-001** - Performance optimization (LOW)
+
+---
+
+## 📊 Overall Project Health
+
+### **Completed Features ✅**
+- Google OAuth authentication framework
+- Danish Krone formatting (x.xxx,xx kr)
+- Date formatting (YY/MM/DD) in CET timezone
+- Budget structure with main categories and sub-categories
+- Transaction management system
+- Device security framework
+- Annual budget data structure
+
+### **Known Issues 🐛**
+- Sub-category input fields auto-clear after editing (BUD-001)
+- Main categories show editable amounts instead of read-only totals (BUD-002)
+- Authentication flow needs final validation (AUTH-001)
+
+### **Technical Debt 🏗️**
+- Form state management in budget editing needs refactoring
+- Error handling could be more robust
+- Loading states need improvement across the application
+
+---
+
+---
+
+## �🔍 Validation Checklist & Architecture Readiness
 
 ### Phase 1: Single Account Validation (Current)
 

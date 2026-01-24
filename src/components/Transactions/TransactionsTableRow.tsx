@@ -10,6 +10,7 @@ interface TransactionsTableRowProps {
   onToggleSelection: (id: string) => void;
   editingCell: { id: string, field: keyof Transaction } | null;
   onCellEdit: (id: string, field: keyof Transaction, value: any) => void;
+  onBulkEdit: (id: string, updates: Partial<Transaction>) => void;
   onStartEdit: (id: string, field: keyof Transaction) => void;
   onStopEdit: () => void;
   onDelete: (id: string) => void;
@@ -21,6 +22,7 @@ export const TransactionsTableRow = ({
   onToggleSelection,
   editingCell,
   onCellEdit,
+  onBulkEdit,
   onStartEdit,
   onStopEdit,
   onDelete
@@ -30,7 +32,7 @@ export const TransactionsTableRow = ({
 
   return (
     <tr
-      className={`border-b border-border/50 hover:bg-accent/30 transition-colors ${transaction.budget === 'Exclude' || transaction.excluded ? 'opacity-40 bg-muted/20' : ''
+      className={`border-b border-border/50 hover:bg-accent/30 transition-colors ${transaction.excluded ? 'opacity-40 bg-muted/20' : ''
         } ${isSelected ? 'bg-primary/10' : ''}`}
     >
       <td className="py-3 px-2">
@@ -47,6 +49,7 @@ export const TransactionsTableRow = ({
           field="date"
           isEditing={isEditing('date')}
           onEdit={onCellEdit}
+          onBulkEdit={onBulkEdit}
           onStartEdit={onStartEdit}
           onStopEdit={onStopEdit}
         />
@@ -58,6 +61,7 @@ export const TransactionsTableRow = ({
             field="merchant"
             isEditing={isEditing('merchant')}
             onEdit={onCellEdit}
+            onBulkEdit={onBulkEdit}
             onStartEdit={onStartEdit}
             onStopEdit={onStopEdit}
           />
@@ -74,6 +78,7 @@ export const TransactionsTableRow = ({
           field="amount"
           isEditing={isEditing('amount')}
           onEdit={onCellEdit}
+          onBulkEdit={onBulkEdit}
           onStartEdit={onStartEdit}
           onStopEdit={onStopEdit}
         />
@@ -84,6 +89,7 @@ export const TransactionsTableRow = ({
           field="account"
           isEditing={isEditing('account')}
           onEdit={onCellEdit}
+          onBulkEdit={onBulkEdit}
           onStartEdit={onStartEdit}
           onStopEdit={onStopEdit}
         />
@@ -94,16 +100,7 @@ export const TransactionsTableRow = ({
           field="status"
           isEditing={isEditing('status')}
           onEdit={onCellEdit}
-          onStartEdit={onStartEdit}
-          onStopEdit={onStopEdit}
-        />
-      </td>
-      <td className="py-3 px-2">
-        <EditableCell
-          transaction={transaction}
-          field="budget"
-          isEditing={isEditing('budget')}
-          onEdit={onCellEdit}
+          onBulkEdit={onBulkEdit}
           onStartEdit={onStartEdit}
           onStopEdit={onStopEdit}
         />
@@ -114,6 +111,7 @@ export const TransactionsTableRow = ({
           field="category"
           isEditing={isEditing('category')}
           onEdit={onCellEdit}
+          onBulkEdit={onBulkEdit}
           onStartEdit={onStartEdit}
           onStopEdit={onStopEdit}
         />
@@ -121,9 +119,10 @@ export const TransactionsTableRow = ({
       <td className="py-3 px-2">
         <EditableCell
           transaction={transaction}
-          field="subCategory"
-          isEditing={isEditing('subCategory')}
+          field="sub_category"
+          isEditing={isEditing('sub_category')}
           onEdit={onCellEdit}
+          onBulkEdit={onBulkEdit}
           onStartEdit={onStartEdit}
           onStopEdit={onStopEdit}
         />
@@ -134,6 +133,7 @@ export const TransactionsTableRow = ({
           field="planned"
           isEditing={isEditing('planned')}
           onEdit={onCellEdit}
+          onBulkEdit={onBulkEdit}
           onStartEdit={onStartEdit}
           onStopEdit={onStopEdit}
         />
@@ -144,6 +144,7 @@ export const TransactionsTableRow = ({
           field="recurring"
           isEditing={isEditing('recurring')}
           onEdit={onCellEdit}
+          onBulkEdit={onBulkEdit}
           onStartEdit={onStartEdit}
           onStopEdit={onStopEdit}
         />
@@ -154,6 +155,7 @@ export const TransactionsTableRow = ({
           field="excluded"
           isEditing={isEditing('excluded')}
           onEdit={onCellEdit}
+          onBulkEdit={onBulkEdit}
           onStartEdit={onStartEdit}
           onStopEdit={onStopEdit}
         />

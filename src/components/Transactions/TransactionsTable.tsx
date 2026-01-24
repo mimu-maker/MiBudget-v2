@@ -37,6 +37,7 @@ export const TransactionsTable = () => {
     handleFilter,
     clearFilter,
     handleCellEdit,
+    handleBulkCellEdit,
     handleImport,
     handleAddTransaction,
     toggleSelection,
@@ -62,14 +63,11 @@ export const TransactionsTable = () => {
   const filteredAndSortedTransactions = useMemo(() => {
     let periodFiltered = filterByPeriod(transactions, selectedPeriod, customDateRange);
 
-    // Always filter out budget === 'Exclude'
-    periodFiltered = periodFiltered.filter(t => t.budget !== 'Exclude');
-
     const tableFiltered = filterTransactions(periodFiltered, filters);
     return sortTransactions(tableFiltered, sortBy, sortOrder);
   }, [transactions, selectedPeriod, customDateRange, filters, sortBy, sortOrder]);
 
-  const handleStartEdit = (id: string, field: keyof typeof transactions[0]) => {
+  const handleStartEdit = (id: string, field: keyof Transaction) => {
     setEditingCell({ id, field });
   };
 
@@ -158,6 +156,7 @@ export const TransactionsTable = () => {
                         onToggleSelection={toggleSelection}
                         editingCell={editingCell}
                         onCellEdit={handleCellEdit}
+                        onBulkEdit={handleBulkCellEdit}
                         onStartEdit={handleStartEdit}
                         onStopEdit={() => setEditingCell(null)}
                         onDelete={(id) => setTransactionToDelete(id)}

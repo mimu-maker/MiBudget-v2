@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Trash2, Plus, Sparkles, Settings as SettingsIcon, Info, ArrowUp, ArrowDown, ExternalLink, Store, Search, Forward, Check, ChevronRight, Users } from 'lucide-react';
+import { Trash2, Plus, Sparkles, Settings as SettingsIcon, Info, ArrowUp, ArrowDown, ExternalLink, Store, Search, Forward, Check, ChevronRight, Users, Edit } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
@@ -616,6 +616,137 @@ const Settings = () => {
     );
 };
 
+const BudgetTypeManager = () => {
+  const [newBudgetType, setNewBudgetType] = useState('');
+  const [editingType, setEditingType] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  const handleAddBudgetType = () => {
+    if (newBudgetType.trim() && !settings.budgetTypes.includes(newBudgetType.trim())) {
+      addItem('budgetTypes', newBudgetType.trim());
+      setNewBudgetType('');
+    }
+  };
+
+  const handleEditBudgetType = (type: string) => {
+    setEditingType(type);
+    setEditValue(type);
+  };
+
+  const handleSaveEdit = () => {
+    if (editingType && editValue.trim() && editValue !== editingType) {
+      const newTypes = settings.budgetTypes.map(t => t === editingType ? editValue.trim() : t);
+      saveSettings({ budgetTypes: newTypes });
+    }
+    setEditingType(null);
+    setEditValue('');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingType(null);
+    setEditValue('');
+  };
+
+  const handleDeleteBudgetType = (type: string) => {
+    // Don't allow deletion of core budget types
+    if (['Budgeted', 'Special', 'Klintemarken', 'Exclude'].includes(type)) {
+      alert('Cannot delete core budget types');
+      return;
+    }
+    removeItem('budgetTypes', type);
+  };
+
+  return (
+    <Card className="border-slate-200 shadow-sm bg-white overflow-hidden">
+      <div className="p-4 bg-slate-50 border-b">
+        <h3 className="text-lg font-bold text-slate-800">Budget Types Management</h3>
+        <p className="text-xs text-slate-500">Manage budget types including Special and Klintemarken categories.</p>
+      </div>
+      <div className="p-4">
+        <div className="space-y-3 mb-4">
+          {settings.budgetTypes.map((type, index) => (
+            <div key={type} className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <div className="flex-1">
+                {editingType === type ? (
+                  <div className="flex gap-2">
+                    <Input
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      className="h-8"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveEdit();
+                        if (e.key === 'Escape') handleCancelEdit();
+                      }}
+                    />
+                    <Button size="sm" onClick={handleSaveEdit} className="h-8">
+                      <Check className="w-3 h-3" />
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={handleCancelEdit} className="h-8">
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-medium text-slate-700">{type}</span>
+                      {['Budgeted', 'Special', 'Klintemarken', 'Exclude'].includes(type) && (
+                        <Badge variant="secondary" className="ml-2 text-xs bg-blue-50 text-blue-700 border-blue-100">
+                          Core
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-slate-400 hover:text-blue-600"
+                        onClick={() => handleEditBudgetType(type)}
+                      >
+                        <Edit className="w-3 h-3" />
+                      </Button>
+                      {!['Budgeted', 'Special', 'Klintemarken', 'Exclude'].includes(type) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-slate-400 hover:text-red-500"
+                          onClick={() => handleDeleteBudgetType(type)}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        
+        <div className="border-t pt-4">
+          <div className="flex gap-2">
+            <Input
+              placeholder="Add new budget type..."
+              value={newBudgetType}
+              onChange={(e) => setNewBudgetType(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAddBudgetType();
+              }}
+              className="h-9"
+            />
+            <Button size="sm" onClick={handleAddBudgetType}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Type
+            </Button>
+          </div>
+          <p className="text-xs text-slate-400 mt-2">
+            Core budget types (Budgeted, Special, Klintemarken, Exclude) cannot be deleted.
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+};
+
 const MerchantManager = () => {
     const queryClient = useQueryClient();
     const [search, setSearch] = useState('');
@@ -804,8 +935,9 @@ const MerchantManager = () => {
 
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="general" className="px-6">General</TabsTrigger>
+          <TabsTrigger value="budget" className="px-6">Budget Categories</TabsTrigger>
           <TabsTrigger value="merchants" className="px-6">Merchant Rules</TabsTrigger>
           <TabsTrigger value="lists" className="px-6">System Lists</TabsTrigger>
         </TabsList>
@@ -864,6 +996,9 @@ const MerchantManager = () => {
 
           {/* Unified Categories Section */}
           <UnifiedCategoryManager />
+
+          {/* Budget Types Management */}
+          <BudgetTypeManager />
 
           {/* Budget Balancing Card */}
           <Card className="border-slate-200 shadow-sm bg-white">

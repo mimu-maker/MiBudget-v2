@@ -12,6 +12,7 @@ interface EditableCellProps {
   field: keyof Transaction;
   isEditing: boolean;
   onEdit: (id: string, field: keyof Transaction, value: any) => void;
+  onBulkEdit: (id: string, updates: Partial<Transaction>) => void;
   onStartEdit: (id: string, field: keyof Transaction) => void;
   onStopEdit: () => void;
 }
@@ -21,6 +22,7 @@ export const EditableCell = ({
   field,
   isEditing,
   onEdit,
+  onBulkEdit,
   onStartEdit,
   onStopEdit
 }: EditableCellProps) => {
@@ -28,13 +30,12 @@ export const EditableCell = ({
   const value = transaction[field];
 
   if (isEditing) {
-    if (field === 'account' || field === 'status' || field === 'budget' || field === 'category' || field === 'subCategory') {
+    if (field === 'account' || field === 'status' || field === 'category' || field === 'sub_category') {
       const options = {
         account: settings.accounts,
         status: APP_STATUSES,
-        budget: settings.budgetTypes,
         category: settings.categories,
-        subCategory: settings.subCategories?.[transaction.category] || []
+        sub_category: settings.subCategories?.[transaction.category] || []
       };
 
       const handleStatusChange = (newStatus: string) => {
@@ -48,11 +49,21 @@ export const EditableCell = ({
         }
       };
 
-      // Handle category change - clear sub-category when category changes
+      // Handle category change - preserve sub-category if it exists under new category
       const handleCategoryChange = (newCategory: string) => {
-        onEdit(transaction.id, 'category', newCategory);
-        // Clear sub-category when category changes
-        onEdit(transaction.id, 'subCategory', '');
+        // Check if current sub-category exists under the new category
+        const currentSubCategory = transaction.sub_category;
+        const newCategorySubCategories = settings.subCategories?.[newCategory] || [];
+        const shouldKeepSubCategory = currentSubCategory && newCategorySubCategories.includes(currentSubCategory);
+        
+        // Create updates object for atomic change
+        const updates: Partial<Transaction> = { category: newCategory };
+        if (!shouldKeepSubCategory) {
+          updates.sub_category = null;
+        }
+        
+        // Use bulk edit for atomic update
+        onBulkEdit(transaction.id, updates);
       };
 
       // Handle sub-category change with "+ New" option
@@ -62,10 +73,10 @@ export const EditableCell = ({
           if (newSubCategory && transaction.category) {
             // Add the new sub-category to settings
             addSubCategory(transaction.category, newSubCategory);
-            onEdit(transaction.id, 'subCategory', newSubCategory);
+            onEdit(transaction.id, 'sub_category', newSubCategory);
           }
         } else {
-          onEdit(transaction.id, 'subCategory', newValue);
+          onEdit(transaction.id, 'sub_category', newValue);
         }
       };
 
@@ -82,23 +93,23 @@ export const EditableCell = ({
               handleStatusChange(newValue);
             } else if (field === 'category') {
               handleCategoryChange(newValue);
-            } else if (field === 'subCategory') {
+            } else if (field === 'sub_category') {
               handleSubCategoryChange(newValue);
             } else {
               onEdit(transaction.id, field, newValue);
             }
           }}
           onOpenChange={(open) => !open && onStopEdit()}
-          disabled={field === 'subCategory' && !transaction.category}
+          disabled={field === 'sub_category' && !transaction.category}
         >
           <SelectTrigger className="h-8">
-            <SelectValue placeholder={field === 'subCategory' && !transaction.category ? "Select a category first" : "Select..."} />
+            <SelectValue placeholder={field === 'sub_category' && !transaction.category ? "Select a category first" : "Select..."} />
           </SelectTrigger>
           <SelectContent>
             {options[field].map(option => (
               <SelectItem key={option} value={option}>{option}</SelectItem>
             ))}
-            {field === 'subCategory' && transaction.category && (
+            {field === 'sub_category' && transaction.category && (
               <SelectItem value="add-new" className="text-blue-600 font-medium">
                 + Add New Sub-category
               </SelectItem>
@@ -116,20 +127,11 @@ export const EditableCell = ({
       );
     } else if (field === 'recurring') {
       return (
-        <Select value={String(value)} onValueChange={(newValue) => onEdit(transaction.id, field, newValue)}>
-          <SelectTrigger className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Annually">Annually</SelectItem>
-            <SelectItem value="Bi-annually">Bi-annually</SelectItem>
-            <SelectItem value="Quarterly">Quarterly</SelectItem>
-            <SelectItem value="Monthly">Monthly</SelectItem>
-            <SelectItem value="Weekly">Weekly</SelectItem>
-            <SelectItem value="One-off">One-off</SelectItem>
-            <SelectItem value="N/A">N/A</SelectItem>
-          </SelectContent>
-        </Select>
+        <Switch
+          checked={Boolean(value)}
+          onCheckedChange={(checked) => onEdit(transaction.id, field, checked)}
+          className="data-[state=checked]:bg-emerald-500"
+        />
       );
     } else {
       return (
@@ -159,15 +161,13 @@ export const EditableCell = ({
         </span>
       ) : field === 'status' ? (
         <Badge variant={getStatusBadgeVariant(String(value))}>{String(value)}</Badge>
-      ) : field === 'budget' ? (
-        <Badge variant={getBudgetBadgeVariant(String(value))}>{String(value)}</Badge>
       ) : (field === 'planned' || field === 'excluded') ? (
         <Badge variant={Boolean(value) ? 'default' : 'outline'}>
           {Boolean(value) ? 'Yes' : 'No'}
         </Badge>
       ) : field === 'recurring' ? (
-        <Badge variant={value === 'N/A' ? 'outline' : 'default'}>
-          {String(value)}
+        <Badge variant={Boolean(value) ? 'default' : 'outline'}>
+          {Boolean(value) ? 'Yes' : 'No'}
         </Badge>
       ) : (
         String(value || '')
