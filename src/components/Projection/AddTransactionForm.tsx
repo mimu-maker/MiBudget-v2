@@ -134,7 +134,7 @@ const AddTransactionForm = ({
               onChange={(e) => onTransactionChange({ planned: e.target.checked })}
               className="rounded border-input bg-background text-primary focus:ring-ring"
             />
-            <label htmlFor="planned" className="text-sm font-medium">Planned</label>
+            <label htmlFor="planned" className="text-sm font-medium">Unplanned</label>
           </div>
 
           <div className="flex items-center space-x-2">

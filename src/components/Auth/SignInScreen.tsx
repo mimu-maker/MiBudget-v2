@@ -30,14 +30,14 @@ const SignInScreen: React.FC = () => {
               </CardDescription>
             </div>
           </CardHeader>
-          
+
           <CardContent className="space-y-6">
             <div className="space-y-4">
               <div className="text-center text-sm text-gray-600">
                 Sign in to manage your budget, track expenses, and gain financial insights
               </div>
-              
-              <Button 
+
+              <Button
                 onClick={handleSignIn}
                 disabled={loading}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-3"
@@ -52,7 +52,7 @@ const SignInScreen: React.FC = () => {
                 )}
               </Button>
             </div>
-            
+
             <div className="pt-4 border-t border-gray-200">
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <Shield className="w-4 h-4" />

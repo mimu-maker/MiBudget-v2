@@ -10,13 +10,13 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ArrowLeft, ArrowRight, Check, X, Plus, Eye } from 'lucide-react';
 
 export const ColumnMappingStep: React.FC = () => {
-  const { 
-    importData, 
-    columnMappings, 
-    updateColumnMapping, 
-    nextPhase, 
+  const {
+    importData,
+    columnMappings,
+    updateColumnMapping,
+    nextPhase,
     previousPhase,
-    userPreferences 
+    userPreferences
   } = useOnboarding();
 
   const [currentColumnIndex, setCurrentColumnIndex] = useState(0);
@@ -42,19 +42,19 @@ export const ColumnMappingStep: React.FC = () => {
     { value: 'description', label: 'Description', dataType: 'text' },
     { value: 'status', label: 'Status', dataType: 'text' },
     { value: 'budget', label: 'Budget', dataType: 'text' },
-    { value: 'planned', label: 'Planned', dataType: 'boolean' },
+    { value: 'planned', label: 'Unplanned', dataType: 'boolean' },
     { value: 'recurring', label: 'Recurring', dataType: 'boolean' }
   ];
 
   // Get columns that need mapping (excluding mandatory ones that are already mapped)
   const getColumnsToMap = () => {
     if (!importData) return [];
-    
+
     const mappedColumns = columnMappings.map(m => m.sourceColumn);
-    const mandatoryMapped = mandatoryColumns.filter(col => 
+    const mandatoryMapped = mandatoryColumns.filter(col =>
       columnMappings.some(m => m.targetField === col.field)
     );
-    
+
     return importData.columns
       .filter(col => !mappedColumns.includes(col))
       .filter(col => !mandatoryMapped.some(m => col === m.field));
@@ -67,10 +67,10 @@ export const ColumnMappingStep: React.FC = () => {
   useEffect(() => {
     if (importData && columnMappings.length === 0) {
       const initialMappings: typeof columnMappings = [];
-      
+
       importData.columns.forEach(column => {
         const lowerColumn = column.toLowerCase();
-        
+
         // Auto-detect mandatory columns
         if (lowerColumn.includes('merchant') || lowerColumn.includes('description') || lowerColumn.includes('payee')) {
           initialMappings.push({
@@ -98,7 +98,7 @@ export const ColumnMappingStep: React.FC = () => {
           });
         }
       });
-      
+
       // Update all initial mappings
       initialMappings.forEach(mapping => updateColumnMapping(mapping));
     }
@@ -106,24 +106,24 @@ export const ColumnMappingStep: React.FC = () => {
 
   const detectDataType = (sampleData: string): 'text' | 'date' | 'number' | 'boolean' => {
     if (!sampleData) return 'text';
-    
+
     // Check for boolean
     if (['true', 'false', 'yes', 'no', '1', '0'].includes(sampleData.toLowerCase())) {
       return 'boolean';
     }
-    
+
     // Check for date
     const dateRegex = /^\d{1,4}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/;
     if (dateRegex.test(sampleData)) {
       return 'date';
     }
-    
+
     // Check for number
     const numberRegex = /^[+-]?[\d,]+\.?\d*$/;
     if (numberRegex.test(sampleData.replace(/[^0-9.,\-+]/g, ''))) {
       return 'number';
     }
-    
+
     return 'text';
   };
 
@@ -133,7 +133,7 @@ export const ColumnMappingStep: React.FC = () => {
 
   const handleFieldMapping = (targetField: string) => {
     if (!currentColumn) return;
-    
+
     const mapping = {
       sourceColumn: currentColumn,
       targetField,
@@ -141,9 +141,9 @@ export const ColumnMappingStep: React.FC = () => {
       sampleData: importData?.sampleData[0]?.[currentColumn] || '',
       isNewField: targetField === 'new'
     };
-    
+
     updateColumnMapping(mapping);
-    
+
     // Move to next column or finish
     if (currentColumnIndex < columnsToMap.length - 1) {
       setCurrentColumnIndex(currentColumnIndex + 1);
@@ -154,7 +154,7 @@ export const ColumnMappingStep: React.FC = () => {
 
   const handleCreateNewField = () => {
     if (!newFieldValue.trim()) return;
-    
+
     const mapping = {
       sourceColumn: currentColumn,
       targetField: newFieldValue,
@@ -163,9 +163,9 @@ export const ColumnMappingStep: React.FC = () => {
       isNewField: true,
       newFieldValue
     };
-    
+
     updateColumnMapping(mapping);
-    
+
     if (currentColumnIndex < columnsToMap.length - 1) {
       setCurrentColumnIndex(currentColumnIndex + 1);
       setShowCreateNew(false);
@@ -180,9 +180,9 @@ export const ColumnMappingStep: React.FC = () => {
       dataType: detectDataType(importData?.sampleData[0]?.[currentColumn] || ''),
       sampleData: importData?.sampleData[0]?.[currentColumn] || ''
     };
-    
+
     updateColumnMapping(mapping);
-    
+
     if (currentColumnIndex < columnsToMap.length - 1) {
       setCurrentColumnIndex(currentColumnIndex + 1);
     }
@@ -190,7 +190,7 @@ export const ColumnMappingStep: React.FC = () => {
 
   const formatSampleData = (data: string, dataType: string): string => {
     if (!data) return 'No data';
-    
+
     switch (dataType) {
       case 'date':
         try {
@@ -253,9 +253,9 @@ export const ColumnMappingStep: React.FC = () => {
               {currentColumnIndex + 1} of {columnsToMap.length} columns
             </span>
           </div>
-          
+
           <div className="w-full bg-secondary rounded-full h-2">
-            <div 
+            <div
               className="bg-primary h-2 rounded-full transition-all duration-300"
               style={{ width: `${((currentColumnIndex + 1) / columnsToMap.length) * 100}%` }}
             />
@@ -276,12 +276,11 @@ export const ColumnMappingStep: React.FC = () => {
             {mandatoryColumns.map((col) => {
               const isMapped = isMandatoryColumnMapped(col.field);
               const mappedColumn = columnMappings.find(m => m.targetField === col.field);
-              
+
               return (
                 <div key={col.field} className="flex items-center gap-3 p-3 border rounded-lg">
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                    isMapped ? 'bg-green-100' : 'bg-gray-100'
-                  }`}>
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center ${isMapped ? 'bg-green-100' : 'bg-gray-100'
+                    }`}>
                     {isMapped ? (
                       <Check className="w-3 h-3 text-green-600" />
                     ) : (
@@ -333,7 +332,7 @@ export const ColumnMappingStep: React.FC = () => {
             <div>
               <Label>Map to MiBudget Field</Label>
               <div className="mt-2 space-y-3">
-                <Select 
+                <Select
                   value={columnMappings.find(m => m.sourceColumn === currentColumn)?.targetField || ''}
                   onValueChange={(value) => {
                     if (value === 'new') {
@@ -379,15 +378,15 @@ export const ColumnMappingStep: React.FC = () => {
 
             {/* Action Buttons */}
             <div className="flex gap-2">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={handleIgnoreColumn}
                 className="flex items-center gap-2"
               >
                 <X className="w-4 h-4" />
                 Ignore Column
               </Button>
-              <Button 
+              <Button
                 onClick={() => setShowPreview(!showPreview)}
                 variant="outline"
                 className="flex items-center gap-2"
@@ -448,7 +447,7 @@ export const ColumnMappingStep: React.FC = () => {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back
         </Button>
-        <Button 
+        <Button
           onClick={nextPhase}
           disabled={!canContinue}
           className="flex items-center gap-2"

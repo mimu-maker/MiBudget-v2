@@ -10,14 +10,14 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, ArrowRight, Plus, Settings } from 'lucide-react';
 
 export const PostImportConfigStep: React.FC = () => {
-  const { 
-    importData, 
-    categories, 
-    addCategory, 
+  const {
+    importData,
+    categories,
+    addCategory,
     updatePreferences,
-    nextPhase, 
+    nextPhase,
     previousPhase,
-    userPreferences 
+    userPreferences
   } = useOnboarding();
 
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
@@ -33,7 +33,7 @@ export const PostImportConfigStep: React.FC = () => {
     { field: 'description', label: 'Description', description: 'Transaction details' },
     { field: 'status', label: 'Status', description: 'Transaction status (pending, complete)' },
     { field: 'budget', label: 'Budget', description: 'Budget assignment' },
-    { field: 'planned', label: 'Planned', description: 'Planned transaction' },
+    { field: 'planned', label: 'Unplanned', description: 'Unplanned transaction' },
     { field: 'recurring', label: 'Recurring', description: 'Recurring transaction flag' }
   ];
 
@@ -167,7 +167,7 @@ export const PostImportConfigStep: React.FC = () => {
                   </div>
                   <div>
                     {column === 'account' && (
-                      <Select 
+                      <Select
                         value={defaultValues[column] || 'Checking'}
                         onValueChange={(value) => handleDefaultValueChange(column, value)}
                       >
@@ -182,9 +182,9 @@ export const PostImportConfigStep: React.FC = () => {
                         </SelectContent>
                       </Select>
                     )}
-                    
+
                     {column === 'status' && (
-                      <Select 
+                      <Select
                         value={defaultValues[column] || 'Complete'}
                         onValueChange={(value) => handleDefaultValueChange(column, value)}
                       >
@@ -198,9 +198,9 @@ export const PostImportConfigStep: React.FC = () => {
                         </SelectContent>
                       </Select>
                     )}
-                    
+
                     {column === 'category' && (
-                      <Select 
+                      <Select
                         value={defaultValues[column] || ''}
                         onValueChange={(value) => handleDefaultValueChange(column, value)}
                       >
@@ -216,9 +216,9 @@ export const PostImportConfigStep: React.FC = () => {
                         </SelectContent>
                       </Select>
                     )}
-                    
+
                     {column === 'planned' && (
-                      <Select 
+                      <Select
                         value={defaultValues[column]?.toString() || 'false'}
                         onValueChange={(value) => handleDefaultValueChange(column, value === 'true')}
                       >
@@ -231,9 +231,9 @@ export const PostImportConfigStep: React.FC = () => {
                         </SelectContent>
                       </Select>
                     )}
-                    
+
                     {column === 'recurring' && (
-                      <Select 
+                      <Select
                         value={defaultValues[column]?.toString() || 'false'}
                         onValueChange={(value) => handleDefaultValueChange(column, value === 'true')}
                       >
@@ -259,8 +259,8 @@ export const PostImportConfigStep: React.FC = () => {
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             Categories
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => setShowAddCategory(true)}
               className="flex items-center gap-2"
@@ -285,7 +285,7 @@ export const PostImportConfigStep: React.FC = () => {
                     key={category.name}
                     variant={exists ? "default" : "outline"}
                     className="cursor-pointer hover:bg-accent"
-                    style={{ 
+                    style={{
                       backgroundColor: exists ? category.color : 'transparent',
                       color: exists ? 'white' : 'inherit'
                     }}
@@ -334,7 +334,7 @@ export const PostImportConfigStep: React.FC = () => {
                 {categories.map((category) => (
                   <Badge
                     key={category.name}
-                    style={{ 
+                    style={{
                       backgroundColor: category.color,
                       color: 'white'
                     }}
@@ -375,7 +375,7 @@ export const PostImportConfigStep: React.FC = () => {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back
         </Button>
-        <Button 
+        <Button
           onClick={nextPhase}
           disabled={!canContinue()}
           className="flex items-center gap-2"

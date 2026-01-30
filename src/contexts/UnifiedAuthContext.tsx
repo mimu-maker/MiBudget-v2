@@ -1,5 +1,6 @@
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useAuth as useSupabaseAuth } from './AuthContext';
+import { useProfile } from './ProfileContext';
 
 interface UnifiedUser {
   id: string;
@@ -15,14 +16,16 @@ interface UnifiedUserProfile {
   full_name: string;
   currency: string;
   timezone: string;
-  role: 'admin' | 'editor' | 'viewer';
+  role: 'admin' | 'editor' | 'viewer' | 'restrict';
   is_setup_complete: boolean;
   created_at: string;
   updated_at: string;
-  date_format?: string;
+  date_format?: 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'YY/MM/DD';
   number_format?: string;
   onboarding_step?: number;
   import_completed?: boolean;
+  language?: 'en-US' | 'da-DK';
+  amount_format?: 'comma_decimal' | 'dot_decimal';
 }
 
 interface UnifiedAuthContextType {
@@ -41,15 +44,16 @@ const UnifiedAuthContext = createContext<UnifiedAuthContextType | undefined>(und
 
 export const UnifiedAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const isLocalAuth = localStorage.getItem('authMode') === 'local';
-  
+
   // For now, we're only using Supabase auth (local auth disabled)
   const supabaseAuth = useSupabaseAuth();
+  const profileContext = useProfile();
 
   // Use Supabase auth (local auth disabled)
   const user = supabaseAuth.user;
-  const userProfile = supabaseAuth.userProfile;
+  const userProfile = profileContext.userProfile as UnifiedUserProfile | null;
   const session = supabaseAuth.session;
-  const loading = supabaseAuth.loading;
+  const loading = supabaseAuth.loading || profileContext.loading;
 
   const signIn = async (email: string, password: string) => {
     // For Supabase, you'd need to implement email/password auth
@@ -65,7 +69,7 @@ export const UnifiedAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const updateUserProfile = async (profile: Partial<UnifiedUserProfile>) => {
-    return supabaseAuth.updateUserProfile(profile);
+    return profileContext.updateUserProfile(profile);
   };
 
   const value: UnifiedAuthContextType = {

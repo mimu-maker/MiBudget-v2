@@ -1,91 +1,145 @@
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
 import { usePeriod } from '@/contexts/PeriodContext';
 import { filterByPeriod } from '@/lib/dateUtils';
 import { formatCurrency } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
+import { EditableCell } from '@/components/Transactions/EditableCell';
 
 export const ReconciliationOverview = () => {
-  const { transactions } = useTransactionTable();
+  const { transactions, handleCellEdit, handleBulkCellEdit } = useTransactionTable();
   const { selectedPeriod, customDateRange } = usePeriod();
   const { settings } = useSettings();
 
   // Filter for 'Pending' status transactions for the selected period
   const pendingTransactions = useMemo(() => {
     const periodFiltered = filterByPeriod(transactions, selectedPeriod, customDateRange);
-    return periodFiltered.filter(t => t.status && t.status.toLowerCase().includes('pending') && !t.excluded && t.budget !== 'Exclude');
+    return periodFiltered.filter(t =>
+      t.status &&
+      (t.status === 'Pending Reconciliation' || t.status.startsWith('Pending: ')) &&
+      !t.excluded &&
+      t.budget !== 'Exclude'
+    );
   }, [transactions, selectedPeriod, customDateRange]);
 
   const groupedItems = useMemo(() => {
     return pendingTransactions.reduce((acc, item) => {
-      const group = item.status?.replace('Pending ', '') || 'General';
+      const group = item.status.startsWith('Pending: ') ? item.status.replace('Pending: ', '') : 'Unassigned';
       if (!acc[group]) acc[group] = [];
       acc[group].push(item);
       return acc;
     }, {} as Record<string, typeof pendingTransactions>);
   }, [pendingTransactions]);
 
+  const summaryStats = useMemo(() => {
+    return Object.entries(groupedItems).map(([group, items]) => ({
+      group,
+      count: items.length,
+      total: items.reduce((sum, item) => sum + item.amount, 0)
+    })).sort((a, b) => b.total - a.total); // Sort by highest amount owed/due
+  }, [groupedItems]);
+
   const totalPendingBalance = pendingTransactions.reduce((sum, item) => sum + item.amount, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-foreground tracking-tight">Pending Reconciliation</h2>
-        <Badge variant="outline" className={`text-lg font-black px-4 py-1.5 rounded-full transition-colors ${totalPendingBalance >= 0 ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/5' : 'text-rose-500 border-rose-500/30 bg-rose-500/5'}`}>
-          Net Balance: {formatCurrency(totalPendingBalance, settings.currency)}
-        </Badge>
+        <div>
+          <h2 className="text-xl font-bold text-foreground tracking-tight">Reconciliation Pivot</h2>
+          <p className="text-muted-foreground text-sm">Track items pending valid classification or reimbursement.</p>
+        </div>
+        <div className="px-6 py-3 bg-card rounded-2xl border shadow-sm flex items-center gap-4">
+          <span className="text-xs uppercase font-bold text-muted-foreground tracking-wider">Net Outstanding</span>
+          <span className={`text-xl font-black ${totalPendingBalance >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+            {formatCurrency(totalPendingBalance, settings.currency)}
+          </span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
-        {Object.entries(groupedItems).map(([group, items]) => (
-          <Card key={group} className="shadow-md border-none overflow-hidden bg-card transition-colors">
-            <CardHeader className="bg-muted/30 transition-colors">
-              <CardTitle className="flex items-center justify-between text-lg">
-                <span className="font-bold text-foreground/80">{group === 'General' ? 'Pending Items' : `Pending - ${group}`}</span>
-                <Badge variant="secondary" className="bg-primary/10 text-primary font-bold">{items.length} items</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6">
-              <div className="space-y-3">
-                {items.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between p-4 border border-border/50 rounded-2xl bg-background/50 shadow-sm hover:shadow-md hover:bg-background transition-all group">
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-foreground/90">{item.description}</span>
-                        <span className={`font-black text-lg ${item.amount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                          {formatCurrency(item.amount, settings.currency)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{item.date}</span>
-                        <div className="flex items-center space-x-2">
-                          <Badge variant="outline" className="text-[10px] font-bold uppercase border-border/50">{item.category}</Badge>
-                          <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-tighter bg-muted hover:bg-muted text-muted-foreground">{item.status}</Badge>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+      {/* Pivot Summary Table */}
+      {summaryStats.length > 0 && (
+        <Card className="border-none shadow-md bg-card/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm uppercase tracking-widest text-muted-foreground">Summary by Person/Event</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent border-b border-border/50">
+                  <TableHead className="w-[200px]">Entity</TableHead>
+                  <TableHead className="text-center">Items</TableHead>
+                  <TableHead className="text-right">Total Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {summaryStats.map((stat) => (
+                  <TableRow key={stat.group} className="hover:bg-muted/50 transition-colors border-b border-border/40">
+                    <TableCell className="font-bold text-foreground">{stat.group}</TableCell>
+                    <TableCell className="text-center font-medium text-muted-foreground">{stat.count}</TableCell>
+                    <TableCell className={`text-right font-bold ${stat.total >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {formatCurrency(stat.total, settings.currency)}
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </div>
-              <div className="mt-6 pt-6 border-t border-border/30">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground font-bold uppercase tracking-widest text-[10px]">Total for {group}</span>
-                  <span className={`text-xl font-black ${items.reduce((sum, item) => sum + item.amount, 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                    {formatCurrency(items.reduce((sum, item) => sum + item.amount, 0), settings.currency)}
-                  </span>
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 gap-8">
+        {Object.entries(groupedItems).map(([group, items]) => (
+          <div key={group} className="space-y-3">
+            <div className="flex items-center gap-3 px-2">
+              <div className="h-6 w-1 bg-primary rounded-full"></div>
+              <h3 className="font-bold text-lg text-foreground">{group}</h3>
+              <Badge variant="secondary" className="ml-auto">{items.length} items</Badge>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              {items.map((item) => (
+                <div key={item.id} className="group flex items-center gap-4 p-3 bg-card hover:bg-accent/50 border border-border/40 rounded-xl transition-all shadow-sm">
+                  <div className="w-[100px] text-xs font-bold text-muted-foreground">{item.date}</div>
+                  <div className="flex-1 font-medium text-foreground/90 truncate">{item.merchant}</div>
+
+                  {/* Inline Status Edit to quickly resolve items */}
+                  <div className="w-[200px]">
+                    <EditableCell
+                      transaction={item}
+                      field="status"
+                      isEditing={true} // Always usable here
+                      onEdit={handleCellEdit}
+                      onBulkEdit={handleBulkCellEdit}
+                      onStartEdit={() => { }}
+                      onStopEdit={() => { }}
+                    />
+                  </div>
+
+                  <div className={`w-[120px] text-right font-black ${item.amount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    {formatCurrency(item.amount, settings.currency)}
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              ))}
+            </div>
+
+            <div className="flex justify-end pt-2 px-4 border-t border-border/30 border-dashed">
+              <span className="text-xs uppercase font-bold text-muted-foreground mr-4 pt-1">Total {group}</span>
+              <span className={`font-black ${items.reduce((sum, item) => sum + item.amount, 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {formatCurrency(items.reduce((sum, item) => sum + item.amount, 0), settings.currency)}
+              </span>
+            </div>
+          </div>
         ))}
 
         {pendingTransactions.length === 0 && (
-          <div className="text-center py-20 bg-muted/30 rounded-3xl border-2 border-dashed border-border transition-colors">
-            <div className="max-w-xs mx-auto space-y-3">
-              <p className="text-2xl font-black text-foreground/20 tracking-tighter uppercase">Clear Skies</p>
-              <p className="text-muted-foreground font-medium text-sm">No pending items found in {(selectedPeriod === 'Custom' ? 'custom range' : selectedPeriod).toLowerCase()}. Everything is reconciled!</p>
+          <div className="text-center py-24 bg-muted/20 rounded-3xl border-2 border-dashed border-border/50">
+            <div className="max-w-md mx-auto space-y-4">
+              <p className="text-3xl font-black text-foreground/10 tracking-tighter uppercase">All Clear</p>
+              <p className="text-muted-foreground font-medium">No pending reconciliation items found. You are all caught up!</p>
             </div>
           </div>
         )}

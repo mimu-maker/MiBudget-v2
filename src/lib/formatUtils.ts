@@ -1,8 +1,8 @@
 import { format, parseISO } from 'date-fns';
 
 export const formatCurrency = (amount: number, currency: string = 'DKK'): string => {
-    // Enforce US style (x,xxx.xx) as requested: "ALWAYS show amount formatted as x,xxx.xx kr"
-    const formatter = new Intl.NumberFormat('en-US', {
+    // Enforce Michael's style (x.xxx,xx kr): Dot for thousands, Comma for decimals
+    const formatter = new Intl.NumberFormat('da-DK', {
         style: 'decimal',
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
@@ -15,7 +15,8 @@ export const formatDate = (date: string | Date): string => {
     if (!date) return '';
     try {
         const d = typeof date === 'string' ? parseISO(date) : date;
-        return format(d, 'yy-MM-dd');
+        // Enforce Michael's style: YY/MM/DD
+        return format(d, 'yy/MM/dd');
     } catch {
         return date.toString();
     }

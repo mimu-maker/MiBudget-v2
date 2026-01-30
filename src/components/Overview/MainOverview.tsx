@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ComposedChart, Area, ReferenceLine } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ComposedChart, Area, ReferenceLine, Legend } from 'recharts';
 import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
 import { useSettings } from '@/hooks/useSettings';
 import { usePeriod } from '@/contexts/PeriodContext';
@@ -11,6 +11,7 @@ import { format, parseISO, startOfMonth, eachMonthOfInterval, isWithinInterval }
 import { da } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/lib/formatUtils';
+import { useAnnualBudget } from '@/hooks/useAnnualBudget';
 
 export const MainOverview = () => {
   const { transactions } = useTransactionTable();
@@ -19,17 +20,33 @@ export const MainOverview = () => {
   const [includeSpecial, setIncludeSpecial] = useState(true);
   const [includeKlintemarken, setIncludeKlintemarken] = useState(true);
 
+  const currentYear = useMemo(() => {
+    if (/^\d{4}$/.test(selectedPeriod)) return parseInt(selectedPeriod);
+
+    const interval = getPeriodInterval(selectedPeriod, customDateRange);
+    const startYear = interval.start.getFullYear();
+    const endYear = interval.end.getFullYear();
+
+    // If it's a wide range (like 'All') or very old, default to current year for budget mapping
+    if (startYear < 2022 || startYear !== endYear) return new Date().getFullYear();
+
+    return startYear;
+  }, [selectedPeriod, customDateRange]);
+
+  const { budget: budgetData, loading: budgetLoading } = useAnnualBudget(currentYear);
+
   const periodFiltered = useMemo(() => {
     const interval = getPeriodInterval(selectedPeriod, customDateRange);
-    const targetYear = interval.start.getFullYear().toString();
+    const targetYearStr = currentYear.toString();
 
     let filtered = transactions.filter(t => {
       // Handle budgetYear logic for standard years
-      if (t.budgetYear && selectedPeriod !== 'Custom') {
-        if (t.budgetYear !== targetYear) return false;
+      // Ensure we compare strings to avoid type mismatch (e.g. 2025 !== "2025")
+      if (t.budgetYear && selectedPeriod !== 'Custom' && selectedPeriod !== 'All') {
+        if (t.budgetYear.toString() !== targetYearStr) return false;
         try {
           const d = parseISO(t.date);
-          const effectiveDate = new Date(parseInt(t.budgetYear), d.getMonth(), d.getDate());
+          const effectiveDate = new Date(parseInt(t.budgetYear.toString()), d.getMonth(), d.getDate());
           return isWithinInterval(effectiveDate, interval);
         } catch {
           return false;
@@ -41,9 +58,9 @@ export const MainOverview = () => {
 
     if (!includeSpecial) filtered = filtered.filter(t => t.budget !== 'Special');
     if (!includeKlintemarken) filtered = filtered.filter(t => t.budget !== 'Klintemarken');
-    filtered = filtered.filter(t => t.budget !== 'Exclude' && !t.excluded);
+    filtered = filtered.filter(t => t.budget !== 'Exclude' && !t.excluded && t.status !== 'Pending Reconciliation' && !t.status?.startsWith('Pending: '));
     return filtered;
-  }, [transactions, selectedPeriod, customDateRange, includeSpecial, includeKlintemarken]);
+  }, [transactions, selectedPeriod, customDateRange, includeSpecial, includeKlintemarken, currentYear]);
 
   const summary = useMemo(() => {
     return periodFiltered.reduce((acc, t) => {
@@ -67,8 +84,8 @@ export const MainOverview = () => {
     const months = eachMonthOfInterval(interval);
 
     return months.map(monthDate => {
-      const monthLabel = format(monthDate, 'MMM', { locale: da });
-      const fullMonthName = format(monthDate, 'MMMM yyyy', { locale: da });
+      const monthLabel = format(monthDate, 'MM/yy', { locale: da });
+      const fullMonthName = format(monthDate, 'MM/yyyy', { locale: da });
       const monthStart = startOfMonth(monthDate);
       const nextMonthStart = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1);
 
@@ -119,20 +136,49 @@ export const MainOverview = () => {
   }, [monthlyData]);
 
   const radarData = useMemo(() => {
-    const categories: Record<string, { actual: number; budgeted: number }> = {};
+    const interval = getPeriodInterval(selectedPeriod, customDateRange);
+    const monthsInPeriod = eachMonthOfInterval(interval).length;
 
-    periodFiltered.forEach(t => {
-      const cat = t.category || 'Other';
-      if (!categories[cat]) categories[cat] = { actual: 0, budgeted: 2000 };
-      categories[cat].actual += Math.abs(t.amount < 0 ? t.amount : 0);
+    // Filter categories from budget if available
+    const filteredBudgeted = budgetData?.categories.filter(cat => {
+      const isExpenditure = cat.category_group === 'expenditure';
+      const isSpecial = cat.category_group === 'special';
+      const isKlintemarken = cat.category_group === 'klintemarken';
+
+      if (isSpecial && !includeSpecial) return false;
+      if (isKlintemarken && !includeKlintemarken) return false;
+
+      return isExpenditure || isSpecial || isKlintemarken;
+    }) || [];
+
+    const dataMap: Record<string, { budgeted: number; actual: number }> = {};
+
+    // Initialize map with budgeted categories
+    filteredBudgeted.forEach(cat => {
+      dataMap[cat.name] = {
+        budgeted: Math.round(cat.budget_amount * monthsInPeriod),
+        actual: 0
+      };
     });
 
-    return Object.entries(categories).map(([category, vals]) => ({
+    // Add/merge actual spending from Transactions
+    periodFiltered.forEach(t => {
+      if (t.amount < 0) {
+        const catName = t.category || 'Other';
+        if (!dataMap[catName]) {
+          dataMap[catName] = { budgeted: 0, actual: 0 };
+        }
+        dataMap[catName].actual += Math.abs(t.amount);
+      }
+    });
+
+    return Object.entries(dataMap).map(([category, vals]) => ({
       category,
       budgeted: vals.budgeted,
       actual: Math.round(vals.actual)
-    }));
-  }, [periodFiltered]);
+    })).filter(d => d.budgeted > 0 || d.actual > 0)
+      .sort((a, b) => b.budgeted - a.budgeted);
+  }, [budgetData, periodFiltered, selectedPeriod, customDateRange, includeSpecial, includeKlintemarken]);
 
   const y2Data = useMemo(() => {
     const values = balanceTrend.map(d => d.cumulativeBalance);
@@ -213,6 +259,15 @@ export const MainOverview = () => {
     }
     return null;
   };
+
+  if (budgetLoading) {
+    return (
+      <div className="flex items-center justify-center p-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+        <span className="ml-3 text-muted-foreground font-medium">Loading Overview...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -297,7 +352,7 @@ export const MainOverview = () => {
                       tickLine={false}
                       tick={{ fill: chartColors.text, fontSize: 10 }}
                       domain={[0, 'auto']}
-                      tickFormatter={(val) => val === 0 ? '0 kr' : `${(val / 1000).toFixed(0)}k`}
+                      tickFormatter={(val) => val === 0 ? '0 kr' : `${(val / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })}k kr`}
                     />
                     <YAxis
                       yAxisId="right"
@@ -307,7 +362,7 @@ export const MainOverview = () => {
                       tick={{ fill: chartColors.text, fontSize: 10 }}
                       domain={y2Data.domain}
                       ticks={y2Data.ticks}
-                      tickFormatter={(val) => Math.abs(val) < 1 ? '0 kr' : `${(val / 1000).toFixed(0)}k`}
+                      tickFormatter={(val) => Math.abs(val) < 1 ? '0 kr' : `${(val / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })}k kr`}
                     />
                     <Tooltip content={<CustomTooltip />} />
                     <ReferenceLine yAxisId="right" y={0} stroke={chartColors.grid} strokeWidth={2} />
@@ -356,15 +411,23 @@ export const MainOverview = () => {
             </CardHeader>
             <CardContent>
               <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={radarData}>
-                    <PolarGrid stroke={chartColors.radarGrid} />
-                    <PolarAngleAxis dataKey="category" tick={{ fill: chartColors.text, fontSize: 11 }} />
-                    <PolarRadiusAxis axisLine={false} tick={false} />
-                    <Radar name="Spent" dataKey="actual" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.4} />
-                    <Tooltip contentStyle={{ backgroundColor: chartColors.tooltip, border: 'none', borderRadius: '8px' }} />
-                  </RadarChart>
-                </ResponsiveContainer>
+                {radarData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart data={radarData}>
+                      <PolarGrid stroke={chartColors.radarGrid} />
+                      <PolarAngleAxis dataKey="category" tick={{ fill: chartColors.text, fontSize: 10 }} />
+                      <PolarRadiusAxis axisLine={false} tick={false} />
+                      <Radar name="Budget" dataKey="budgeted" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} />
+                      <Radar name="Actual" dataKey="actual" stroke="#ef4444" fill="#ef4444" fillOpacity={0.4} />
+                      <Tooltip contentStyle={{ backgroundColor: chartColors.tooltip, border: 'none', borderRadius: '8px' }} />
+                      <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-muted-foreground italic">
+                    No categories found for this period
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -375,7 +438,7 @@ export const MainOverview = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                {radarData.sort((a, b) => b.actual - a.actual).map((item, index) => (
+                {radarData.map((item, index) => (
                   <div key={index} className="flex items-center justify-between group">
                     <div className="flex flex-col flex-1 mr-4">
                       <span className="font-semibold text-foreground/80">{item.category}</span>
@@ -389,7 +452,7 @@ export const MainOverview = () => {
                     <div className="text-right">
                       <div className="font-bold text-foreground whitespace-nowrap">{formatCurrency(item.actual, settings.currency)}</div>
                       <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">
-                        {((item.actual / (summary.expense || 1)) * 100).toFixed(1)}%
+                        {((item.actual / (summary.expense || 1)) * 100).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
                       </div>
                     </div>
                   </div>

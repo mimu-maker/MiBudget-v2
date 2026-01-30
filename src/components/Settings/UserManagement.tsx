@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useProfile, UserProfile } from '@/contexts/ProfileContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,21 +14,10 @@ import { Users, Plus, Edit, Trash2, Shield, Eye, Settings } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
-interface UserProfile {
-  id: string;
-  user_id: string;
-  email: string;
-  full_name: string;
-  currency: string;
-  timezone: string;
-  role: 'admin' | 'editor' | 'viewer';
-  is_setup_complete: boolean;
-  created_at: string;
-  updated_at: string;
-}
+
 
 const UserManagement: React.FC = () => {
-  const { userProfile } = useAuth();
+  const { userProfile } = useProfile();
   const queryClient = useQueryClient();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -39,7 +28,7 @@ const UserManagement: React.FC = () => {
   const [newUser, setNewUser] = useState({
     email: '',
     full_name: '',
-    role: 'viewer' as 'admin' | 'editor' | 'viewer',
+    role: 'viewer' as 'admin' | 'editor' | 'viewer' | 'restrict',
     currency: 'USD',
     timezone: 'UTC'
   });
@@ -51,7 +40,7 @@ const UserManagement: React.FC = () => {
         .from('user_profiles')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
       return data as UserProfile[];
     },
@@ -67,7 +56,7 @@ const UserManagement: React.FC = () => {
         .insert([userData])
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -98,7 +87,7 @@ const UserManagement: React.FC = () => {
         .eq('id', userId)
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -121,7 +110,7 @@ const UserManagement: React.FC = () => {
         .from('user_profiles')
         .delete()
         .eq('id', userId);
-      
+
       if (error) throw error;
     },
     onSuccess: () => {
@@ -282,6 +271,7 @@ const UserManagement: React.FC = () => {
                       <SelectItem value="viewer">Viewer - Read only access</SelectItem>
                       <SelectItem value="editor">Editor - Full access</SelectItem>
                       <SelectItem value="admin">Admin - User management</SelectItem>
+                      <SelectItem value="restrict">Restrict - Overview/Budget Only</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -463,6 +453,7 @@ const UserManagement: React.FC = () => {
                   <SelectItem value="viewer">Viewer - Read only access</SelectItem>
                   <SelectItem value="editor">Editor - Full access</SelectItem>
                   <SelectItem value="admin">Admin - User management</SelectItem>
+                  <SelectItem value="restrict">Restrict - Overview/Budget Only</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -50,7 +50,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     updatedAt: new Date().toISOString()
 };
 
-export const APP_STATUSES = ['Pending Triage', 'Pending Person/Event', 'Reconciled', 'Complete'];
+export const APP_STATUSES = ['Pending Triage', 'Pending Reconciliation', 'Reconciled', 'Complete'];
 
 const STORAGE_KEY = 'financeSettings';
 

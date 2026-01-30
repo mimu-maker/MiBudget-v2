@@ -1,5 +1,7 @@
 -- Fix the get_hierarchical_categories function with correct table structure
 -- budget_sub_categories only has linking columns, no limit_amount
+-- Fix duplicate rows caused by multiple budget_category_limits rows
+-- Fix sub-category budget amounts not loading
 
 -- Drop and recreate with correct structure
 DROP FUNCTION IF EXISTS public.get_hierarchical_categories(UUID);
@@ -39,6 +41,13 @@ BEGIN
         WHERE c.user_id = (SELECT user_id FROM budgets WHERE id = p_budget_id)
         AND EXTRACT(YEAR FROM t.date) = EXTRACT(YEAR FROM b.start_date)
         GROUP BY sc.id
+    ),
+    sub_category_budgets AS (
+        SELECT 
+            sub_category_id,
+            limit_amount
+        FROM budget_category_limits
+        WHERE budget_id = p_budget_id AND sub_category_id IS NOT NULL
     )
     SELECT 
         c.category_group::VARCHAR(20),
@@ -55,7 +64,7 @@ BEGIN
                 'name', sc.name::VARCHAR,
                 'display_order', sc.display_order::INTEGER,
                 'spent', COALESCE(scs.sub_spent, 0)::DECIMAL(12,2),
-                'budget_amount', 0::DECIMAL(12,2), -- Sub-categories don't have individual budgets
+                'budget_amount', COALESCE(scb.limit_amount, 0)::DECIMAL(12,2),
                 'is_active', COALESCE(bsc.is_active, true)::BOOLEAN,
                 'first_used_date', bsc.first_used_date
             ) ORDER BY sc.display_order
@@ -63,17 +72,14 @@ BEGIN
           '[]'::jsonb
         )::JSONB
     FROM categories c
-    LEFT JOIN budget_category_limits bcl ON bcl.category_id = c.id AND bcl.budget_id = p_budget_id
+    LEFT JOIN budget_category_limits bcl ON bcl.category_id = c.id AND bcl.budget_id = p_budget_id AND bcl.sub_category_id IS NULL
     LEFT JOIN sub_categories sc ON sc.category_id = c.id
     LEFT JOIN budget_sub_categories bsc ON bsc.sub_category_id = sc.id AND bsc.budget_id = p_budget_id
     LEFT JOIN category_spending cs ON cs.category_id = c.id
     LEFT JOIN sub_category_spending scs ON scs.sub_id = sc.id
+    LEFT JOIN sub_category_budgets scb ON scb.sub_category_id = sc.id
     WHERE c.user_id = (SELECT user_id FROM budgets WHERE id = p_budget_id)
     GROUP BY c.category_group, c.id, c.name, c.display_order, bcl.limit_amount, cs.spent
     ORDER BY c.category_group, c.display_order, c.name;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Test the function
-SELECT '=== TESTING FUNCTION ===' as status;
-SELECT * FROM get_hierarchical_categories('afc5f8ef-0248-4070-bf94-ced6eec31e16'::UUID);

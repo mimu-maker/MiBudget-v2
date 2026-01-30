@@ -38,7 +38,7 @@ const FutureTransactionsTable = ({ transactions, onDelete }: FutureTransactionsT
                 <th className="text-left py-3 px-2 font-semibold text-gray-700">Budget</th>
                 <th className="text-left py-3 px-2 font-semibold text-gray-700">Category</th>
                 <th className="text-left py-3 px-2 font-semibold text-gray-700">Sub-category</th>
-                <th className="text-center py-3 px-2 font-semibold text-gray-700">Planned</th>
+                <th className="text-center py-3 px-2 font-semibold text-gray-700">Unplanned</th>
                 <th className="text-left py-3 px-2 font-semibold text-gray-700">Recurring</th>
                 <th className="text-center py-3 px-2 font-semibold text-gray-700">Actions</th>
               </tr>

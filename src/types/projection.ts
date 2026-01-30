@@ -1,17 +1,22 @@
 
+export type RecurringInterval = 'Annually' | 'Bi-annually' | 'Quarterly' | 'Monthly' | 'N/A';
+
 export interface FutureTransaction {
-  id: number;
+  id: string | number;
   date: string;
   merchant: string;
   amount: number;
-  account: string;
-  status: string;
-  budget: string;
+  // account: string; // Removed as per request
+  // budget: string; // Removed as per request
   category: string;
-  subCategory: string;
+  stream: string; // Renamed from subCategory
   planned: boolean;
-  recurring: boolean;
+  recurring: RecurringInterval;
   description: string;
+  actual_amount?: number;
+  is_matched?: boolean;
+  budget_year?: number;
+  overrides?: Record<string, { amount?: number; description?: string }>;
 }
 
 export interface ProjectionData {
@@ -24,12 +29,11 @@ export interface NewTransactionForm {
   date: string;
   merchant: string;
   amount: string;
-  account: string;
-  status: string;
-  budget: string;
+  // account: string; // Removed as per request
+  // budget: string; // Removed as per request
   category: string;
-  subCategory: string;
+  stream: string; // Renamed from subCategory
   planned: boolean;
-  recurring: boolean;
+  recurring: RecurringInterval;
   description: string;
 }

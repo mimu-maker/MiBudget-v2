@@ -43,7 +43,7 @@ export const KlintemarkenOverview = () => {
     const months: Record<string, Record<string, any>> = {};
 
     klintemarkenTransactions.forEach(t => {
-      const month = format(parseISO(t.date), 'MMM', { locale: da });
+      const month = format(parseISO(t.date), 'MM/yy', { locale: da });
       const cat = t.category || 'Other';
       if (!months[month]) months[month] = { month };
       months[month][cat] = (months[month][cat] || 0) + Math.abs(t.amount);

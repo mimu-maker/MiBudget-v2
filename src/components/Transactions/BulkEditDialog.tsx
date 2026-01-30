@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Transaction } from './hooks/useTransactionTable';
 import { useSettings } from '@/hooks/useSettings';
+import { useCategorySource } from '@/hooks/useBudgetCategories';
 
 interface BulkEditDialogProps {
     open: boolean;
@@ -23,11 +24,12 @@ export const BulkEditDialog = ({
     selectedCount,
 }: BulkEditDialogProps) => {
     const { settings, addSubCategory } = useSettings();
+    const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
     const [enabledFields, setEnabledFields] = useState<Record<string, boolean>>({
         status: false,
         budget: false,
         category: false,
-        subCategory: false,
+        sub_category: false,
         planned: false,
         recurring: false,
         merchant: false,
@@ -38,7 +40,7 @@ export const BulkEditDialog = ({
         status: 'Complete',
         budget: 'Budgeted',
         category: '',
-        subCategory: '',
+        sub_category: '',
         planned: false,
         recurring: 'N/A', // Changed from boolean to string
         merchant: '',
@@ -50,7 +52,7 @@ export const BulkEditDialog = ({
     };
 
     const handleCategoryChange = (newCategory: string) => {
-        setValues(prev => ({ ...prev, category: newCategory, subCategory: '' }));
+        setValues(prev => ({ ...prev, category: newCategory, sub_category: '' }));
     };
 
     const handleSubCategoryChange = (newValue: string) => {
@@ -58,10 +60,10 @@ export const BulkEditDialog = ({
             const newSubCategory = prompt('Enter new sub-category:');
             if (newSubCategory && values.category) {
                 addSubCategory(values.category, newSubCategory);
-                setValues(prev => ({ ...prev, subCategory: newSubCategory }));
+                setValues(prev => ({ ...prev, sub_category: newSubCategory }));
             }
         } else {
-            setValues(prev => ({ ...prev, subCategory: newValue }));
+            setValues(prev => ({ ...prev, sub_category: newValue }));
         }
     };
 
@@ -191,7 +193,7 @@ export const BulkEditDialog = ({
                                         <SelectValue placeholder="Select category" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {settings.categories.map(cat => (
+                                        {displayCategories.map(cat => (
                                             <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -203,21 +205,21 @@ export const BulkEditDialog = ({
                         <div className="flex items-center space-x-4">
                             <Checkbox
                                 id="edit-subCategory"
-                                checked={enabledFields.subCategory}
-                                onCheckedChange={() => handleToggleField('subCategory')}
+                                checked={enabledFields.sub_category}
+                                onCheckedChange={() => handleToggleField('sub_category')}
                             />
                             <div className="grid flex-1 gap-1.5">
-                                <Label htmlFor="subCategory">Sub-category</Label>
+                                <Label htmlFor="sub_category">Sub-category</Label>
                                 <Select
-                                    disabled={!enabledFields.subCategory || !values.category}
-                                    value={values.subCategory}
+                                    disabled={!enabledFields.sub_category || !values.category}
+                                    value={values.sub_category}
                                     onValueChange={handleSubCategoryChange}
                                 >
-                                    <SelectTrigger id="subCategory">
+                                    <SelectTrigger id="sub_category">
                                         <SelectValue placeholder={values.category ? "Select sub-category" : "Select a category first"} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {settings.subCategories?.[values.category || '']?.map(sub => (
+                                        {displaySubCategories?.[values.category || '']?.map(sub => (
                                             <SelectItem key={sub} value={sub}>{sub}</SelectItem>
                                         ))}
                                         {values.category && (
@@ -244,7 +246,7 @@ export const BulkEditDialog = ({
                                     checked={values.planned}
                                     onCheckedChange={(v) => setValues({ ...values, planned: !!v })}
                                 />
-                                <Label htmlFor="planned">Planned transaction</Label>
+                                <Label htmlFor="planned">Unplanned transaction</Label>
                             </div>
                         </div>
 

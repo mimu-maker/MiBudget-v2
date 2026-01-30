@@ -7,6 +7,8 @@ export interface BudgetCategory {
   name: string;
   category_group: 'income' | 'expenditure' | 'klintemarken' | 'special';
   display_order: number;
+  icon?: string;
+  color?: string;
   budget_amount: number;
   alert_threshold: number;
   spent: number;
@@ -20,7 +22,9 @@ export interface BudgetSubCategory {
   name: string;
   budget_amount: number;
   spent: number;
+  remaining: number;
   is_active: boolean;
+  last_year_data?: { budget: number, spent: number };
   first_used_date?: string;
 }
 
@@ -47,34 +51,25 @@ export const useAnnualBudget = (year?: number) => {
   const [budget, setBudget] = useState<AnnualBudget | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [cache, setCache] = useState<Record<string, AnnualBudget | null>>({});
   const { user } = useAuth();
 
   const fetchBudget = useCallback(async (budgetYear?: number) => {
-    try {
+    // Only show loading spinner on initial load, not on refreshes
+    if (!budget) {
       setLoading(true);
-      setError(null);
+    }
+    setError(null);
 
-      // Create cache key
-      const cacheKey = `budget_${budgetYear || 2025}_${user?.id}`;
-      
-      // Check cache first
-      if (cache[cacheKey]) {
-        console.log('Using cached budget data for year:', budgetYear || 2025);
-        setBudget(cache[cacheKey]);
-        setLoading(false);
-        return;
-      }
-
+    try {
       if (!user) {
         throw new Error('User not authenticated');
       }
 
-      console.log('Current user:', user.id, user.email);
+      console.log('Fetching budget for year:', budgetYear || 2025, 'user:', user.id);
 
       // Get user profile - try multiple approaches
       let profile = null;
-      
+
       // Method 1: Direct user_id lookup
       const { data: profile1, error: error1 } = await supabase
         .from('user_profiles')
@@ -87,7 +82,7 @@ export const useAnnualBudget = (year?: number) => {
         console.log('Found profile via user_id:', profile);
       } else {
         console.log('Method 1 failed:', error1);
-        
+
         // Method 2: Email lookup
         const { data: profile2, error: error2 } = await supabase
           .from('user_profiles')
@@ -100,7 +95,7 @@ export const useAnnualBudget = (year?: number) => {
           console.log('Found profile via email:', profile);
         } else {
           console.log('Method 2 failed:', error2);
-          
+
           // Method 3: Get any profile (for debugging)
           const { data: allProfiles, error: error3 } = await supabase
             .from('user_profiles')
@@ -114,31 +109,32 @@ export const useAnnualBudget = (year?: number) => {
 
       // Get unified budget for the specified year (default to 2025)
       const targetYear = budgetYear || 2025;
-      
+
       let budgetData: any;
-      
+
       const { data: unifiedBudget, error: budgetError } = await supabase
         .from('budgets')
         .select('*')
         .eq('user_id', profile.id)
         .eq('year', targetYear)
         .eq('budget_type', 'unified')
-        .single();
+        .maybeSingle();
 
-      if (budgetError) {
-        console.log('Unified budget not found, trying primary budget:', budgetError);
-        // Fallback to primary budget for backward compatibility
+      if (budgetError || !unifiedBudget) {
+        if (budgetError) console.warn('Unified search error:', budgetError.message);
+
+        // Fallback to primary budget
         const { data: primaryBudget, error: primaryError } = await supabase
           .from('budgets')
           .select('*')
           .eq('user_id', profile.id)
           .eq('year', targetYear)
           .eq('budget_type', 'primary')
-          .single();
-          
+          .maybeSingle();
+
         if (primaryError) throw primaryError;
         if (!primaryBudget) throw new Error(`No budget found for year ${targetYear}`);
-        
+
         budgetData = primaryBudget;
       } else {
         budgetData = unifiedBudget;
@@ -146,38 +142,95 @@ export const useAnnualBudget = (year?: number) => {
 
       console.log('Found budget:', budgetData);
 
-      // Use the new hierarchical categories function
+      // 1. Fetch ALL categories and subcategories first (the master list)
+      const { data: allCategories, error: allError } = await supabase
+        .from('categories')
+        .select('*, sub_categories(id, name, display_order)')
+        .eq('user_id', profile.id)
+        .order('display_order', { ascending: true });
+
+      if (allError) throw allError;
+
+      // 2. Fetch hierarchical budget data (actuals and limits)
       const { data: hierarchicalCategories, error: hierarchicalError } = await supabase
         .rpc('get_hierarchical_categories', { p_budget_id: budgetData.id });
 
-      if (hierarchicalError) {
-        console.error('Hierarchical categories error:', hierarchicalError);
-        setError(hierarchicalError instanceof Error ? hierarchicalError.message : 'Failed to fetch hierarchical categories');
-        setLoading(false);
-        return;
-      }
-      console.log('Found hierarchical categories:', hierarchicalCategories?.length || 0, 'items');
+      // Fetch last year hierarchical data if exists
+      let lastYearHierarchicalMap: Record<string, any> = {};
+      const { data: lastYearBudget } = await supabase
+        .from('budgets')
+        .select('id')
+        .eq('user_id', profile.id)
+        .eq('year', targetYear - 1)
+        .eq('budget_type', budgetData.budget_type)
+        .maybeSingle();
 
-      // Build categories from hierarchical data
-      const categories: BudgetCategory[] = (hierarchicalCategories || []).map((item: any) => ({
-        id: item.category_id,
-        name: item.category_name,
-        category_group: item.category_group,
-        display_order: item.category_order,
-        budget_amount: item.budget_amount,
-        alert_threshold: 0, // Default value
-        spent: item.spent_amount,
-        remaining: item.remaining_amount,
-        remaining_percent: item.budget_amount > 0 ? (item.remaining_amount / item.budget_amount) * 100 : 0,
-        sub_categories: (item.sub_categories || []).map((sub: any) => ({
-          id: sub.id,
-          name: sub.name,
-          budget_amount: sub.budget_amount ?? 0,
-          spent: sub.spent,
-          is_active: true,
-          first_used_date: undefined
-        }))
-      }));
+      if (lastYearBudget) {
+        const { data: lastYearHierarchical } = await supabase
+          .rpc('get_hierarchical_categories', { p_budget_id: lastYearBudget.id });
+
+        (lastYearHierarchical || []).forEach((item: any) => {
+          lastYearHierarchicalMap[item.category_id] = item;
+        });
+      }
+
+      // Map hierarchical data for easy lookup
+      const hierarchicalMap: Record<string, any> = {};
+      (hierarchicalCategories || []).forEach((item: any) => {
+        hierarchicalMap[item.category_id] = item;
+      });
+
+      // 3. Build the combined list
+      const categories: BudgetCategory[] = (allCategories || []).map((cat: any) => {
+        const hCat = hierarchicalMap[cat.id];
+
+        const subCategories = (cat.sub_categories || [])
+          .sort((a: any, b: any) => (a.display_order || 0) - (b.display_order || 0))
+          .map((sub: any) => {
+            const hSub = (hCat?.sub_categories || []).find((s: any) => s.id === sub.id);
+            const subBudget = hSub?.budget_amount ?? 0;
+            const subSpent = hSub?.spent ?? 0;
+            const isActive = hSub ? (hSub.is_active !== false) : true;
+
+            // Map last year's data for comparison
+            const lastYearCat = lastYearHierarchicalMap[cat.id];
+            const lastYearSub = (lastYearCat?.sub_categories || []).find((s: any) => s.id === sub.id);
+            const lastYearData = lastYearSub ? {
+              budget: lastYearSub.budget_amount,
+              spent: lastYearSub.spent
+            } : undefined;
+
+            return {
+              id: sub.id,
+              name: sub.name,
+              budget_amount: subBudget,
+              spent: subSpent,
+              remaining: subBudget - subSpent,
+              is_active: isActive,
+              last_year_data: lastYearData,
+              first_used_date: undefined
+            };
+          })
+          .filter(sub => sub.is_active || sub.spent !== 0);
+
+        const subTotalBudget = subCategories.reduce((sum, sub) => sum + sub.budget_amount, 0);
+        const subTotalSpent = subCategories.reduce((sum, sub) => sum + sub.spent, 0);
+
+        return {
+          id: cat.id,
+          name: cat.name,
+          category_group: cat.category_group,
+          display_order: cat.display_order,
+          icon: cat.icon,
+          color: cat.color,
+          budget_amount: subTotalBudget,
+          alert_threshold: 0,
+          spent: subTotalSpent,
+          remaining: subTotalBudget - subTotalSpent,
+          remaining_percent: subTotalBudget > 0 ? ((subTotalBudget - subTotalSpent) / subTotalBudget) * 100 : 0,
+          sub_categories: subCategories
+        };
+      }).filter(cat => cat.sub_categories.length > 0);
 
       // Group categories by category_group
       const categoryGroups = {
@@ -206,9 +259,11 @@ export const useAnnualBudget = (year?: number) => {
       };
 
       setBudget(annualBudget);
+      return annualBudget;
     } catch (err) {
       console.error('Error fetching annual budget:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch budget');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -219,7 +274,7 @@ export const useAnnualBudget = (year?: number) => {
   }, [year, user?.id]);
 
   const refreshBudget = useCallback(() => {
-    fetchBudget(year);
+    return fetchBudget(year);
   }, [year, fetchBudget]);
 
   return {

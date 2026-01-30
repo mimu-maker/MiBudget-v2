@@ -58,7 +58,7 @@ export const SpecialOverview = () => {
     const categoriesList = Array.from(new Set(specialTransactions.map(t => t.category || 'Other')));
 
     specialTransactions.forEach(t => {
-      const month = format(parseISO(t.date), 'MMM', { locale: da });
+      const month = format(parseISO(t.date), 'MM/yy', { locale: da });
       const cat = t.category || 'Other';
       if (!months[month]) months[month] = { month };
       months[month][cat] = (months[month][cat] || 0) + t.amount;

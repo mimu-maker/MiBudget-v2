@@ -33,6 +33,7 @@ export type Database = {
           merchant_description: string | null
           excluded: boolean | null
           confidence: number | null
+          projection_id: string | null
         }
         Insert: {
           account: string
@@ -57,6 +58,7 @@ export type Database = {
           merchant_description?: string
           excluded?: boolean | null
           confidence?: number | null
+          projection_id?: string | null
         }
         Update: {
           account?: string
@@ -81,34 +83,98 @@ export type Database = {
           merchant_description?: string
           excluded?: boolean | null
           confidence?: number | null
+          projection_id?: string | null
         }
         Relationships: []
       }
       merchant_rules: {
         Row: {
           id: string
+          merchant_name: string | null
           clean_merchant_name: string
           auto_category: string | null
           auto_sub_category: string | null
+          auto_recurring: string | null
+          auto_planned: boolean | null
           skip_triage: boolean | null
+          user_id: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
           id?: string
+          merchant_name?: string | null
           clean_merchant_name: string
           auto_category?: string | null
           auto_sub_category?: string | null
+          auto_recurring?: string | null
+          auto_planned?: boolean | null
           skip_triage?: boolean | null
+          user_id?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
+          merchant_name?: string | null
           clean_merchant_name?: string
           auto_category?: string | null
           auto_sub_category?: string | null
+          auto_recurring?: string | null
+          auto_planned?: boolean | null
           skip_triage?: boolean | null
+          user_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      projections: {
+        Row: {
+          id: string
+          date: string
+          merchant: string | null
+          amount: number
+          category: string | null
+          stream: string | null
+          planned: boolean | null
+          recurring: string | null
+          overrides: Json | null
+          budget_year: number | null
+          description: string | null
+          user_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          date: string
+          merchant?: string | null
+          amount: number
+          category?: string | null
+          stream?: string | null
+          planned?: boolean | null
+          recurring?: string | null
+          overrides?: Json | null
+          budget_year?: number | null
+          description?: string | null
+          user_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          date?: string
+          merchant?: string | null
+          amount?: number
+          category?: string | null
+          stream?: string | null
+          planned?: boolean | null
+          recurring?: string | null
+          overrides?: Json | null
+          budget_year?: number | null
+          description?: string | null
+          user_id?: string | null
           created_at?: string
           updated_at?: string
         }

@@ -5,13 +5,14 @@ import { ProjectionData } from '@/types/projection';
 
 interface ProjectionChartProps {
   data: ProjectionData[];
+  title?: string;
 }
 
-const ProjectionChart = ({ data }: ProjectionChartProps) => {
+const ProjectionChart = ({ data, title = "Projection" }: ProjectionChartProps) => {
   return (
     <Card className="mb-6">
       <CardHeader>
-        <CardTitle>12-Month Projection</CardTitle>
+        <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={400}>
@@ -20,9 +21,9 @@ const ProjectionChart = ({ data }: ProjectionChartProps) => {
             <XAxis dataKey="month" angle={-45} textAnchor="end" height={80} />
             <YAxis />
             <Tooltip formatter={(value) => `${Number(value).toLocaleString()} DKK`} />
-            <Line 
-              type="monotone" 
-              dataKey="value" 
+            <Line
+              type="monotone"
+              dataKey="value"
               stroke="#10b981"
               strokeWidth={3}
               dot={{ r: 6 }}

@@ -45,7 +45,7 @@ const MockTableView: React.FC<{ data: any[], years: number[] }> = ({ data, years
           </SelectContent>
         </Select>
       </div>
-      
+
       <div className="border rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -63,9 +63,8 @@ const MockTableView: React.FC<{ data: any[], years: number[] }> = ({ data, years
                 <tr key={index} className="border-b hover:bg-muted/50">
                   <td className="p-3">{transaction.date}</td>
                   <td className="p-3">{transaction.merchant}</td>
-                  <td className={`p-3 text-right font-medium ${
-                    parseFloat(transaction.amount) >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
+                  <td className={`p-3 text-right font-medium ${parseFloat(transaction.amount) >= 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
                     {parseFloat(transaction.amount) >= 0 ? '+' : ''}{transaction.amount}
                   </td>
                   <td className="p-3">
@@ -80,7 +79,7 @@ const MockTableView: React.FC<{ data: any[], years: number[] }> = ({ data, years
           </table>
         </div>
       </div>
-      
+
       {data.length > 20 && (
         <div className="text-center py-4 text-sm text-muted-foreground">
           Showing 20 of {data.length} transactions
@@ -98,23 +97,23 @@ export const SankeyViewStep: React.FC = () => {
   // Generate mock transaction data from import data
   const generateTransactionData = () => {
     if (!importData) return [];
-    
+
     return importData.sampleData.map((row, index) => {
-      const merchant = row[Object.keys(row).find(k => 
-        k.toLowerCase().includes('merchant') || 
+      const merchant = row[Object.keys(row).find(k =>
+        k.toLowerCase().includes('merchant') ||
         k.toLowerCase().includes('description') ||
         k.toLowerCase().includes('payee')
       )] || `Merchant ${index + 1}`;
-      
-      const amount = row[Object.keys(row).find(k => 
+
+      const amount = row[Object.keys(row).find(k =>
         k.toLowerCase().includes('amount') ||
         k.toLowerCase().includes('value')
       )] || '0';
-      
-      const date = row[Object.keys(row).find(k => 
+
+      const date = row[Object.keys(row).find(k =>
         k.toLowerCase().includes('date')
       )] || new Date().toISOString().split('T')[0];
-      
+
       return {
         id: index + 1,
         date,
@@ -127,15 +126,15 @@ export const SankeyViewStep: React.FC = () => {
   };
 
   const transactionData = generateTransactionData();
-  
+
   // Get available years from data
   const getAvailableYears = () => {
     const years = new Set<number>();
     const currentYear = new Date().getFullYear();
-    
+
     // Add current year
     years.add(currentYear);
-    
+
     // Add years from transaction data
     transactionData.forEach(transaction => {
       const year = new Date(transaction.date).getFullYear();
@@ -143,21 +142,21 @@ export const SankeyViewStep: React.FC = () => {
         years.add(year);
       }
     });
-    
+
     return Array.from(years).sort((a, b) => b - a);
   };
 
   const availableYears = getAvailableYears();
-  
+
   // Calculate summary statistics
   const totalIncome = transactionData
     .filter(t => t.amount > 0)
     .reduce((sum, t) => sum + t.amount, 0);
-    
+
   const totalExpenses = Math.abs(transactionData
     .filter(t => t.amount < 0)
     .reduce((sum, t) => sum + t.amount, 0));
-    
+
   const netFlow = totalIncome - totalExpenses;
 
   return (
@@ -182,7 +181,7 @@ export const SankeyViewStep: React.FC = () => {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
@@ -193,13 +192,12 @@ export const SankeyViewStep: React.FC = () => {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
-              <div className={`text-2xl font-bold ${
-                netFlow >= 0 ? 'text-green-600' : 'text-red-600'
-              }`}>
+              <div className={`text-2xl font-bold ${netFlow >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}>
                 ${netFlow.toLocaleString()}
               </div>
               <div className="text-sm text-muted-foreground">Net Flow</div>
@@ -233,7 +231,7 @@ export const SankeyViewStep: React.FC = () => {
             </div>
           </CardTitle>
           <CardDescription>
-            {viewMode === 'sankey' 
+            {viewMode === 'sankey'
               ? 'Interactive flow diagram showing money movement between categories'
               : 'Detailed table view of all transactions'
             }
@@ -260,7 +258,7 @@ export const SankeyViewStep: React.FC = () => {
             </div>
             <div className="flex gap-2">
               {availableYears.map(year => (
-                <Badge 
+                <Badge
                   key={year}
                   variant={year === selectedYear ? 'default' : 'outline'}
                   className="cursor-pointer"
@@ -284,7 +282,7 @@ export const SankeyViewStep: React.FC = () => {
             <div className="flex items-start gap-3">
               <TrendingUp className="w-5 h-5 text-green-600 mt-0.5" />
               <div>
-                <strong>Top Spending Category:</strong> 
+                <strong>Top Spending Category:</strong>
                 <div className="text-muted-foreground">
                   {/* Calculate top category from data */}
                   {transactionData.length > 0 ? 'Food & Dining' : 'No data'}
@@ -296,8 +294,8 @@ export const SankeyViewStep: React.FC = () => {
               <div>
                 <strong>Average Transaction:</strong>
                 <div className="text-muted-foreground">
-                  ${transactionData.length > 0 
-                    ? Math.abs(netFlow / transactionData.length).toFixed(2)
+                  ${transactionData.length > 0
+                    ? Math.abs(netFlow / transactionData.length).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                     : '0.00'
                   }
                 </div>
@@ -313,7 +311,7 @@ export const SankeyViewStep: React.FC = () => {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back
         </Button>
-        <Button 
+        <Button
           onClick={nextPhase}
           className="flex items-center gap-2"
         >

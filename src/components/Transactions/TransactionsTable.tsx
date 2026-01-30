@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plus, LayoutPanelLeft } from 'lucide-react';
 import { UnifiedAddTransactionsDialog } from './UnifiedAddTransactionsDialog';
+import { TransactionSplitModal } from './TransactionSplitModal';
 import { ValidationDashboard } from './ValidationDashboard';
 import { TransactionsTableHeader } from './TransactionsTableHeader';
 import { TransactionsTableRow } from './TransactionsTableRow';
@@ -23,6 +24,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+
+import { useSettings, APP_STATUSES } from '@/hooks/useSettings';
 
 export const TransactionsTable = () => {
   const {
@@ -50,13 +53,32 @@ export const TransactionsTable = () => {
     isError,
     isBulkUpdating,
     isBulkDeleting,
-    emergencyClearAll
+    projections,
+    emergencyClearAll,
+    knownMerchants
   } = useTransactionTable();
 
+  const { settings } = useSettings();
   const { selectedPeriod, customDateRange } = usePeriod();
+
+  const filterOptions = useMemo(() => {
+    const allSubCategories = Object.values(settings.subCategories).flat();
+    const uniqueSubCategories = Array.from(new Set(allSubCategories));
+    const uniqueRecurring = Array.from(new Set(transactions.map(t => t.recurring).filter(Boolean)));
+
+    return {
+      categories: settings.categories,
+      subCategories: uniqueSubCategories,
+      statuses: APP_STATUSES,
+      recurring: uniqueRecurring
+    };
+  }, [settings, transactions]);
+
   const [addTransactionsOpen, setAddTransactionsOpen] = useState(false);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [splitModalOpen, setSplitModalOpen] = useState(false);
+  const [transactionToSplit, setTransactionToSplit] = useState<Transaction | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'validation'>('table');
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
 
@@ -79,7 +101,7 @@ export const TransactionsTable = () => {
   };
 
   return (
-    <div className="p-6">
+    <div className="px-6 pb-6 pt-2">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-foreground">Transactions</h1>
 
@@ -135,6 +157,8 @@ export const TransactionsTable = () => {
                     onSort={handleSort}
                     onFilter={handleFilter}
                     onClearFilter={clearFilter}
+                    filters={filters}
+                    filterOptions={filterOptions}
                     onSelectAll={(checked) => {
                       if (checked) {
                         selectAll(filteredAndSortedTransactions.map(t => t.id));
@@ -159,7 +183,18 @@ export const TransactionsTable = () => {
                         onBulkEdit={handleBulkCellEdit}
                         onStartEdit={handleStartEdit}
                         onStopEdit={() => setEditingCell(null)}
-                        onDelete={(id) => setTransactionToDelete(id)}
+                        onDelete={(id) => {
+                          setTransactionToDelete(id);
+                          setDeleteConfirmOpen(true);
+                        }}
+                        onSplit={(t) => {
+                          setTransactionToSplit(t);
+                          setSplitModalOpen(true);
+                        }}
+                        onRowClick={() => { }} // Row click handled by EditableCell stopPropagation
+                        projections={projections}
+                        knownMerchants={knownMerchants}
+                        allTransactions={transactions}
                       />
                     ))}
                   </tbody>
@@ -251,6 +286,21 @@ export const TransactionsTable = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+
+      {transactionToSplit && (
+        <TransactionSplitModal
+          open={splitModalOpen}
+          onOpenChange={(open) => {
+            setSplitModalOpen(open);
+            if (!open) setTransactionToSplit(null);
+          }}
+          transaction={transactionToSplit}
+          onSplitComplete={() => {
+            window.location.reload();
+          }}
+        />
+      )
+      }
+    </div >
   );
 };

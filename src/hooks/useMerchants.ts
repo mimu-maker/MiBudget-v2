@@ -17,8 +17,6 @@ export const useMerchants = () => {
             data?.forEach(transaction => {
                 if (transaction.clean_merchant) {
                     uniqueMerchants.add(transaction.clean_merchant);
-                } else if (transaction.merchant) {
-                    uniqueMerchants.add(transaction.merchant);
                 }
             });
 
