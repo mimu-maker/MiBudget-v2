@@ -24,6 +24,72 @@ const AVAILABLE_ICONS = [
     'Shield', 'Gem', 'Trash2'
 ] as const;
 
+const AVAILABLE_COLORS = [
+    '#3B82F6', '#60A5FA', '#93C5FD', // Blues
+    '#10B981', '#34D399', '#6EE7B7', // Emeralds/Greens
+    '#F59E0B', '#FBBF24', '#FDE68A', // Ambers
+    '#EF4444', '#F87171', '#FCA5A5', // Reds
+    '#8B5CF6', '#A78BFA', '#C4B5FD', // Violets
+    '#EC4899', '#F472B6', '#F9A8D4', // Pinks
+    '#06B6D4', '#22D3EE', '#67E8F9', // Cyans
+    '#F97316', '#FB923C', '#FDBA74', // Oranges
+    '#84CC16', '#A3E635', '#BEF264', // Limes
+    '#14B8A6', '#2DD4BF', '#5EEAD4', // Teals
+    '#6366F1', '#818CF8', '#A5B4FC', // Indigos
+    '#A855F7', '#C084FC', '#D8B4FE', // Purples
+    '#64748B', '#94A3B8', '#CBD5E1', // Slates
+];
+
+const PRESET_CATEGORIES = [
+    "Housing", "Utilities", "Household", "Food", "Transportation",
+    "Insurance", "Healthcare", "Debt Payments", "Savings & Investing",
+    "Personal & Lifestyle", "Entertainment & Subscriptions",
+    "Children & Education", "Gifts & Charity", "Miscellaneous / Buffer"
+];
+
+const ICON_SECTIONS = [
+    {
+        label: 'Money & Finance',
+        icons: ['Landmark', 'Banknote', 'Coins', 'Wallet', 'CreditCard', 'Receipt', 'Calculator', 'PiggyBank', 'TrendingUp', 'TrendingDown', 'BarChart2', 'PieChart', 'Percent']
+    },
+    {
+        label: 'Housing & Home',
+        icons: ['Home', 'Building', 'Key', 'MapPin', 'Lamp', 'Sofa', 'Trash2', 'Hammer', 'Wrench', 'Lightbulb', 'Power', 'Wind', 'DoorOpen', 'Thermometer']
+    },
+    {
+        label: 'Food & Drink',
+        icons: ['ShoppingBag', 'ShoppingCart', 'Coffee', 'Utensils', 'UtensilsCrossed', 'GlassWater', 'Pizza', 'Wine', 'Cake', 'Apple', 'Carrot', 'Beef', 'IceCream', 'Candy']
+    },
+    {
+        label: 'Transport & Travel',
+        icons: ['Car', 'Bus', 'TrainFront', 'Bike', 'Plane', 'Fuel', 'Map', 'Gauge', 'ParkingCircle', 'Waypoints', 'Umbrella', 'Suitcase', 'Navigation', 'Anchor']
+    },
+    {
+        label: 'Health & Wellness',
+        icons: ['Heart', 'HeartPulse', 'Activity', 'Stethoscope', 'Pill', 'Syringe', 'FirstAid', 'Dumbbell', 'Brain', 'Smile', 'Moon', 'Bath']
+    },
+    {
+        label: 'Family & Children',
+        icons: ['Baby', 'Users', 'User', 'PersonStanding', 'Trees', 'ToyBrick', 'Milk', 'Tent', 'Cloud', 'SmilePlus']
+    },
+    {
+        label: 'Education',
+        icons: ['School', 'GraduationCap', 'Book', 'BookOpen', 'Pencil', 'Library', 'Award', 'Languages', 'Microscope', 'FlaskConical', 'Globe', 'Compass']
+    },
+    {
+        label: 'Lifestyle & Fun',
+        icons: ['Gamepad2', 'Tv', 'Monitor', 'Music', 'Music2', 'Headphones', 'Clapperboard', 'Ticket', 'Mic2', 'Camera', 'Smartphone', 'Laptop', 'Headset', 'Brush', 'Palette']
+    },
+    {
+        label: 'Gifts & Charity',
+        icons: ['Gift', 'PartyPopper', 'Sparkles', 'HandHeart', 'Flame', 'Flower2', 'Clover', 'Sprout', 'HelpingHand', 'Church', 'Bird', 'Infinity']
+    },
+    {
+        label: 'System & Other',
+        icons: ['Shield', 'ShieldCheck', 'Lock', 'KeyRound', 'Target', 'Gem', 'Layers', 'Boxes', 'Archive', 'Tags']
+    }
+];
+
 export const UnifiedCategoryManager = () => {
     const { userProfile } = useAuth();
     const {
@@ -40,7 +106,8 @@ export const UnifiedCategoryManager = () => {
         reorderSubCategories,
         moveSubCategory,
         toggleSubCategoryActive,
-        updateCategoryIcon
+        updateCategoryIcon,
+        updateCategoryColor
     } = useMultiYearBudgets();
 
     const {
@@ -58,7 +125,8 @@ export const UnifiedCategoryManager = () => {
         removeSubCategory: removeSubCategoryLocal,
         reorderItems,
         moveSubCategory: moveSubCategoryLocal,
-        renameSubCategory: renameSubCategoryLocal
+        renameSubCategory: renameSubCategoryLocal,
+        updateCategoryConfig
     } = useSettings();
 
     const { toast } = useToast();
@@ -74,34 +142,39 @@ export const UnifiedCategoryManager = () => {
     const [editingSubCategory, setEditingSubCategory] = useState<{ category: string, sub: string, subRecord: any } | null>(null);
     const [editNameValue, setEditNameValue] = useState('');
     const [editIconValue, setEditIconValue] = useState('');
+    const [editColorValue, setEditColorValue] = useState('');
     const [isActionPending, setIsActionPending] = useState(false);
-    const [feederSectionExpanded, setFeederSectionExpanded] = useState(true);
+    const [feederSectionExpanded, setFeederSectionExpanded] = useState(false);
+    const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
-    const hasSupabaseCategories = !!(userProfile && dbCategories && dbCategories.length > 0);
-    const isAuthenticatedButUsingLocal = !!(userProfile && (!dbCategories || dbCategories.length === 0));
+    const isDbMode = !!userProfile;
+    const hasSupabaseCategories = isDbMode && !!dbCategories;
+    const isAuthenticatedButUsingLocal = isDbMode && (!dbCategories || dbCategories.length === 0);
 
     // Expansion State
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
     const displayCategories = useMemo(() => {
-        if (hasSupabaseCategories) return dbCategories.map(c => c.name);
+        if (isDbMode) return (dbCategories || []).map(c => c.name);
         return settings.categories || [];
-    }, [hasSupabaseCategories, dbCategories, settings.categories]);
+    }, [isDbMode, dbCategories, settings.categories]);
+
 
     // Initialize expansion on load
     useEffect(() => {
         if (displayCategories.length > 0 && expandedCategories.size === 0) {
-            setExpandedCategories(new Set(displayCategories));
+            // Only expand Income by default
+            setExpandedCategories(new Set(['Income']));
         }
     }, [displayCategories.length]);
 
-    // Initialize groups expansion
-    useEffect(() => {
+    // Initialize groups expansion - Disabled (collapse by default)
+    /* useEffect(() => {
         if (groups.length > 0 && expandedGroups.size === 0) {
             setExpandedGroups(new Set(groups.map(g => g.id)));
         }
-    }, [groups.length]);
+    }, [groups.length]); */
 
     const displaySubCategories = useMemo(() => {
         if (hasSupabaseCategories) {
@@ -132,17 +205,26 @@ export const UnifiedCategoryManager = () => {
 
     // Split Categories
     const incomeCategories = displayCategories.filter(c => c === 'Income');
-    const expenseCategories = displayCategories.filter(c => c !== 'Special' && c !== 'Income'); // Fallback for legacy
-    const extraordinaryCategories = displayCategories.filter(c => c === 'Special');
+    const expenseCategories = displayCategories.filter(c => c !== 'Unplanned Expenses' && c !== 'Income'); // Fallback for legacy
+    const extraordinaryCategories = displayCategories.filter(c => c === 'Unplanned Expenses');
 
     // Filter categories by group
     const getCategoriesByGroup = (groupSlug: string) => {
-        if (hasSupabaseCategories) {
-            return dbCategories.filter(c => c.category_group === groupSlug).map(c => c.name);
+        if (isDbMode && dbCategories) {
+            return dbCategories.filter(c => {
+                // EXCLUSION: Never show 'General' in any group
+                if (c.name === 'General') return false;
+
+                // FORCE: 'Special' always belongs to 'special' group
+                if (c.name === 'Special') return groupSlug === 'special';
+
+                // STANDARD: Check group slug
+                return c.category_group === groupSlug;
+            }).map(c => c.name);
         }
         // Fallback for local mappings if needed, or strictly rely on DB for this feature
         if (groupSlug === 'income') return incomeCategories;
-        if (groupSlug === 'expenditure') return expenseCategories;
+        if (groupSlug === 'expenditure') return expenseCategories.filter(c => c !== 'General' && c !== 'Special');
         if (groupSlug === 'special') return extraordinaryCategories;
         return [];
     };
@@ -191,7 +273,13 @@ export const UnifiedCategoryManager = () => {
             }
             setIsActionPending(true);
             try {
-                await toggleSubCategoryActive.mutateAsync({ subCategoryId: subRecord.id, categoryId: catRecord.id, active, targetBudgetId: budgetId });
+                await toggleSubCategoryActive.mutateAsync({
+                    subCategoryId: subRecord.id,
+                    categoryId: catRecord.id,
+                    active,
+                    targetBudgetId: budgetId,
+                    year: budgetYear
+                });
                 toast({ title: active ? "Sub-category Enabled" : "Sub-category Disabled", description: `"${subName}" is now ${active ? 'active' : 'inactive'}.` });
             } catch (err) {
                 toast({ title: "Action Failed", description: "Database communication error.", variant: "destructive" });
@@ -252,7 +340,7 @@ export const UnifiedCategoryManager = () => {
 
     const handleAddCategory = () => {
         if (!newCatName.trim()) return;
-        if (hasSupabaseCategories) addCategory.mutate({ name: newCatName.trim() });
+        if (isDbMode) addCategory.mutate({ name: newCatName.trim() });
         else addItem('categories', newCatName.trim());
 
         toast({ title: "Category Added", description: `"${newCatName}" is now available.` });
@@ -297,11 +385,16 @@ export const UnifiedCategoryManager = () => {
             if (hasSupabaseCategories) {
                 if (editNameValue.trim() !== editingCategory.name) await renameCategory.mutateAsync({ categoryId: editingCategory.id, name: editNameValue.trim() });
                 if (editIconValue && editIconValue !== editingCategory.icon) await updateCategoryIcon.mutateAsync({ categoryId: editingCategory.id, icon: editIconValue });
+                if (editColorValue !== editingCategory.color) await updateCategoryColor.mutateAsync({ categoryId: editingCategory.id, color: editColorValue });
             } else {
                 // Local rename logic
                 const newCats = [...settings.categories];
                 const idx = newCats.indexOf(editingCategory.name);
-                if (idx > -1) { newCats[idx] = editNameValue.trim(); reorderItems('categories', newCats); }
+                if (idx > -1) {
+                    newCats[idx] = editNameValue.trim();
+                    reorderItems('categories', newCats);
+                    updateCategoryConfig(editNameValue.trim(), { color: editColorValue });
+                }
             }
             toast({ title: "Updated", description: "Category updated." });
             setEditingCategory(null);
@@ -350,8 +443,24 @@ export const UnifiedCategoryManager = () => {
                         </h3>
                         <Badge variant="outline" className="text-[10px] uppercase font-bold text-slate-400 border-slate-200">Feeder Budget</Badge>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-slate-100" onClick={(e) => { e.stopPropagation(); if (confirm('Delete this budget group?')) deleteGroup.mutate({ id: group.id }) }}>
-                        <Trash2 className="w-4 h-4" />
+                    <Button
+                        variant="ghost"
+                        size={confirmingDeleteId === group.id ? "sm" : "icon"}
+                        className={cn(
+                            confirmingDeleteId === group.id ? "h-8 px-2 w-auto bg-red-50 text-red-600 font-bold text-[10px]" : "h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-slate-100"
+                        )}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirmingDeleteId === group.id) {
+                                deleteGroup.mutate({ id: group.id });
+                                setConfirmingDeleteId(null);
+                            } else {
+                                setConfirmingDeleteId(group.id);
+                                setTimeout(() => setConfirmingDeleteId(prev => prev === group.id ? null : prev), 3000);
+                            }
+                        }}
+                    >
+                        {confirmingDeleteId === group.id ? "CONFIRM DELETE" : <Trash2 className="w-4 h-4" />}
                     </Button>
                 </div>
 
@@ -395,7 +504,7 @@ export const UnifiedCategoryManager = () => {
                                     <span className="w-1.5 h-1.5 rounded-full bg-pink-500"></span>
                                     <h4 className="text-xs font-bold uppercase text-slate-500 tracking-wider">Expenses</h4>
                                 </div>
-                                {renderCategoryTable(expenseCats, "Expenses", true, group.slug, true, "Expense Item")}
+                                {renderCategoryTable(expenseCats, "Expenses", true, group.slug, true, "Expense Source")}
                             </div>
                         )}
                     </div>
@@ -420,7 +529,7 @@ export const UnifiedCategoryManager = () => {
                             {title}
                         </h3>
                         {isExpense && <p className="text-sm text-slate-500 font-medium">Standard monthly expense categories.</p>}
-                        {!isExpense && title !== 'Income' && <p className="text-sm text-slate-500 font-medium">Income & Special categories.</p>}
+                        {!isExpense && title !== 'Income' && <p className="text-sm text-slate-500 font-medium">Income & Slush Fund items.</p>}
                     </div>
                     {isExpense && (
                         <div className="flex gap-2">
@@ -436,7 +545,7 @@ export const UnifiedCategoryManager = () => {
                     <thead className="bg-white/80 backdrop-blur-md shadow-sm border-b border-slate-100">
                         <tr className="text-[11px] uppercase text-slate-500 font-bold tracking-widest">
                             <th className="py-4 px-6 w-14 text-center"></th>
-                            <th className="py-4 px-6 min-w-[240px]">{customHeader || "Category"}</th>
+                            <th className="py-4 px-6">{customHeader || "Category"}</th>
                             {budgets.map(budget => (
                                 <th key={budget.id} className="py-4 px-4 text-center w-32 border-l border-slate-50">
                                     <div className="flex flex-col items-center">
@@ -467,7 +576,7 @@ export const UnifiedCategoryManager = () => {
                                 <Fragment key={cat}>
                                     {isExpense && !isFeeder && (
                                         <tr className={cn("bg-white transition-colors group border-b border-slate-50", expanded ? "bg-slate-50/30" : "")}>
-                                            <td className="py-3 px-6">
+                                            <td className="py-3 px-6 w-14">
                                                 <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button disabled={isFirst} onClick={() => handleMoveCategory(cat, 'up', cats)} className="text-slate-400 hover:text-blue-600 disabled:opacity-20"><ArrowUp className="w-3.5 h-3.5" /></button>
                                                     <button disabled={isLast} onClick={() => handleMoveCategory(cat, 'down', cats)} className="text-slate-400 hover:text-blue-600 disabled:opacity-20"><ArrowDown className="w-3.5 h-3.5" /></button>
@@ -482,26 +591,54 @@ export const UnifiedCategoryManager = () => {
                                                         {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                                     </button>
                                                     <button
-                                                        className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 hover:bg-blue-100 shadow-sm transition-all"
-                                                        onClick={() => { setEditingCategory(catRecord); setEditNameValue(catRecord.name); setEditIconValue(catRecord.icon || 'Target'); }}
+                                                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transition-all"
+                                                        style={{
+                                                            backgroundColor: catRecord?.color ? `${catRecord.color}15` : 'rgb(239 246 255)',
+                                                            color: catRecord?.color || 'rgb(37 99 235)'
+                                                        }}
+                                                        onClick={() => {
+                                                            setEditingCategory(catRecord);
+                                                            setEditNameValue(catRecord.name);
+                                                            setEditIconValue(catRecord.icon || 'Target');
+                                                            setEditColorValue(catRecord.color || '');
+                                                        }}
                                                     >
                                                         <CategoryIcon name={catRecord?.icon} className="w-4 h-4" />
                                                     </button>
                                                     <button
                                                         className="font-bold text-slate-800 hover:text-blue-600 text-sm tracking-tight text-left"
-                                                        onClick={() => { setEditingCategory(catRecord); setEditNameValue(catRecord.name); setEditIconValue(catRecord.icon || 'Target'); }}
+                                                        onClick={() => {
+                                                            setEditingCategory(catRecord);
+                                                            setEditNameValue(catRecord.name);
+                                                            setEditIconValue(catRecord.icon || 'Target');
+                                                            setEditColorValue(catRecord.color || '');
+                                                        }}
                                                     >
                                                         {displayName} <span className="text-slate-400 font-normal text-xs ml-2">({subCats.length})</span>
                                                     </button>
                                                 </div>
                                             </td>
-                                            {budgets.map(b => <td key={b.id} className="border-l border-slate-50/50"></td>)}
-                                            <td className="py-3 px-6 text-right">
+                                            {budgets.map(b => <td key={b.id} className="w-32 border-l border-slate-50/50"></td>)}
+                                            <td className="py-3 px-6 text-right w-24">
                                                 {/* Disable category deletion for enforced feeder categories if needed */}
-                                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                    onClick={() => { if (confirm(`Delete category "${displayName}"?`)) deleteCategory.mutate({ categoryId: catRecord.id }); }}
+                                                <Button
+                                                    variant="ghost"
+                                                    size={confirmingDeleteId === catRecord.id ? "sm" : "icon"}
+                                                    className={cn(
+                                                        confirmingDeleteId === catRecord.id ? "h-8 px-2 w-auto bg-red-50 text-red-600 font-bold text-[10px]" : "h-8 w-8 text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    )}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirmingDeleteId === catRecord.id) {
+                                                            deleteCategory.mutate({ categoryId: catRecord.id });
+                                                            setConfirmingDeleteId(null);
+                                                        } else {
+                                                            setConfirmingDeleteId(catRecord.id);
+                                                            setTimeout(() => setConfirmingDeleteId(prev => prev === catRecord.id ? null : prev), 3000);
+                                                        }
+                                                    }}
                                                 >
-                                                    <Trash2 className="w-4 h-4" />
+                                                    {confirmingDeleteId === catRecord.id ? "CONFIRM" : <Trash2 className="w-4 h-4" />}
                                                 </Button>
                                             </td>
                                         </tr>
@@ -597,10 +734,26 @@ export const UnifiedCategoryManager = () => {
                                                                 <SelectContent>{displayCategories.filter(c => c !== cat).map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}</SelectContent>
                                                             </Select>
                                                         )}
-                                                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-200 hover:text-red-500 hover:bg-red-50"
-                                                            onClick={() => { if (confirm(`Delete "${sub}"?`)) { if (hasSupabaseCategories && subRecord) deleteSubCategory.mutate({ subCategoryId: subRecord.id }); else removeSubCategoryLocal(cat, sub); } }}
+                                                        <Button
+                                                            variant="ghost"
+                                                            size={confirmingDeleteId === (subRecord?.id || sub) ? "sm" : "icon"}
+                                                            className={cn(
+                                                                confirmingDeleteId === (subRecord?.id || sub) ? "h-8 px-2 w-auto bg-red-50 text-red-600 font-bold text-[10px]" : "h-8 w-8 p-0 text-slate-200 hover:text-red-500 hover:bg-red-50"
+                                                            )}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const deleteId = subRecord?.id || sub;
+                                                                if (confirmingDeleteId === deleteId) {
+                                                                    if (hasSupabaseCategories && subRecord) deleteSubCategory.mutate({ subCategoryId: subRecord.id });
+                                                                    else removeSubCategoryLocal(cat, sub);
+                                                                    setConfirmingDeleteId(null);
+                                                                } else {
+                                                                    setConfirmingDeleteId(deleteId);
+                                                                    setTimeout(() => setConfirmingDeleteId(prev => prev === deleteId ? null : prev), 3000);
+                                                                }
+                                                            }}
                                                         >
-                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            {confirmingDeleteId === (subRecord?.id || sub) ? "CONFIRM" : <Trash2 className="w-3.5 h-3.5" />}
                                                         </Button>
                                                     </div>
                                                 </td>
@@ -624,7 +777,7 @@ export const UnifiedCategoryManager = () => {
                                                     {inlineSubName[cat] && <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-blue-600 hover:bg-blue-50" onClick={() => handleAddSubInline(cat)}><Plus className="w-3.5 h-3.5" /></Button>}
                                                 </div>
                                             </td>
-                                            {budgets.map(b => <td key={b.id} className="border-l border-slate-50/50"></td>)}
+                                            {budgets.map(b => <td key={b.id} className="w-32 border-l border-slate-50/50"></td>)}
                                             <td></td>
                                         </tr>
                                     )}
@@ -663,67 +816,77 @@ export const UnifiedCategoryManager = () => {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Income Budget Section */}
-            {renderCategoryTable(incomeGroupCats, "Income", false, 'income')}
-
-            {/* Feeder Budgets Section */}
-            <Card className="border-slate-200 shadow-sm bg-white overflow-hidden border-none ring-1 ring-slate-200 border-t-4 border-t-purple-400">
-                <div
-                    className="p-6 bg-slate-50/50 border-b flex flex-col gap-4 md:flex-row md:items-center md:justify-between cursor-pointer hover:bg-slate-100/50 transition-colors"
-                    onClick={() => setFeederSectionExpanded(!feederSectionExpanded)}
-                >
-                    <div className="flex-1">
-                        <h3 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                            <Layers className="w-5 h-5 text-purple-500" />
-                            Feeder Budgets
-                        </h3>
-                        <p className="text-sm text-slate-500 font-medium">
-                            Manage separate budget groups (e.g. Project-based or Entity-based budgets).
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <Badge variant="outline" className="bg-white text-slate-500 border-slate-200 font-medium hidden md:inline-flex">
-                            {feederGroups.length} Groups
-                        </Badge>
-                        <Button variant="ghost" size="sm" className="h-8 px-3 text-slate-500 font-medium hover:bg-slate-100">
-                            {feederSectionExpanded ? 'Collapse' : 'Expand'}
-                            {feederSectionExpanded ? <ChevronDown className="w-4 h-4 ml-2" /> : <ChevronRight className="w-4 h-4 ml-2" />}
-                        </Button>
-                    </div>
+            {/* Funds In (Income + Feeders) */}
+            <div className="space-y-0 rounded-3xl overflow-hidden border border-slate-200">
+                <div className="bg-white">
+                    {renderCategoryTable(incomeGroupCats, "Income", false, 'income', false)}
                 </div>
 
-                {feederSectionExpanded && (
-                    <div className="p-4 md:p-6 bg-slate-50/10 space-y-4 animate-in slide-in-from-top-2 duration-200">
-                        {feederGroups.map(renderFeederGroup)}
-
-                        {/* Add New Feeder Budget UI - Compact Row */}
-                        <div className="border border-dashed border-slate-200 rounded-lg p-2 flex items-center justify-between hover:border-slate-300 hover:bg-slate-50 transition-colors group bg-white">
-                            <div className="flex items-center gap-3 pl-2">
-                                <div className="bg-slate-100 p-1.5 rounded-md group-hover:bg-white group-hover:shadow-sm transition-all">
-                                    <Plus className="w-4 h-4 text-slate-400 group-hover:text-blue-500" />
-                                </div>
-                                <span className="text-sm font-medium text-slate-600">Add Feeder Budget</span>
+                {/* Feeder Budgets Section - Integrated */}
+                <div className="bg-slate-50/30 border-t border-slate-100">
+                    <div
+                        className="p-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between cursor-pointer hover:bg-slate-100/50 transition-colors"
+                        onClick={() => setFeederSectionExpanded(!feederSectionExpanded)}
+                    >
+                        <div className="flex-1">
+                            <h3 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                                <Layers className="w-5 h-5 text-purple-500" />
+                                Feeder Budgets
+                            </h3>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <Badge variant="outline" className="bg-white text-slate-500 border-slate-200 font-medium">
+                                {feederGroups.length} Sources
+                            </Badge>
+                            <div className="flex flex-wrap gap-1 mt-2">
+                                {/* Removed preset badges per user request */}
                             </div>
-                            <div className="flex gap-2 items-center">
-                                <Input
-                                    value={newFeederName}
-                                    onChange={(e) => setNewFeederName(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddFeederBudget()}
-                                    placeholder="Budget Name..."
-                                    className="h-8 text-sm w-48 bg-white"
-                                />
-                                <Button size="sm" onClick={(e) => { e.stopPropagation(); handleAddFeederBudget(); }} disabled={!newFeederName.trim()} className="h-8 px-3">Create</Button>
-                            </div>
+                            <Button variant="ghost" size="sm" className="h-8 px-3 text-slate-500">
+                                {feederSectionExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                            </Button>
                         </div>
                     </div>
+
+                    {feederSectionExpanded && (
+                        <div className="px-6 pb-6 space-y-4 animate-in slide-in-from-top-2 duration-200">
+                            {feederGroups.map(renderFeederGroup)}
+
+                            {/* Add New Feeder Budget UI */}
+                            <div className="border border-dashed border-slate-200 rounded-lg p-2 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors">
+                                <div className="flex items-center gap-3 pl-2">
+                                    <Plus className="w-4 h-4 text-slate-400" />
+                                    <span className="text-sm font-medium text-slate-600">Add Feeder Budget</span>
+                                </div>
+                                <div className="flex gap-2 items-center">
+                                    <Input
+                                        value={newFeederName}
+                                        onChange={(e) => setNewFeederName(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleAddFeederBudget()}
+                                        placeholder="Name..."
+                                        className="h-8 w-40 text-sm"
+                                    />
+                                    <Button size="sm" onClick={handleAddFeederBudget} disabled={!newFeederName.trim()} className="h-8">Create</Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Funds Out (Expenses + Unplanned) */}
+            <div className="space-y-0 rounded-3xl overflow-hidden border border-slate-200">
+                {/* Expense Budget Section */}
+                <div className="bg-white">
+                    {renderCategoryTable(expenseGroupCats, "Expense Budget", true, 'expenditure', false)}
+                </div>
+
+                {/* Slush Fund Section */}
+                {specialGroupCats.length > 0 && (
+                    renderCategoryTable(specialGroupCats, "Slush Fund 🍧", false, 'special', false, "Slush Fund Item")
                 )}
-            </Card>
+            </div>
 
-            {/* Expense Budget Section */}
-            {renderCategoryTable(expenseGroupCats, "Expense Budget", true, 'expenditure')}
-
-            {/* Extraordinary Budget Section */}
-            {specialGroupCats.length > 0 && renderCategoryTable(specialGroupCats, "Extraordinary Budget", false, 'special')}
+            {/* Note: Special section moved above Feeders and rendered as part of Expense flow */}
 
             {/* Dialogs */}
             <Dialog open={!!editingCategory} onOpenChange={(open) => !open && setEditingCategory(null)}>
@@ -731,16 +894,81 @@ export const UnifiedCategoryManager = () => {
                     <DialogHeader>
                         <DialogTitle>Edit Category</DialogTitle>
                     </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                        <Label>Name</Label>
-                        <Input value={editNameValue} onChange={e => setEditNameValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSaveCategoryEdit()} />
-                        <Label>Icon</Label>
-                        <div className="grid grid-cols-6 gap-2 max-h-[200px] overflow-y-auto p-2 border rounded-lg">
-                            {AVAILABLE_ICONS.map(icon => (
-                                <button key={icon} onClick={() => setEditIconValue(icon)} className={cn("p-2 rounded hover:bg-slate-100 flex justify-center", editIconValue === icon ? "bg-blue-50 text-blue-600" : "text-slate-400")}>
-                                    <CategoryIcon name={icon} className="w-5 h-5" />
+                    <div className="grid gap-4 py-4 max-h-[80vh] overflow-y-auto pr-2">
+                        <div>
+                            <Label className="text-[11px] uppercase font-bold text-slate-500 mb-2 block">Category Name</Label>
+                            <Input value={editNameValue} onChange={e => setEditNameValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSaveCategoryEdit()} />
+                            <div className="flex flex-wrap gap-1.5 mt-3">
+                                {PRESET_CATEGORIES.map(preset => (
+                                    <button
+                                        key={preset}
+                                        onClick={() => setEditNameValue(preset)}
+                                        className={cn(
+                                            "px-2.5 py-1 rounded-full text-[10px] font-bold transition-all border",
+                                            editNameValue === preset
+                                                ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                                : "bg-white text-slate-600 border-slate-200 hover:border-blue-400 hover:text-blue-600"
+                                        )}
+                                    >
+                                        {preset}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div>
+                            <Label className="text-[11px] uppercase font-bold text-slate-500 mb-2 block">Icon Library</Label>
+                            <div className="border rounded-xl bg-slate-50/50 p-3 space-y-4">
+                                {ICON_SECTIONS.map(section => (
+                                    <div key={section.label}>
+                                        <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">{section.label}</h5>
+                                        <div className="grid grid-cols-8 gap-1">
+                                            {section.icons.map(icon => (
+                                                <button
+                                                    key={icon}
+                                                    onClick={() => setEditIconValue(icon)}
+                                                    className={cn(
+                                                        "p-2 rounded-lg transition-all flex justify-center",
+                                                        editIconValue === icon
+                                                            ? "bg-blue-600 text-white shadow-md scale-110"
+                                                            : "text-slate-400 hover:bg-white hover:text-slate-900 border border-transparent hover:border-slate-100"
+                                                    )}
+                                                >
+                                                    <CategoryIcon name={icon} className="w-5 h-5" />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div>
+                            <Label className="text-[11px] uppercase font-bold text-slate-500 mb-2 block">Color Palette</Label>
+                            <div className="grid grid-cols-8 gap-1.5 p-3 border rounded-xl bg-slate-50/50">
+                                <button
+                                    onClick={() => setEditColorValue('')}
+                                    className={cn(
+                                        "aspect-square rounded-lg border-2 flex items-center justify-center transition-all",
+                                        !editColorValue ? "border-blue-600 scale-110 shadow-md z-10" : "border-white hover:border-slate-200 shadow-sm"
+                                    )}
+                                    title="Default (Blue)"
+                                >
+                                    <div className="w-full h-full rounded-md bg-blue-500" />
                                 </button>
-                            ))}
+                                {AVAILABLE_COLORS.map(color => (
+                                    <button
+                                        key={color}
+                                        onClick={() => setEditColorValue(color)}
+                                        className={cn(
+                                            "aspect-square rounded-lg border-2 flex items-center justify-center transition-all",
+                                            editColorValue === color ? "border-blue-600 scale-110 shadow-md z-10" : "border-white hover:border-slate-200 shadow-sm"
+                                        )}
+                                    >
+                                        <div className="w-full h-full rounded-md" style={{ backgroundColor: color }} />
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
                     <DialogFooter><Button onClick={handleSaveCategoryEdit}>Save</Button></DialogFooter>

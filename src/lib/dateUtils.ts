@@ -51,6 +51,20 @@ export const getPeriodInterval = (period: Period, customRange?: DateRange): { st
     }
 };
 
+export const filterByBudgetDate = <T extends { date: string, budget_month?: string | null }>(items: T[], period: Period, customRange?: DateRange): T[] => {
+    const interval = getPeriodInterval(period, customRange);
+    return items.filter(item => {
+        try {
+            // Use budget_month if available (YYYY-MM-01 format), otherwise fallback to date
+            const dateStr = item.budget_month || item.date;
+            const date = parseISO(dateStr);
+            return isWithinInterval(date, interval);
+        } catch (e) {
+            return false;
+        }
+    });
+};
+
 export const filterByPeriod = <T extends { date: string }>(items: T[], period: Period, customRange?: DateRange): T[] => {
     const interval = getPeriodInterval(period, customRange);
     return items.filter(item => {

@@ -8,7 +8,10 @@ export const ALLOWED_EMAILS = [
 export const MASTER_ACCOUNT_EMAIL = 'michaelmullally@gmail.com';
 
 export const isEmailAllowed = (email: string) => {
-  return ALLOWED_EMAILS.includes(email.toLowerCase());
+  // Disabling strict email implementation for v0.8/v0.9 as requested.
+  // Will re-enable closer to v1.0 release.
+  return true;
+  // return ALLOWED_EMAILS.includes(email.toLowerCase());
 };
 
 export const isQAEmail = (email: string) => {

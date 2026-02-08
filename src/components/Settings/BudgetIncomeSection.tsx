@@ -79,7 +79,7 @@ export const BudgetIncomeSection = () => {
                                             <Calendar className="w-4 h-4" />
                                         </div>
                                         <div>
-                                            <div className="text-sm font-semibold text-emerald-900">{p.merchant || p.description}</div>
+                                            <div className="text-sm font-semibold text-emerald-900">{p.source || p.description}</div>
                                             <div className="text-[10px] text-emerald-600 font-medium uppercase">{p.recurring}</div>
                                         </div>
                                     </div>

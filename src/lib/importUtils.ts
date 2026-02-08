@@ -57,27 +57,11 @@ export const parseAmount = (value: string): number | null => {
 export const parseDate = (value: string): string | null => {
     if (!value) return null;
 
-    const clean = value.trim();
+    let clean = value.trim();
     console.log(`Attempting to parse date: "${clean}"`);
 
-    // Try to catch common formats
-    // Matches DD.MM.YYYY, DD-MM-YYYY, DD/MM/YYYY
-    const dmy = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
-    if (dmy) {
-        let day = parseInt(dmy[1], 10);
-        let month = parseInt(dmy[2], 10);
-        let year = parseInt(dmy[3], 10);
-        if (year < 100) year += 2000;
-        const date = new Date(year, month - 1, day, 12, 0, 0);
-        if (!isNaN(date.getTime())) {
-            const result = date.toISOString().split('T')[0];
-            console.log(`Parsed DMY format: "${clean}" -> "${result}"`);
-            return result;
-        }
-    }
-
-    // Matches YYYY.MM.DD, YYYY-MM-DD, YYYY/MM/DD
-    const ymd = clean.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    // 1. Try YYYY.MM.DD first (most specific)
+    const ymd = clean.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
     if (ymd) {
         let year = parseInt(ymd[1], 10);
         let month = parseInt(ymd[2], 10);
@@ -85,12 +69,36 @@ export const parseDate = (value: string): string | null => {
         const date = new Date(year, month - 1, day, 12, 0, 0);
         if (!isNaN(date.getTime())) {
             const result = date.toISOString().split('T')[0];
-            console.log(`Parsed YMD format: "${clean}" -> "${result}"`);
+            console.log(`Parsed YMD format: "${clean}" -> "${result}" (from ${ymd[0]})`);
             return result;
         }
     }
 
-    const fallback = new Date(clean);
+    // 2. Try DD.MM.YYYY (or YY)
+    // We look for a 1-2 digit start, followed by separators, then another 1-2 digits, then 2 or 4 digits.
+    // To avoid matching "20" from "2025", we can try to find a full pattern.
+    const dmy = clean.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+    if (dmy) {
+        let day = parseInt(dmy[1], 10);
+        let month = parseInt(dmy[2], 10);
+        let year = parseInt(dmy[3], 10);
+
+        // Handle 2-digit years: assume 2000-2049, 1950-1999
+        if (year < 100) {
+            year += (year < 50) ? 2000 : 1900;
+        }
+
+        const date = new Date(year, month - 1, day, 12, 0, 0);
+        if (!isNaN(date.getTime())) {
+            const result = date.toISOString().split('T')[0];
+            console.log(`Parsed DMY format: "${clean}" -> "${result}" (from ${dmy[0]})`);
+            return result;
+        }
+    }
+
+    // Try native Date constructor as last resort
+    const cleanForNative = clean.replace(/["']/g, '').trim();
+    const fallback = new Date(cleanForNative);
     if (!isNaN(fallback.getTime())) {
         const result = fallback.toISOString().split('T')[0];
         console.log(`Parsed fallback format: "${clean}" -> "${result}"`);
@@ -158,9 +166,9 @@ export const stringSimilarity = (str1: string, str2: string): number => {
  */
 export const parseRecurringValue = (value: any): string => {
     if (!value) return 'N/A';
-    
+
     const cleanValue = value.toString().toLowerCase().trim();
-    
+
     // Direct matches
     const recurringMap: Record<string, string> = {
         'annually': 'Annually',
@@ -183,12 +191,12 @@ export const parseRecurringValue = (value: any): string => {
         'none': 'N/A',
         '': 'N/A'
     };
-    
+
     // Check direct matches
     if (recurringMap[cleanValue]) {
         return recurringMap[cleanValue];
     }
-    
+
     // Fuzzy matching for common patterns
     if (cleanValue.includes('year') || cleanValue.includes('annual')) {
         return 'Annually';
@@ -208,7 +216,7 @@ export const parseRecurringValue = (value: any): string => {
     if (cleanValue.includes('one') || cleanValue.includes('single')) {
         return 'One-off';
     }
-    
+
     // Handle boolean values (legacy)
     if (cleanValue === 'true' || cleanValue === 'yes') {
         return 'Monthly'; // Default to monthly for true boolean
@@ -216,7 +224,7 @@ export const parseRecurringValue = (value: any): string => {
     if (cleanValue === 'false' || cleanValue === 'no') {
         return 'N/A';
     }
-    
+
     // Default fallback
     return 'N/A';
 };

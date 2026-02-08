@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 
 export interface CategoryConfig {
     description?: string;
+    color?: string;
 }
 
 export interface AppSettings {
@@ -16,6 +17,7 @@ export interface AppSettings {
     balancingSubCategory?: { category: string, subCategory: string };
     currency: string;
     darkMode: boolean;
+    noiseFilters: string[];
     updatedAt: string;
 }
 
@@ -47,6 +49,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     budgetTypes: ['Budgeted', 'Special', 'Klintemarken', 'Exclude'],
     currency: 'DKK',
     darkMode: false,
+    noiseFilters: ['DK-NOTA', 'MobilePay:', 'SUMUP *', 'IZ *', 'SQUARE *', 'NETS', 'DANKORT-NOTA', 'BETALING', ' Dankort'],
     updatedAt: new Date().toISOString()
 };
 

@@ -25,6 +25,7 @@ export interface BudgetCategoryRecord {
   is_system?: boolean;
   budget_amount?: number;
   icon?: string;
+  color?: string;
   sub_categories: SubCategoryRecord[];
 }
 
@@ -84,6 +85,7 @@ const fetchCategories = async (profileId: string, budgetId?: string | null): Pro
       display_order,
       is_system,
       icon,
+      color,
       sub_categories (
         id,
         name,
@@ -97,7 +99,7 @@ const fetchCategories = async (profileId: string, budgetId?: string | null): Pro
   if (error) throw error;
 
   let categoryBudgets: Record<string, number> = {};
-  if (budgetId) {
+  if (budgetId && budgetId !== 'fallback-id') {
     const { data: limitsData, error: limitsError } = await supabase
       .from('budget_category_limits')
       .select('category_id, sub_category_id, limit_amount, is_active')
@@ -149,6 +151,7 @@ const fetchCategoriesWithMultiYearLimits = async (profileId: string, budgetIds: 
       display_order,
       is_system,
       icon,
+      color,
       sub_categories (
         id,
         name,
@@ -160,7 +163,9 @@ const fetchCategoriesWithMultiYearLimits = async (profileId: string, budgetIds: 
 
   if (catError) throw catError;
 
-  if (budgetIds.length === 0) {
+  const validBudgetIds = budgetIds.filter(id => id !== 'fallback-id');
+
+  if (validBudgetIds.length === 0) {
     return (categories || []).map(cat => ({
       ...cat,
       limits: {},
@@ -174,7 +179,7 @@ const fetchCategoriesWithMultiYearLimits = async (profileId: string, budgetIds: 
   const { data: limitsData, error: limitsError } = await supabase
     .from('budget_category_limits')
     .select('*')
-    .in('budget_id', budgetIds);
+    .in('budget_id', validBudgetIds);
 
   if (limitsError) throw limitsError;
 
@@ -249,6 +254,14 @@ const useCategoryMutations = (profileId?: string, budgetId?: string | null) => {
     onSuccess: invalidate
   });
 
+  const updateCategoryColor = useMutation({
+    mutationFn: async ({ categoryId, color }: { categoryId: string; color: string }) => {
+      const { error } = await supabase.from('categories').update({ color }).eq('id', categoryId);
+      if (error) throw error;
+    },
+    onSuccess: invalidate
+  });
+
   const reorderCategories = useMutation({
     mutationFn: async ({ orderedIds }: { orderedIds: string[] }) => {
       await Promise.all(orderedIds.map((id, index) =>
@@ -302,25 +315,72 @@ const useCategoryMutations = (profileId?: string, budgetId?: string | null) => {
   });
 
   const updateSubCategoryBudget = useMutation({
-    mutationFn: async ({ subCategoryId, categoryId, amount, targetBudgetId }: { subCategoryId: string; categoryId: string; amount: number; targetBudgetId?: string }) => {
-      const bid = targetBudgetId || budgetId;
+    mutationFn: async ({ subCategoryId, categoryId, amount, targetBudgetId, year }: { subCategoryId: string; categoryId: string; amount: number; targetBudgetId?: string; year?: number }) => {
+      let bid = targetBudgetId || budgetId;
+
+      // Handle fallback budget creation
+      if (bid === 'fallback-id' && year && profileId) {
+        console.log(`Creating new budget for year ${year} before saving limit.`);
+        const { data: newBudget, error: createError } = await supabase
+          .from('budgets')
+          .insert({
+            user_id: profileId,
+            year,
+            name: `Unified ${year}`,
+            budget_type: 'unified',
+            start_date: `${year}-01-01`,
+            is_active: true
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        bid = newBudget.id;
+      }
+
       if (!bid) throw new Error('Missing budget id');
+
       const { error } = await supabase.from('budget_category_limits').upsert({
         budget_id: bid,
         category_id: categoryId,
         sub_category_id: subCategoryId || null,
         limit_amount: amount,
         is_active: true
-      }, { onConflict: 'budget_id,sub_category_id' });
+      }, {
+        onConflict: subCategoryId ? 'budget_id,sub_category_id' : 'budget_id,category_id'
+      });
+
       if (error) throw error;
     },
     onSuccess: invalidate
   });
 
   const toggleSubCategoryActive = useMutation({
-    mutationFn: async ({ subCategoryId, categoryId, active, targetBudgetId }: { subCategoryId: string; categoryId: string; active: boolean; targetBudgetId?: string }) => {
-      const bid = targetBudgetId || budgetId;
+    mutationFn: async ({ subCategoryId, categoryId, active, targetBudgetId, year }: { subCategoryId: string; categoryId: string; active: boolean; targetBudgetId?: string; year?: number }) => {
+      let bid = targetBudgetId || budgetId;
+
+      // Handle fallback budget creation
+      if (bid === 'fallback-id' && year && profileId) {
+        console.log(`Creating new budget for year ${year} before toggling active.`);
+        const { data: newBudget, error: createError } = await supabase
+          .from('budgets')
+          .insert({
+            user_id: profileId,
+            year,
+            name: `Unified ${year}`,
+            budget_type: 'unified',
+            start_date: `${year}-01-01`,
+            is_active: true
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        bid = newBudget.id;
+      }
+
       if (!bid) throw new Error('Missing budget id');
+
       const { error } = await supabase.from('budget_category_limits').upsert({
         budget_id: bid,
         category_id: categoryId,
@@ -328,6 +388,7 @@ const useCategoryMutations = (profileId?: string, budgetId?: string | null) => {
         limit_amount: 0, // Required field
         is_active: active
       }, { onConflict: 'budget_id,sub_category_id' });
+
       if (error) throw error;
     },
     onSuccess: invalidate
@@ -336,7 +397,7 @@ const useCategoryMutations = (profileId?: string, budgetId?: string | null) => {
   return {
     addCategory, renameCategory, deleteCategory, reorderCategories,
     addSubCategory, renameSubCategory, deleteSubCategory, reorderSubCategories,
-    moveSubCategory, updateSubCategoryBudget, toggleSubCategoryActive, updateCategoryIcon
+    moveSubCategory, updateSubCategoryBudget, toggleSubCategoryActive, updateCategoryIcon, updateCategoryColor
   };
 };
 
@@ -345,7 +406,21 @@ export const useMultiYearBudgets = () => {
   const profileId = userProfile?.id;
   const budgetsQuery = useQuery({
     queryKey: ALL_BUDGETS_QUERY_KEY(profileId),
-    queryFn: () => fetchAllBudgets(profileId!),
+    queryFn: async () => {
+      const data = await fetchAllBudgets(profileId!);
+      const currentYear = new Date().getFullYear();
+      if (!data.find(b => b.year === currentYear)) {
+        data.push({
+          id: 'fallback-id',
+          user_id: profileId,
+          year: currentYear,
+          name: `Unified ${currentYear}`,
+          budget_type: 'unified',
+          is_active: true
+        } as any);
+      }
+      return data.sort((a, b) => a.year - b.year);
+    },
     enabled: !!profileId
   });
   const budgetIds = budgetsQuery.data?.map(b => b.id) || [];
@@ -527,32 +602,219 @@ export const useCategorySource = () => {
   const { settings } = useSettings();
 
   const { data: dbCategories, isLoading } = useBudgetCategoriesData(profileId, null);
-  const { groups } = useBudgetGroups(); // Fetch groups to potentially map later or just expose
+  const { groups } = useBudgetGroups();
 
-  const hasDbData = !!profileId && dbCategories && dbCategories.length > 0;
+  const isDbMode = !!profileId;
 
   const categories = useMemo(() => {
-    if (hasDbData) return dbCategories.map(c => c.name);
-    return settings.categories || [];
-  }, [hasDbData, dbCategories, settings.categories]);
+    if (isDbMode) {
+      return (dbCategories || [])
+        .filter(c => c.name !== 'General' && c.name !== 'Special') // SAFETY: Hide General/Special from main Expense lists
+        .map(c => c.name)
+        .sort((a, b) => a.localeCompare(b));
+    }
+    return (settings.categories || []).filter(c => c !== 'General' && c !== 'Special').sort((a, b) => a.localeCompare(b));
+  }, [isDbMode, dbCategories, settings.categories]);
 
   const subCategories = useMemo(() => {
-    if (hasDbData) {
-      const map: Record<string, string[]> = {};
-      dbCategories.forEach(c => {
-        map[c.name] = (c.sub_categories || []).map((s: any) => s.name);
+    const map: Record<string, string[]> = {};
+    if (isDbMode) {
+      (dbCategories || []).forEach(c => {
+        map[c.name] = (c.sub_categories || []).map((s: any) => s.name).sort((a, b) => a.localeCompare(b));
       });
-      return map;
+    } else {
+      Object.entries(settings.subCategories || {}).forEach(([cat, subs]) => {
+        map[cat] = [...subs].sort((a, b) => a.localeCompare(b));
+      });
     }
-    return settings.subCategories || {};
-  }, [hasDbData, dbCategories, settings.subCategories]);
+    return map;
+  }, [isDbMode, dbCategories, settings.subCategories]);
 
   return {
     categories,
     subCategories,
     isLoading,
-    isLocal: !hasDbData,
-    groups: hasDbData ? groups : []
+    isLocal: !isDbMode,
+    groups: isDbMode ? groups : [],
+    rawCategories: dbCategories || []
   };
 };
+
+
+export const useUnifiedCategoryActions = () => {
+  const { userProfile } = useAuth();
+  const profileId = userProfile?.id;
+  const queryClient = useQueryClient();
+  const { addSubCategory: addSubCategoryLocal, addItem: addCategoryLocal } = useSettings();
+  const { data: dbCategories } = useBudgetCategoriesData(profileId, null);
+  const { data: budget } = useDefaultBudget(profileId);
+  const { addSubCategory: addSubCategoryDb, addCategory: addCategoryDb } = useCategoryMutations(profileId, budget?.id ?? null);
+
+  const isDbMode = !!profileId;
+
+  const addCategory = async (name: string, group: string = 'expenditure') => {
+    if (isDbMode) {
+      await addCategoryDb.mutateAsync({ name, categoryGroup: group });
+    } else {
+      addCategoryLocal('categories', name);
+    }
+    // Force refetch for immediate availability
+    await queryClient.invalidateQueries({ queryKey: ['budget-categories'] });
+    await queryClient.invalidateQueries({ queryKey: ['multi-year-categories'] });
+  };
+
+  const addSubCategory = async (categoryName: string, subCategoryName: string) => {
+    if (isDbMode) {
+      // Ensure we have the latest categories or wait for them
+      const latestCategoriesData = dbCategories || [];
+      const cat = latestCategoriesData.find(c => c.name === categoryName);
+
+      if (cat) {
+        await addSubCategoryDb.mutateAsync({ categoryId: cat.id, name: subCategoryName });
+      } else {
+        // If cat not found in cache, it might have just been added. 
+        // We'll try one more time by forcing a refetch or checking Multi-Year data
+        console.warn(`Category "${categoryName}" not found in current cache, attempting to find in DB...`);
+
+        const { data: freshCats } = await queryClient.fetchQuery({
+          queryKey: ['budget-categories', profileId, 'default'],
+          queryFn: () => supabase.from('categories').select('id, name').eq('user_id', profileId).eq('name', categoryName).single()
+        }) as any;
+
+        if (freshCats?.id) {
+          await addSubCategoryDb.mutateAsync({ categoryId: freshCats.id, name: subCategoryName });
+        } else {
+          console.error(`Could not find category "${categoryName}" in Supabase. Falling back to local.`);
+          addSubCategoryLocal(categoryName, subCategoryName);
+        }
+      }
+    } else {
+      addSubCategoryLocal(categoryName, subCategoryName);
+    }
+    // Force refetch for immediate availability
+    await queryClient.invalidateQueries({ queryKey: ['budget-categories'] });
+    await queryClient.invalidateQueries({ queryKey: ['multi-year-categories'] });
+  };
+
+  return {
+    addCategory,
+    addSubCategory,
+    isLocal: !isDbMode
+  };
+};
+
+
+export const useGroupedCategories = () => {
+  const { userProfile } = useAuth();
+  const profileId = userProfile?.id;
+  const { data: dbCategories = [], isLoading: cLoading } = useBudgetCategoriesData(profileId, null);
+  const { groups = [], isLoading: gLoading } = useBudgetGroups();
+  const { settings } = useSettings();
+
+  const isDbMode = !!profileId;
+
+  const groupedData = useMemo(() => {
+    if (!isDbMode) {
+
+      // Logic for local settings if no DB data
+      // For now, we'll just treat all settings categories as expenses
+      const localCats = (settings.categories || []).map(name => ({
+        id: name,
+        name,
+        category_group: name === 'Income' ? 'income' : 'expenditure',
+        sub_categories: (settings.subCategories?.[name] || []).map(s => ({ id: s, name: s }))
+      }));
+
+      const sortByName = (a: any, b: any) => a.name.localeCompare(b.name);
+
+      return {
+        income: localCats.filter(c => c.category_group === 'income').sort(sortByName),
+        feeders: [],
+        expenses: localCats.filter(c => c.category_group !== 'income').sort(sortByName)
+      };
+    }
+
+    const sortByName = (a: any, b: any) => a.name.localeCompare(b.name);
+    const sortSubCategories = (subs: any[]) => [...subs].sort(sortByName);
+
+    const categories = dbCategories
+      .filter(c => c.name !== 'General') // GLOBAL SAFETY: Hide 'General'
+      .map(c => ({
+        ...c,
+        sub_categories: sortSubCategories(c.sub_categories || [])
+      }));
+
+    const income = categories.filter(c => c.category_group === 'income').sort(sortByName);
+    const expenses = categories.filter(c =>
+      c.category_group === 'expenditure' && c.name !== 'Special' // SAFETY: Exclude Special from Expenses
+    ).sort(sortByName);
+
+    // SAFETY: Force Special into slush regardless of DB state
+    const slush = categories.filter(c =>
+      c.category_group === 'special' || c.name === 'Special'
+    ).sort(sortByName);
+
+    const feeders = groups
+      .filter(g => g.type === 'feeder')
+      .map(group => ({
+        name: group.name,
+        slug: group.slug,
+        categories: categories.filter(c => c.category_group === group.slug).sort(sortByName)
+      }))
+      .filter(f => f.categories.length > 0);
+
+    return {
+      income,
+      feeders,
+      expenses,
+      slush
+    };
+  }, [isDbMode, dbCategories, groups, settings]);
+
+
+  return {
+    ...groupedData,
+    isLoading: cLoading || gLoading
+  };
+};
+
+export const usePopularCategories = (limit: number = 3) => {
+  const { userProfile } = useAuth();
+  const profileId = userProfile?.id;
+
+  return useQuery({
+    queryKey: ['popular-categories-v2', profileId, limit],
+    queryFn: async () => {
+      if (!profileId) return [];
+
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('category, sub_category')
+        .not('category', 'is', null)
+        .neq('category', '')
+        .neq('category', 'Other')
+        .neq('category', 'General');
+
+      if (error) throw error;
+
+      const counts: Record<string, number> = {};
+      data.forEach(tx => {
+        const key = `${tx.category}|${tx.sub_category || ''}`;
+        counts[key] = (counts[key] || 0) + 1;
+      });
+
+      return Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([key]) => {
+          const [category, sub_category] = key.split('|');
+          return { category, sub_category };
+        });
+    },
+    enabled: !!profileId,
+    staleTime: 1000 * 60 * 60 // 1 hour
+  });
+};
+
+
 

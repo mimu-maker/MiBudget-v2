@@ -35,6 +35,7 @@ export interface AnnualBudget {
   budget_type: string;
   start_date: string;
   is_active: boolean;
+  isFallback?: boolean;
   categories: BudgetCategory[];
   total_budget: number;
   total_spent: number;
@@ -133,9 +134,22 @@ export const useAnnualBudget = (year?: number) => {
           .maybeSingle();
 
         if (primaryError) throw primaryError;
-        if (!primaryBudget) throw new Error(`No budget found for year ${targetYear}`);
 
-        budgetData = primaryBudget;
+        if (!primaryBudget) {
+          console.log(`No existing budget found for ${targetYear}, providing fallback template.`);
+          budgetData = {
+            id: 'fallback-id', // Will be handled by mutations as a request to create
+            user_id: profile.id,
+            year: targetYear,
+            name: `Unified ${targetYear}`,
+            budget_type: 'unified',
+            start_date: `${targetYear}-01-01`,
+            is_active: true,
+            isFallback: true
+          };
+        } else {
+          budgetData = primaryBudget;
+        }
       } else {
         budgetData = unifiedBudget;
       }
@@ -151,9 +165,28 @@ export const useAnnualBudget = (year?: number) => {
 
       if (allError) throw allError;
 
-      // 2. Fetch hierarchical budget data (actuals and limits)
-      const { data: hierarchicalCategories, error: hierarchicalError } = await supabase
-        .rpc('get_hierarchical_categories', { p_budget_id: budgetData.id });
+      // 2. Fetch hierarchical budget data (limits)
+      let hierarchicalCategories: any[] = [];
+      if (budgetData.id !== 'fallback-id') {
+        const { data, error: hierarchicalError } = await supabase
+          .rpc('get_hierarchical_categories', { p_budget_id: budgetData.id });
+
+        if (hierarchicalError) throw hierarchicalError;
+        hierarchicalCategories = data || [];
+      }
+
+      // 2.5 FETCH ACTUAL TRANSACTIONS for spent calculation (Frontend Override)
+      // This ensures we use budget_month instead of transaction date
+      const { data: yearTransactions } = await supabase
+        .from('transactions')
+        .select('amount, category, sub_category, budget_month, budget')
+        .gte('budget_month', `${targetYear}-01-01`)
+        .lte('budget_month', `${targetYear}-12-31`)
+        .eq('user_id', user.id)
+        .not('status', 'ilike', 'Pending%')
+        .not('budget', 'eq', 'Exclude');
+
+      const transactions = yearTransactions || [];
 
       // Fetch last year hierarchical data if exists
       let lastYearHierarchicalMap: Record<string, any> = {};
@@ -166,12 +199,14 @@ export const useAnnualBudget = (year?: number) => {
         .maybeSingle();
 
       if (lastYearBudget) {
-        const { data: lastYearHierarchical } = await supabase
+        const { data: lastYearHierarchical, error: lastYearError } = await supabase
           .rpc('get_hierarchical_categories', { p_budget_id: lastYearBudget.id });
 
-        (lastYearHierarchical || []).forEach((item: any) => {
-          lastYearHierarchicalMap[item.category_id] = item;
-        });
+        if (!lastYearError && lastYearHierarchical) {
+          (lastYearHierarchical || []).forEach((item: any) => {
+            lastYearHierarchicalMap[item.category_id] = item;
+          });
+        }
       }
 
       // Map hierarchical data for easy lookup
@@ -185,19 +220,24 @@ export const useAnnualBudget = (year?: number) => {
         const hCat = hierarchicalMap[cat.id];
 
         const subCategories = (cat.sub_categories || [])
-          .sort((a: any, b: any) => (a.display_order || 0) - (b.display_order || 0))
+          .sort((a: any, b: any) => a.name.localeCompare(b.name))
           .map((sub: any) => {
             const hSub = (hCat?.sub_categories || []).find((s: any) => s.id === sub.id);
             const subBudget = hSub?.budget_amount ?? 0;
-            const subSpent = hSub?.spent ?? 0;
+
+            // Recalculate spent locally
+            const subSpent = transactions
+              .filter(t => t.category === cat.name && t.sub_category === sub.name)
+              .reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
+
             const isActive = hSub ? (hSub.is_active !== false) : true;
 
-            // Map last year's data for comparison
+            // Map last year's data ...
             const lastYearCat = lastYearHierarchicalMap[cat.id];
             const lastYearSub = (lastYearCat?.sub_categories || []).find((s: any) => s.id === sub.id);
             const lastYearData = lastYearSub ? {
               budget: lastYearSub.budget_amount,
-              spent: lastYearSub.spent
+              spent: lastYearSub.spent // Note: This might still be "wrong" for last year unless we recurse
             } : undefined;
 
             return {
@@ -208,13 +248,15 @@ export const useAnnualBudget = (year?: number) => {
               remaining: subBudget - subSpent,
               is_active: isActive,
               last_year_data: lastYearData,
-              first_used_date: undefined
             };
-          })
-          .filter(sub => sub.is_active || sub.spent !== 0);
+          });
 
         const subTotalBudget = subCategories.reduce((sum, sub) => sum + sub.budget_amount, 0);
-        const subTotalSpent = subCategories.reduce((sum, sub) => sum + sub.spent, 0);
+
+        // Recalculate category-level spent locally
+        const catSpent = transactions
+          .filter(t => t.category === cat.name)
+          .reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
 
         return {
           id: cat.id,
@@ -225,19 +267,19 @@ export const useAnnualBudget = (year?: number) => {
           color: cat.color,
           budget_amount: subTotalBudget,
           alert_threshold: 0,
-          spent: subTotalSpent,
-          remaining: subTotalBudget - subTotalSpent,
-          remaining_percent: subTotalBudget > 0 ? ((subTotalBudget - subTotalSpent) / subTotalBudget) * 100 : 0,
+          spent: catSpent,
+          remaining: subTotalBudget - catSpent,
+          remaining_percent: subTotalBudget > 0 ? ((subTotalBudget - catSpent) / subTotalBudget) * 100 : 0,
           sub_categories: subCategories
         };
       }).filter(cat => cat.sub_categories.length > 0);
 
       // Group categories by category_group
       const categoryGroups = {
-        income: categories.filter(cat => cat.category_group === 'income'),
-        expenditure: categories.filter(cat => cat.category_group === 'expenditure'),
-        klintemarken: categories.filter(cat => cat.category_group === 'klintemarken'),
-        special: categories.filter(cat => cat.category_group === 'special')
+        income: categories.filter(cat => cat.category_group === 'income').sort((a, b) => a.name.localeCompare(b.name)),
+        expenditure: categories.filter(cat => cat.category_group === 'expenditure').sort((a, b) => a.name.localeCompare(b.name)),
+        klintemarken: categories.filter(cat => cat.category_group === 'klintemarken').sort((a, b) => a.name.localeCompare(b.name)),
+        special: categories.filter(cat => cat.category_group === 'special').sort((a, b) => a.name.localeCompare(b.name))
       };
 
       const totalBudget = categories.reduce((sum, cat) => sum + cat.budget_amount, 0);
@@ -251,6 +293,7 @@ export const useAnnualBudget = (year?: number) => {
         budget_type: budgetData.budget_type,
         start_date: budgetData.start_date,
         is_active: budgetData.is_active,
+        isFallback: budgetData.isFallback,
         categories,
         total_budget: totalBudget,
         total_spent: totalSpent,
@@ -261,8 +304,13 @@ export const useAnnualBudget = (year?: number) => {
       setBudget(annualBudget);
       return annualBudget;
     } catch (err) {
-      console.error('Error fetching annual budget:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch budget');
+      console.error('Detailed error fetching annual budget:', err);
+      // Extra details for Supabase errors
+      if (err && typeof err === 'object' && 'message' in err) {
+        setError(`${err.message}${('details' in err ? ': ' + err.details : '')}`);
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to fetch budget');
+      }
       return null;
     } finally {
       setLoading(false);
