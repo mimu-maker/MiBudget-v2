@@ -2,7 +2,12 @@
 import { Transaction } from '../hooks/useTransactionTable';
 
 export const filterTransactions = (transactions: Transaction[], filters: Record<string, any>) => {
+  // Hide Excluded by default unless explicitly filtered
+  const hasStatusFilter = filters.status && filters.status.length > 0 && filters.status !== 'all';
+
   return transactions.filter(transaction => {
+    if (!hasStatusFilter && transaction.status === 'Excluded') return false;
+
     return Object.entries(filters).every(([field, filterValue]) => {
       if (filterValue === undefined || filterValue === null || filterValue === '') return true;
       if (typeof filterValue === 'string' && filterValue === 'all') return true;
@@ -18,6 +23,8 @@ export const filterTransactions = (transactions: Transaction[], filters: Record<
           const date = new Date(transaction.date);
           const week = Math.ceil(date.getDate() / 7);
           return week === parseInt(filterValue.value);
+        } else if (filterValue.type === 'year') {
+          return new Date(transaction.date).getFullYear() === parseInt(filterValue.value);
         } else if (filterValue.type === 'date') {
           return transaction.date === filterValue.value;
         } else if (filterValue.type === 'range' && filterValue.value?.from) {
@@ -60,6 +67,16 @@ export const filterTransactions = (transactions: Transaction[], filters: Record<
         return filterValue.includes(transactionValue);
       }
 
+      // Custom Resolution Filtering
+      if (field === 'resolution') {
+        if (filterValue === 'unresolved') {
+          return transaction.status !== 'Complete' && !transaction.is_resolved;
+        }
+        if (filterValue === 'resolved') {
+          return transaction.status === 'Complete' || transaction.is_resolved;
+        }
+      }
+
       // Boolean Filtering
       if (typeof transactionValue === 'boolean') {
         if (String(filterValue) === 'true') return transactionValue === true;
@@ -90,17 +107,18 @@ export const sortTransactions = (transactions: Transaction[], sortBy: keyof Tran
   });
 };
 
-export const getStatusBadgeVariant = (status: string) => {
-  if (status === 'Complete') return 'default';
-  if (status.startsWith('Pending')) return 'secondary';
+export const getStatusBadgeVariant = (status: string): any => {
+  if (status === 'Complete') return 'success';
+  if (status.startsWith('Pending')) return 'warning';
+  if (status === 'Reconciled' || status.startsWith('Reconciled:')) return 'success';
   return 'outline';
 };
 
-export const getBudgetBadgeVariant = (budget: string) => {
+export const getBudgetBadgeVariant = (budget: string): any => {
   switch (budget) {
-    case 'Budgeted': return 'default';
-    case 'Special': return 'secondary';
-    case 'Klintemarken': return 'outline';
+    case 'Budgeted': return 'success';
+    case 'Special': return 'premium';
+    case 'Klintemarken': return 'info';
     case 'Exclude': return 'destructive';
     default: return 'outline';
   }

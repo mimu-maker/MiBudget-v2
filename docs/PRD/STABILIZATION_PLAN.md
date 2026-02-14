@@ -35,6 +35,16 @@ Tracking active bugs and logic errors identified during the "Production Evolutio
 
 ---
 
+### BUD-007: Budget UI Refactor (Unplanned Expenses)
+- **Task**: Rename "Special" -> "Unplanned Expenses", merge into Expenditure card as a tail section, and hide headers for Feeder Budgets.
+- **Status**: ✅ FIXED.
+
+### BUD-008: Budget Balancing Selection Logic
+- **Task**: Enforce category selection for Budget Balancing and automatically select "Unplanned Expenses" if available.
+- **Status**: ✅ FIXED.
+
+---
+
 ## 📋 Triage History
 | Date | ID | Issue | Status |
 | :--- | :--- | :--- | :--- |
@@ -43,3 +53,12 @@ Tracking active bugs and logic errors identified during the "Production Evolutio
 | 2026-01-27 | BUD-003 | % Column stays at 0% | ✅ FIXED |
 | 2026-01-27 | BUD-004 | Vs Budget Math Fix | ✅ FIXED |
 | 2026-01-27 | BUD-005 | Budget YTD Column | ✅ FIXED |
+| 2026-02-05 | BUD-007 | Unplanned Expenses Refactor | ✅ FIXED |
+| 2026-02-05 | BUD-008 | Budget Balancing Default | ✅ FIXED |
+
+---
+
+## 🧪 Regression Testing Requirements
+- **Budget Table Vertical Alignment**: Ensure that "Unplanned Expenses" tail section columns align perfectly with "Primary Expenses".
+- **Feeder Budget Headers**: Confirm that column headers (Annual, Monthly, etc.) are hidden for Feeder groups but the data remains visible.
+- **Settings Toggle Logic**: Verify that enabling Budget Balancing without a prior selection correctly auto-populates "Unplanned Expenses".

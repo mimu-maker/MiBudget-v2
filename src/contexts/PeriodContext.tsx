@@ -18,11 +18,17 @@ interface PeriodContextType {
     setSelectedPeriod: (period: Period) => void;
     customDateRange: DateRange | undefined;
     setCustomDateRange: (range: DateRange | undefined) => void;
+    includeSpecial: boolean;
+    setIncludeSpecial: (include: boolean) => void;
+    includeKlintemarken: boolean;
+    setIncludeKlintemarken: (include: boolean) => void;
 }
 
 const PeriodContext = createContext<PeriodContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'mibudget_selected_period';
+const STORAGE_KEY = 'mibudget_selected_period_v2';
+const SPECIAL_KEY = 'mibudget_include_special';
+const KLINTEMARKEN_KEY = 'mibudget_include_klintemarken';
 
 export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [selectedPeriod, setSelectedPeriodState] = useState<Period>(() => {
@@ -31,13 +37,42 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
     const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>();
 
+    const [includeSpecial, setIncludeSpecialState] = useState<boolean>(() => {
+        const saved = localStorage.getItem(SPECIAL_KEY);
+        return saved === null ? true : saved === 'true';
+    });
+
+    const [includeKlintemarken, setIncludeKlintemarkenState] = useState<boolean>(() => {
+        const saved = localStorage.getItem(KLINTEMARKEN_KEY);
+        return saved === null ? true : saved === 'true';
+    });
+
     const setSelectedPeriod = (period: Period) => {
         setSelectedPeriodState(period);
         localStorage.setItem(STORAGE_KEY, period);
     };
 
+    const setIncludeSpecial = (include: boolean) => {
+        setIncludeSpecialState(include);
+        localStorage.setItem(SPECIAL_KEY, String(include));
+    };
+
+    const setIncludeKlintemarken = (include: boolean) => {
+        setIncludeKlintemarkenState(include);
+        localStorage.setItem(KLINTEMARKEN_KEY, String(include));
+    };
+
     return (
-        <PeriodContext.Provider value={{ selectedPeriod, setSelectedPeriod, customDateRange, setCustomDateRange }}>
+        <PeriodContext.Provider value={{
+            selectedPeriod,
+            setSelectedPeriod,
+            customDateRange,
+            setCustomDateRange,
+            includeSpecial,
+            setIncludeSpecial,
+            includeKlintemarken,
+            setIncludeKlintemarken
+        }}>
             {children}
         </PeriodContext.Provider>
     );

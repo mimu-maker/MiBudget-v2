@@ -22,38 +22,38 @@ export interface AppSettings {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-    categories: ['Income', 'Housing', 'Food', 'Transport', 'Entertainment', 'Healthcare', 'Utilities', 'Savings'],
+    categories: ['Income', 'Property', 'Food', 'Transport', 'Personal & Lifestyle', 'Healthcare', 'Utilities', 'Savings & Investing'],
     subCategories: {
         'Income': ['Salary', 'Bonus', 'Interest'],
-        'Housing': ['Rent/Mortgage', 'Maintenance', 'Utilities'],
+        'Property': ['Rent/Mortgage', 'Maintenance', 'Utilities'],
         'Food': ['Groceries', 'Dining Out'],
         'Transport': ['Fuel', 'Public Transport', 'Maintenance', 'Insurance'],
-        'Entertainment': ['Streaming', 'Events', 'Hobbies'],
+        'Personal & Lifestyle': ['Streaming', 'Events', 'Hobbies'],
         'Healthcare': ['Doctor', 'Medicine', 'Insurance'],
         'Utilities': ['Internet', 'Phone', 'Electricity'],
-        'Savings': ['Emergency Fund', 'Investments']
+        'Savings & Investing': ['Emergency Fund', 'Investments']
     },
     categoryConfigs: {},
     categoryBudgets: {
-        'Housing': 15000,
+        'Property': 15000,
         'Food': 4000,
         'Transport': 3000,
-        'Entertainment': 2500,
+        'Personal & Lifestyle': 2500,
         'Utilities': 2000,
         'Healthcare': 1500,
-        'Other': 1000
+        'Uncategorized': 1000
     },
     subCategoryBudgets: {},
-    balancingSubCategory: { category: 'Savings', subCategory: 'Investments' },
+    balancingSubCategory: { category: 'Savings & Investing', subCategory: 'Investments' },
     accounts: ['Fixed', 'CC', 'Master', 'Joint'],
     budgetTypes: ['Budgeted', 'Special', 'Klintemarken', 'Exclude'],
     currency: 'DKK',
     darkMode: false,
-    noiseFilters: ['DK-NOTA', 'MobilePay:', 'SUMUP *', 'IZ *', 'SQUARE *', 'NETS', 'DANKORT-NOTA', 'BETALING', ' Dankort'],
+    noiseFilters: ['MC/VISA', 'VISA/DANKORT', 'DANKORT', 'NETBANK', 'VISA', 'MASTERCARD', 'OVERFØRSEL', 'DEPOT', 'DK', 'K', 'CARD', 'KØB', 'AUT.', 'ONLINE', 'WWW.', 'DK-NOTA', 'MobilePay:', 'SUMUP *', 'IZ *', 'SQUARE *', 'NETS', 'DANKORT-NOTA', 'BETALING', ' Dankort', 'Forretning:', 'FORRETNING:'],
     updatedAt: new Date().toISOString()
 };
 
-export const APP_STATUSES = ['Pending Triage', 'Pending Reconciliation', 'Reconciled', 'Complete'];
+export const APP_STATUSES = ['Pending Triage', 'Pending Reconciliation', 'Reconciled', 'Complete', 'Excluded'];
 
 const STORAGE_KEY = 'financeSettings';
 

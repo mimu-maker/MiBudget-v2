@@ -58,11 +58,11 @@ const AddTransactionForm = ({
 
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Merchant</label>
+            <label className="block text-sm font-medium mb-1">Source</label>
             <Input
-              value={newTransaction.merchant}
-              onChange={(e) => onTransactionChange({ merchant: e.target.value })}
-              placeholder="Merchant name"
+              value={newTransaction.source}
+              onChange={(e) => onTransactionChange({ source: e.target.value })}
+              placeholder="Source name"
             />
           </div>
           <div>
@@ -77,33 +77,12 @@ const AddTransactionForm = ({
 
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Account</label>
-            <Select value={newTransaction.account} onValueChange={(value) => onTransactionChange({ account: value })}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Master">Master</SelectItem>
-                <SelectItem value="Joint">Joint</SelectItem>
-                <SelectItem value="Savings">Savings</SelectItem>
-                <SelectItem value="Investment">Investment</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Budget</label>
-            <Select value={newTransaction.budget} onValueChange={(value) => onTransactionChange({ budget: value })}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Budgeted">Budgeted</SelectItem>
-                <SelectItem value="Special">Special</SelectItem>
-                <SelectItem value="Klintemarken">Klintemarken</SelectItem>
-                <SelectItem value="Exclude">Exclude</SelectItem>
-              </SelectContent>
-            </Select>
+            <label className="block text-sm font-medium mb-1">Stream</label>
+            <Input
+              value={newTransaction.stream}
+              onChange={(e) => onTransactionChange({ stream: e.target.value })}
+              placeholder="Stream/Nature"
+            />
           </div>
 
           <div>
@@ -115,9 +94,9 @@ const AddTransactionForm = ({
               <SelectContent>
                 <SelectItem value="Income">Income</SelectItem>
                 <SelectItem value="Food">Food</SelectItem>
-                <SelectItem value="Housing">Housing</SelectItem>
+                <SelectItem value="Property">Property</SelectItem>
                 <SelectItem value="Transport">Transport</SelectItem>
-                <SelectItem value="Entertainment">Entertainment</SelectItem>
+                <SelectItem value="Personal & Lifestyle">Personal & Lifestyle</SelectItem>
                 <SelectItem value="Healthcare">Healthcare</SelectItem>
                 <SelectItem value="Utilities">Utilities</SelectItem>
               </SelectContent>
@@ -134,18 +113,26 @@ const AddTransactionForm = ({
               onChange={(e) => onTransactionChange({ planned: e.target.checked })}
               className="rounded border-input bg-background text-primary focus:ring-ring"
             />
-            <label htmlFor="planned" className="text-sm font-medium">Unplanned</label>
+            <label htmlFor="planned" className="text-sm font-medium">Planned</label>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="recurring"
-              checked={newTransaction.recurring}
-              onChange={(e) => onTransactionChange({ recurring: e.target.checked })}
-              className="rounded border-input bg-background text-primary focus:ring-ring"
-            />
-            <label htmlFor="recurring" className="text-sm font-medium">Recurring</label>
+          <div>
+            <label className="block text-sm font-medium mb-1">Frequency</label>
+            <Select
+              value={newTransaction.recurring}
+              onValueChange={(value) => onTransactionChange({ recurring: value as any })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="N/A">One-off</SelectItem>
+                <SelectItem value="Monthly">Monthly</SelectItem>
+                <SelectItem value="Quarterly">Quarterly</SelectItem>
+                <SelectItem value="Bi-annually">Bi-annually</SelectItem>
+                <SelectItem value="Annually">Annually</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

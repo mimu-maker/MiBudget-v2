@@ -27,7 +27,7 @@ export const FileUploadStep: React.FC = () => {
 
     try {
       const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-      
+
       if (extension === '.csv') {
         await processCSV(file);
       } else if (extension === '.xlsx') {
@@ -45,7 +45,7 @@ export const FileUploadStep: React.FC = () => {
     setUploadStatus('processing');
     const text = await file.text();
     const lines = text.split('\n').filter(line => line.trim());
-    
+
     if (lines.length < 2) {
       throw new Error('File appears to be empty or invalid');
     }
@@ -78,7 +78,7 @@ export const FileUploadStep: React.FC = () => {
     // For now, simulate Excel processing
     // In real implementation, use xlsx library
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     const importData = {
       fileName: file.name,
       totalRows: 150, // Simulated
@@ -99,7 +99,7 @@ export const FileUploadStep: React.FC = () => {
     setUploadStatus('processing');
     // For now, simulate QFX/OFX processing
     await new Promise(resolve => setTimeout(resolve, 1500));
-    
+
     const importData = {
       fileName: file.name,
       totalRows: 200, // Simulated
@@ -129,7 +129,7 @@ export const FileUploadStep: React.FC = () => {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
       const file = files[0];
@@ -206,7 +206,7 @@ export const FileUploadStep: React.FC = () => {
               className="hidden"
               id="file-upload"
             />
-            
+
             {uploadStatus === 'idle' && (
               <div className="space-y-4">
                 <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
@@ -259,7 +259,7 @@ export const FileUploadStep: React.FC = () => {
                 </div>
                 <div className="text-lg font-medium text-destructive">Upload failed</div>
                 <div className="text-sm text-muted-foreground">{error}</div>
-                <Button 
+                <Button
                   onClick={() => setUploadStatus('idle')}
                   variant="outline"
                   size="sm"
@@ -293,7 +293,7 @@ export const FileUploadStep: React.FC = () => {
               <ul className="space-y-1 text-muted-foreground">
                 <li>• Maximum file size: 50MB</li>
                 <li>• Include headers in first row</li>
-                <li>• Date, merchant, and amount columns required</li>
+                <li>• Date, source, and amount columns required</li>
                 <li>• Remove sensitive personal data</li>
               </ul>
             </div>
@@ -314,7 +314,7 @@ export const FileUploadStep: React.FC = () => {
         <Button variant="outline" onClick={previousPhase}>
           Back
         </Button>
-        <Button 
+        <Button
           onClick={handleContinue}
           disabled={uploadStatus !== 'success'}
           className="flex items-center gap-2"

@@ -1,19 +1,17 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, LayoutPanelLeft } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { UnifiedAddTransactionsDialog } from './UnifiedAddTransactionsDialog';
 import { TransactionSplitModal } from './TransactionSplitModal';
-import { ValidationDashboard } from './ValidationDashboard';
+
 import { TransactionsTableHeader } from './TransactionsTableHeader';
 import { TransactionsTableRow } from './TransactionsTableRow';
 import { useTransactionTable, Transaction } from './hooks/useTransactionTable';
 import { filterTransactions, sortTransactions } from './utils/transactionUtils';
 import { BulkActionBar } from './BulkActionBar';
 import { BulkEditDialog } from './BulkEditDialog';
-import { usePeriod } from '@/contexts/PeriodContext';
-import { filterByPeriod } from '@/lib/dateUtils';
-import { PeriodSelector } from '@/components/PeriodSelector';
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +24,8 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { useSettings, APP_STATUSES } from '@/hooks/useSettings';
+import { useGroupedCategories } from '@/hooks/useBudgetCategories'; // Import the hook
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 export const TransactionsTable = () => {
   const {
@@ -55,39 +55,70 @@ export const TransactionsTable = () => {
     isBulkDeleting,
     projections,
     emergencyClearAll,
-    knownMerchants
+    knownSources
   } = useTransactionTable();
 
   const { settings } = useSettings();
-  const { selectedPeriod, customDateRange } = usePeriod();
+
+  // Use the hook to get grouped categories
+  const { income, feeders, slush, expenses, isLoading: isCategoriesLoading } = useGroupedCategories();
 
   const filterOptions = useMemo(() => {
     const allSubCategories = Object.values(settings.subCategories).flat();
     const uniqueSubCategories = Array.from(new Set(allSubCategories));
     const uniqueRecurring = Array.from(new Set(transactions.map(t => t.recurring).filter(Boolean)));
 
+    // Construct the custom sorted list: Income -> Feeders -> Slush -> Expenses
+    // We use the names from the hook's result
+    let sortedCategories: string[] = [];
+
+    if (!isCategoriesLoading && (income.length > 0 || expenses.length > 0)) {
+      const incomeNames = income.map(c => c.name);
+      // Flatten all feeder categories
+      const feederNames = feeders.flatMap(f => f.categories.map(c => c.name));
+      const slushNames = slush.map(c => c.name);
+      const expenseNames = expenses.map(c => c.name);
+
+      sortedCategories = [
+        ...incomeNames,
+        ...feederNames,
+        ...expenseNames,
+        ...slushNames
+      ];
+
+      // Safety check: if for some reason the database list is empty, fall back to settings
+      if (sortedCategories.length === 0) {
+        sortedCategories = settings.categories;
+      }
+    } else {
+      // Fallback to settings if loading or no data
+      sortedCategories = settings.categories;
+    }
+
+    // Filter out duplicates just in case
+    sortedCategories = Array.from(new Set(sortedCategories));
+
     return {
-      categories: settings.categories,
+      categories: sortedCategories,
       subCategories: uniqueSubCategories,
       statuses: APP_STATUSES,
-      recurring: uniqueRecurring
+      recurring: uniqueRecurring,
+      sources: Array.from(knownSources)
     };
-  }, [settings, transactions]);
+  }, [settings, transactions, income, feeders, slush, expenses, isCategoriesLoading, knownSources]);
 
   const [addTransactionsOpen, setAddTransactionsOpen] = useState(false);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [splitModalOpen, setSplitModalOpen] = useState(false);
   const [transactionToSplit, setTransactionToSplit] = useState<Transaction | null>(null);
-  const [viewMode, setViewMode] = useState<'table' | 'validation'>('table');
+
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
 
   const filteredAndSortedTransactions = useMemo(() => {
-    let periodFiltered = filterByPeriod(transactions, selectedPeriod, customDateRange);
-
-    const tableFiltered = filterTransactions(periodFiltered, filters);
+    const tableFiltered = filterTransactions(transactions, filters);
     return sortTransactions(tableFiltered, sortBy, sortOrder);
-  }, [transactions, selectedPeriod, customDateRange, filters, sortBy, sortOrder]);
+  }, [transactions, filters, sortBy, sortOrder]);
 
   const handleStartEdit = (id: string, field: keyof Transaction) => {
     setEditingCell({ id, field });
@@ -100,15 +131,27 @@ export const TransactionsTable = () => {
     }
   };
 
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: filteredAndSortedTransactions.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 45, // Estimate row height
+    overscan: 10,
+  });
+
+  const virtualItems = virtualizer.getVirtualItems();
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
+  const paddingBottom = virtualItems.length > 0
+    ? virtualizer.getTotalSize() - (virtualItems[virtualItems.length - 1]?.end || 0)
+    : 0;
+
   return (
-    <div className="px-6 pb-6 pt-2">
-      <div className="flex items-center justify-between mb-6">
+    <div className="px-6 pb-6 pt-2 h-full flex flex-col box-border">
+      <div className="relative flex items-center justify-between mb-6 shrink-0">
         <h1 className="text-2xl font-bold text-foreground">Transactions</h1>
 
         <div className="flex items-center space-x-2">
-          <div className="mr-2">
-            <PeriodSelector />
-          </div>
           <Button
             size="lg"
             onClick={() => setAddTransactionsOpen(true)}
@@ -121,14 +164,14 @@ export const TransactionsTable = () => {
       </div>
 
       {isLoading && (
-        <div className="mb-4 p-4 bg-blue-50 border border-blue-100 rounded-lg animate-pulse flex items-center">
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-100 rounded-lg animate-pulse flex items-center shrink-0">
           <div className="w-2 h-2 bg-blue-500 rounded-full mr-3" />
           <span className="text-blue-700 text-sm font-medium">Syncing with cloud database... This may take a moment for large datasets.</span>
         </div>
       )}
 
       {isError && (
-        <div className="mb-4 p-4 bg-amber-50 border border-amber-100 rounded-lg flex items-center justify-between">
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-100 rounded-lg flex items-center justify-between shrink-0">
           <div className="flex items-center">
             <div className="w-2 h-2 bg-amber-500 rounded-full mr-3" />
             <span className="text-amber-700 text-sm font-medium">Running in Local Mode. Cloud sync is currently unavailable.</span>
@@ -136,83 +179,83 @@ export const TransactionsTable = () => {
         </div>
       )}
 
-      {viewMode === 'table' ? (
-        <>
-          <div className="flex justify-end mb-4">
-            <Button variant="outline" onClick={() => setViewMode('validation')}>
-              <LayoutPanelLeft className="w-4 h-4 mr-2" />
-              Go to Validation Dashboard
-            </Button>
+      <Card className="flex flex-col flex-1 min-h-0">
+        <CardHeader className="py-3 px-6 shrink-0">
+          <CardTitle>All Transactions ({filteredAndSortedTransactions.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 overflow-hidden p-0 relative">
+          <div
+            ref={parentRef}
+            className="h-full w-full overflow-y-auto overflow-x-auto relative"
+          >
+            {/* The single table container */}
+            <table className="w-full text-sm text-left relative min-w-[1000px]">
+              <TransactionsTableHeader
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                onFilter={handleFilter}
+                onClearFilter={clearFilter}
+                filters={filters}
+                filterOptions={filterOptions}
+                onSelectAll={(checked) => {
+                  if (checked) {
+                    selectAll(filteredAndSortedTransactions.map(t => t.id));
+                  } else {
+                    clearSelection();
+                  }
+                }}
+                isAllSelected={
+                  filteredAndSortedTransactions.length > 0 &&
+                  filteredAndSortedTransactions.every(t => selectedIds.has(t.id))
+                }
+              />
+              <tbody>
+                {paddingTop > 0 && (
+                  <tr>
+                    <td style={{ height: `${paddingTop}px` }} />
+                  </tr>
+                )}
+                {virtualItems.map((virtualRow) => {
+                  const transaction = filteredAndSortedTransactions[virtualRow.index];
+                  return (
+                    <TransactionsTableRow
+                      key={transaction.id}
+                      data-index={virtualRow.index}
+                      ref={virtualizer.measureElement}
+                      transaction={transaction}
+                      isSelected={selectedIds.has(transaction.id)}
+                      onToggleSelection={toggleSelection}
+                      editingCell={editingCell}
+                      onCellEdit={handleCellEdit}
+                      onBulkEdit={handleBulkCellEdit}
+                      onStartEdit={handleStartEdit}
+                      onStopEdit={() => setEditingCell(null)}
+                      onDelete={(id) => {
+                        setTransactionToDelete(id);
+                        setDeleteConfirmOpen(true);
+                      }}
+                      onSplit={(t) => {
+                        setTransactionToSplit(t);
+                        setSplitModalOpen(true);
+                      }}
+                      onRowClick={() => { }}
+                      projections={projections}
+                      knownSources={knownSources}
+                      allTransactions={transactions}
+                    />
+                  );
+                })}
+                {paddingBottom > 0 && (
+                  <tr>
+                    <td style={{ height: `${paddingBottom}px` }} />
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>All Transactions ({filteredAndSortedTransactions.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <TransactionsTableHeader
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={handleSort}
-                    onFilter={handleFilter}
-                    onClearFilter={clearFilter}
-                    filters={filters}
-                    filterOptions={filterOptions}
-                    onSelectAll={(checked) => {
-                      if (checked) {
-                        selectAll(filteredAndSortedTransactions.map(t => t.id));
-                      } else {
-                        clearSelection();
-                      }
-                    }}
-                    isAllSelected={
-                      filteredAndSortedTransactions.length > 0 &&
-                      filteredAndSortedTransactions.every(t => selectedIds.has(t.id))
-                    }
-                  />
-                  <tbody>
-                    {filteredAndSortedTransactions.map((transaction) => (
-                      <TransactionsTableRow
-                        key={transaction.id}
-                        transaction={transaction}
-                        isSelected={selectedIds.has(transaction.id)}
-                        onToggleSelection={toggleSelection}
-                        editingCell={editingCell}
-                        onCellEdit={handleCellEdit}
-                        onBulkEdit={handleBulkCellEdit}
-                        onStartEdit={handleStartEdit}
-                        onStopEdit={() => setEditingCell(null)}
-                        onDelete={(id) => {
-                          setTransactionToDelete(id);
-                          setDeleteConfirmOpen(true);
-                        }}
-                        onSplit={(t) => {
-                          setTransactionToSplit(t);
-                          setSplitModalOpen(true);
-                        }}
-                        onRowClick={() => { }} // Row click handled by EditableCell stopPropagation
-                        projections={projections}
-                        knownMerchants={knownMerchants}
-                        allTransactions={transactions}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      ) : (
-        <>
-          <div className="flex justify-end mb-4">
-            <Button variant="outline" onClick={() => setViewMode('table')}>
-              Back to Table
-            </Button>
-          </div>
-          <ValidationDashboard />
-        </>
-      )}
+        </CardContent>
+      </Card>
 
       <UnifiedAddTransactionsDialog
         open={addTransactionsOpen}

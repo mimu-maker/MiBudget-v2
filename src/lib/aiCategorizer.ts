@@ -27,7 +27,7 @@ export const categorizeWithAI = async (
       "merchant_description": "Short explanation of what this merchant is",
       "confidence": 0.9 (number between 0 and 1)
     }
-    Common Categories: Food, Transport, Housing, Utilities, Shopping, Entertainment, Health, Income.
+    Common Categories: Food, Transport, Property, Utilities, Children & Education, Personal & Lifestyle, Healthcare, Savings & Investing, Income.
   `;
 
     try {

@@ -7,6 +7,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { useCategorySource } from '@/hooks/useBudgetCategories';
 import { SourceNameSelector } from '../Transactions/SourceNameSelector';
 import { SourceMappingRefiner } from '../Transactions/SourceMappingRefiner';
+import { SourceRuleForm } from './SourceRuleForm';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -15,7 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, Trash2, Zap, RefreshCw, Calendar, EyeOff, Save, Check, Store, Sparkles, ArrowRight, Info, AlertCircle, Pencil, X, List, Target, History as HistoryIcon, ChevronDown } from 'lucide-react';
+import { Search, Plus, Trash2, Zap, RefreshCw, Calendar, EyeOff, Save, Check, Store, Sparkles, ArrowRight, Info, AlertCircle, Pencil, X, List, Target, History as HistoryIcon, ChevronDown, Settings as SettingsIcon, Clock, Link2Off, AlertTriangle } from 'lucide-react';
 import { cleanSource } from '@/lib/importBrain';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -26,13 +27,13 @@ import { TransactionDetailDialog } from '../Transactions/TransactionDetailDialog
 import { Transaction } from '../Transactions/hooks/useTransactionTable';
 import { useToast } from '@/hooks/use-toast';
 
-export const SourceManager = () => {
+export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }) => {
     const queryClient = useQueryClient();
     const { user } = useAuth();
     const { toast } = useToast();
     const { settings } = useSettings();
     const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
-    const [search, setSearch] = useState('');
+    const [search, setSearch] = useState(initialSearch);
     const [scanResults, setScanResults] = useState<any[]>([]);
     const [isScanning, setIsScanning] = useState(false);
     const [hasScanned, setHasScanned] = useState(false);
@@ -48,7 +49,16 @@ export const SourceManager = () => {
     const [filterAuto, setFilterAuto] = useState(false);
     const [filterExcluded, setFilterExcluded] = useState(false);
     const [filterRecurring, setFilterRecurring] = useState(false);
+    const [filterOrphans, setFilterOrphans] = useState(false);
+
     const [sortBy, setSortBy] = useState<'name' | 'popularity' | 'spend'>('name');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+    const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
+    const [renameValue, setRenameValue] = useState('');
+
+    const [historySelectedIds, setHistorySelectedIds] = useState<Set<string>>(new Set());
+    const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+    const [confirmingUnlinkId, setConfirmingUnlinkId] = useState<string | null>(null);
 
     const { data: rules = [], isLoading } = useQuery({
         queryKey: ['source_rules'],
@@ -110,6 +120,10 @@ export const SourceManager = () => {
         }
     });
 
+    const unprocessedCount = useMemo(() => {
+        return transactions.filter(t => !t.clean_source && t.status !== 'Complete').length;
+    }, [transactions]);
+
     const addMutation = useMutation({
         mutationFn: async ({ rule, applyToIds }: { rule: any, applyToIds: string[] }) => {
             const sourceRuleData = {
@@ -166,7 +180,7 @@ export const SourceManager = () => {
 
                         if (rule.skip_triage) {
                             updates.status = 'Complete';
-                            if (!tx.category || tx.category === 'Other') updates.category = rule.category;
+                            if (!tx.category || tx.category === 'Uncategorized') updates.category = rule.category;
                             if (!tx.sub_category) updates.sub_category = rule.sub_category;
                             if (!tx.recurring || tx.recurring === 'N/A') updates.recurring = rule.auto_recurring;
                             if (tx.planned === null || tx.planned === undefined) updates.planned = rule.auto_planned;
@@ -203,12 +217,8 @@ export const SourceManager = () => {
 
     const editMutation = useMutation({
         mutationFn: async (rule: any) => {
-            const updates: any = {
-                // New schema
-                clean_source_name: rule.clean_source_name,
-                // Old schema
-                clean_merchant_name: rule.clean_source_name || rule.clean_merchant_name,
-
+            // Base fields common to both tables
+            const baseUpdates: any = {
                 auto_category: rule.auto_category,
                 auto_sub_category: rule.auto_sub_category,
                 auto_recurring: rule.auto_recurring,
@@ -218,28 +228,81 @@ export const SourceManager = () => {
                 match_mode: rule.match_mode || 'fuzzy'
             };
 
-            let { error } = await (supabase as any)
-                .from('source_rules')
-                .update(updates)
-                .eq('id', rule.id);
+            if (rule.isGroupDefault) {
+                // Bulk update all rules in this group by name
+                // 1. Update source_rules
+                const sourceUpdates = {
+                    ...baseUpdates,
+                    clean_source_name: rule.clean_source_name || rule.name
+                };
+                const { error: groupError } = await (supabase as any)
+                    .from('source_rules')
+                    .update(sourceUpdates)
+                    .eq('clean_source_name', rule.clean_source_name);
 
-            if (error && (error.code === '42P01' || error.code === 'PGRST205' || error.message?.includes('not found'))) {
-                const { clean_source_name, ...fallbackUpdates } = updates;
-                error = (await (supabase as any)
+                // 2. Update legacy merchant rules if they exist
+                const merchantUpdates = {
+                    ...baseUpdates,
+                    clean_merchant_name: rule.clean_source_name || rule.name
+                };
+                await (supabase as any)
                     .from('merchant_rules')
-                    .update(fallbackUpdates)
-                    .eq('id', rule.id)).error;
+                    .update(merchantUpdates)
+                    .eq('clean_merchant_name', rule.clean_source_name);
+
+                if (groupError && groupError.code !== '42P01') throw groupError;
+                return;
             }
 
-            if (error) throw error;
+            // Single Rule Update
+            // 1. Try source_rules first
+            const sourceRuleUpdates = {
+                ...baseUpdates,
+                clean_source_name: rule.clean_source_name || rule.name,
+                source_name: rule.source_name || rule.raw_name // Allow updating the pattern itself
+            };
+            const { data: sourceData, error: sourceError } = await (supabase as any)
+                .from('source_rules')
+                .update(sourceRuleUpdates)
+                .eq('id', rule.id)
+                .select();
+
+            // 2. Fallback to merchant_rules if nothing was updated
+            if ((!sourceData || sourceData.length === 0) && !sourceError) {
+                const merchantRuleUpdates = {
+                    ...baseUpdates,
+                    clean_merchant_name: rule.clean_source_name || rule.name,
+                    merchant_name: rule.source_name || rule.raw_name
+                };
+                const { error: merchantError } = await (supabase as any)
+                    .from('merchant_rules')
+                    .update(merchantRuleUpdates)
+                    .eq('id', rule.id);
+                if (merchantError) throw merchantError;
+            } else if (sourceError && (sourceError.code === '42P01' || sourceError.code === 'PGRST204' || sourceError.message?.includes('not found'))) {
+                // Handle missing table or similar schema errors
+                const merchantRuleUpdates = {
+                    ...baseUpdates,
+                    clean_merchant_name: rule.clean_source_name || rule.name,
+                    merchant_name: rule.source_name || rule.raw_name
+                };
+                const { error: merchantError } = await (supabase as any)
+                    .from('merchant_rules')
+                    .update(merchantRuleUpdates)
+                    .eq('id', rule.id);
+                if (merchantError) throw merchantError;
+            } else if (sourceError) {
+                throw sourceError;
+            }
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['merchant_rules'] });
             toast({ title: "Rule Updated", description: "The source rule has been updated successfully." });
             setEditingRule(null);
         },
         onError: (error: any) => {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
+            toast({ title: "Error Updating Rule", description: error.message, variant: "destructive" });
         }
     });
 
@@ -251,12 +314,79 @@ export const SourceManager = () => {
             .update(updates)
             .eq('id', selectedTransactionForEdit.id);
 
-        if (error) throw error;
+        if (error) {
+            toast({ title: "Update Failed", description: error.message, variant: "destructive" });
+            throw error;
+        }
 
         queryClient.invalidateQueries({ queryKey: ['source_rules'] });
         queryClient.invalidateQueries({ queryKey: ['transactions-for-scan'] });
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
         setSelectedTransactionForEdit(null);
+    };
+
+    const handleUnlinkTransaction = async (tx: Transaction) => {
+        try {
+            const { error } = await supabase
+                .from('transactions')
+                .update({
+                    clean_source: null,
+                    status: 'Pending Triage',
+                    category: 'Uncategorized',
+                    sub_category: null,
+                    confidence: 0
+                })
+                .eq('id', tx.id);
+
+            if (error) throw error;
+
+            toast({
+                title: "Transaction Unlinked",
+                description: "The source association has been removed."
+            });
+
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+            setConfirmingUnlinkId(null);
+        } catch (err: any) {
+            toast({
+                title: "Unlink Failed",
+                description: err.message,
+                variant: "destructive"
+            });
+        }
+    };
+
+    const handleBulkUpdate = async (updates: Partial<Transaction>) => {
+        if (historySelectedIds.size === 0) return;
+
+        setIsBulkUpdating(true);
+        try {
+            const { error } = await supabase
+                .from('transactions')
+                .update(updates)
+                .in('id', Array.from(historySelectedIds));
+
+            if (error) throw error;
+
+            toast({
+                title: "Transactions Updated",
+                description: `Successfully updated ${historySelectedIds.size} transactions.`
+            });
+
+            setHistorySelectedIds(new Set());
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['merchant_rules'] });
+        } catch (err: any) {
+            toast({
+                title: "Update Failed",
+                description: err.message,
+                variant: "destructive"
+            });
+        } finally {
+            setIsBulkUpdating(false);
+        }
     };
 
     const findMatches = (rule: any) => {
@@ -288,8 +418,10 @@ export const SourceManager = () => {
                 source_name: pattern,
                 clean_source_name: cleanName,
                 match_mode: 'fuzzy',
-                skip_triage: true,
-                auto_category: 'Other' // Default, user can edit later
+                skip_triage: false, // Mapping only = requires triage for categorization
+                auto_category: '',  // Default to Always Ask
+                auto_sub_category: '',
+                auto_recurring: ''
             };
 
             let { error: ruleError } = await (supabase as any).from('source_rules').insert([payload]);
@@ -339,11 +471,48 @@ export const SourceManager = () => {
         }
     };
 
+    const handleRenameSourceGroup = async (oldName: string, newName: string) => {
+        if (!newName || oldName === newName) {
+            setRenamingGroup(null);
+            return;
+        }
+
+        try {
+            // Update source_rules
+            const { error: rulesError } = await (supabase as any)
+                .from('source_rules')
+                .update({ clean_source_name: newName })
+                .eq('clean_source_name', oldName);
+
+            // Update merchant_rules (legacy fallback)
+            await (supabase as any)
+                .from('merchant_rules')
+                .update({ clean_merchant_name: newName })
+                .eq('clean_merchant_name', oldName);
+
+            // Update transactions
+            const { error: txError } = await supabase
+                .from('transactions')
+                .update({ clean_source: newName })
+                .eq('clean_source', oldName);
+
+            if (txError) throw txError;
+
+            toast({ title: "Source Renamed", description: `Renamed "${oldName}" to "${newName}" and updated associated transactions.` });
+            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            setRenamingGroup(null);
+        } catch (err: any) {
+            toast({ title: "Rename Failed", description: err.message, variant: "destructive" });
+        }
+    };
+
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
-            let { error } = await (supabase as any).from('source_rules').delete().eq('id', id);
+            let { data, error } = await (supabase as any).from('source_rules').delete().eq('id', id).select();
 
-            if (error && (error.code === '42P01' || error.code === 'PGRST205' || error.message?.includes('not found'))) {
+            // Fallback if no records deleted
+            if (((!data || data.length === 0) && !error) || (error && (error.code === '42P01' || error.code === 'PGRST205' || error.message?.includes('not found')))) {
                 error = (await (supabase as any).from('merchant_rules').delete().eq('id', id)).error;
             }
 
@@ -352,6 +521,32 @@ export const SourceManager = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['source_rules'] });
             toast({ title: "Rule Deleted", description: "The source rule has been removed." });
+        },
+        onError: (error: any) => {
+            toast({ title: "Error", description: error.message, variant: "destructive" });
+        }
+    });
+
+    const deleteGroupMutation = useMutation({
+        mutationFn: async (groupName: string) => {
+            // Delete from source_rules
+            const { error: error1 } = await (supabase as any)
+                .from('source_rules')
+                .delete()
+                .eq('clean_source_name', groupName);
+
+            // Delete from merchant_rules (legacy)
+            const { error: error2 } = await (supabase as any)
+                .from('merchant_rules')
+                .delete()
+                .eq('clean_merchant_name', groupName);
+
+            if (error1 && error1.code !== '42P01') throw error1;
+            if (error2 && error2.code !== '42P01') throw error2;
+        },
+        onSuccess: (_, groupName) => {
+            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+            toast({ title: "Source Deleted", description: `All rules for "${groupName}" have been removed.` });
         },
         onError: (error: any) => {
             toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -406,7 +601,7 @@ export const SourceManager = () => {
                     const name = data.displayName;
                     const sortedCats = Object.entries(data.categories).sort((a: any, b: any) => b[1] - a[1]);
                     const bestCatEntry = sortedCats[0];
-                    const bestCat = bestCatEntry?.[0] || 'Other';
+                    const bestCat = bestCatEntry?.[0] || 'Uncategorized';
                     const bestCatCount = (bestCatEntry?.[1] as number) || 0;
 
                     const bestSub = Object.entries(data.subs).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] || '';
@@ -531,10 +726,15 @@ export const SourceManager = () => {
             groups[key].push(rule);
         });
 
-        // Step 3: Build the final group objects
-        return Object.entries(groups)
-            .map(([key, groupRules]) => {
-                const name = groupRules[0].clean_source_name || metrics[key]?.displayName || 'Unresolved';
+        // Step 3: Build the final group objects from BOTH rules and transaction metrics
+        // This ensures that sources with transactions but NO rules are still visible
+        const allKeys = new Set([...Object.keys(groups), ...Object.keys(metrics)]);
+
+        return Array.from(allKeys)
+            .map(key => {
+                const groupRules = groups[key] || [];
+                const groupMetrics = metrics[key] || { count: 0, spend: 0, displayName: key };
+                const name = groupRules[0]?.clean_source_name || groupMetrics.displayName || 'Unresolved';
 
                 // Group-level aggregate settings
                 const categories: Record<string, number> = {};
@@ -544,9 +744,23 @@ export const SourceManager = () => {
                     if (r.auto_sub_category) subs[r.auto_sub_category] = (subs[r.auto_sub_category] || 0) + 1;
                 });
 
-                const bestCat = Object.entries(categories).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other';
+                // Detect category from transactions if no rules exist? 
+                // Group transactions by category to find the most common one used manually
+                const txCategories: Record<string, number> = {};
+                if (groupRules.length === 0) {
+                    transactions.forEach(tx => {
+                        const txGroupName = tx.clean_source || cleanSource(tx.source || '', settings.noiseFilters);
+                        if (txGroupName?.toLowerCase() === key && tx.category) {
+                            txCategories[tx.category] = (txCategories[tx.category] || 0) + 1;
+                        }
+                    });
+                }
+
+                const bestCat = Object.entries(categories).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+                    Object.entries(txCategories).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+                    'Uncategorized';
+
                 const bestSub = Object.entries(subs).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
-                const groupMetrics = metrics[key] || { count: 0, spend: 0, displayName: name };
 
                 return {
                     name,
@@ -557,7 +771,8 @@ export const SourceManager = () => {
                     hasRecurring: groupRules.some(r => r.auto_recurring && r.auto_recurring !== 'N/A'),
                     hasExcluded: groupRules.some(r => r.auto_budget === 'Exclude'),
                     transactionCount: groupMetrics.count,
-                    totalSpend: groupMetrics.spend
+                    totalSpend: groupMetrics.spend,
+                    isOrphan: groupRules.length === 0
                 };
             })
             .filter(group => {
@@ -569,15 +784,25 @@ export const SourceManager = () => {
                 if (filterAuto && !group.hasAuto) return false;
                 if (filterExcluded && !group.hasExcluded) return false;
                 if (filterRecurring && !group.hasRecurring) return false;
+                if (filterOrphans && !group.isOrphan) return false;
 
                 return true;
             })
             .sort((a, b) => {
-                if (sortBy === 'popularity') return b.transactionCount - a.transactionCount;
-                if (sortBy === 'spend') return b.totalSpend - a.totalSpend;
-                return a.name.localeCompare(b.name);
+                const modifier = sortOrder === 'asc' ? 1 : -1;
+                // Orphans usually at the bottom unless sorted by metrics
+                if (sortBy === 'name' && a.isOrphan !== b.isOrphan) {
+                    return a.isOrphan ? 1 : -1;
+                }
+                if (sortBy === 'popularity') {
+                    return (b.transactionCount - a.transactionCount) * (sortOrder === 'desc' ? 1 : -1);
+                }
+                if (sortBy === 'spend') {
+                    return (b.totalSpend - a.totalSpend) * (sortOrder === 'desc' ? 1 : -1);
+                }
+                return a.name.localeCompare(b.name) * modifier;
             });
-    }, [rules, transactions, search, filterAuto, filterExcluded, filterRecurring, sortBy, settings.noiseFilters]);
+    }, [rules, transactions, search, filterAuto, filterExcluded, filterRecurring, sortBy, sortOrder, settings.noiseFilters]);
 
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
@@ -600,30 +825,34 @@ export const SourceManager = () => {
                 </div>
                 <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
                     <div className="flex bg-white border border-slate-200 p-0.5 rounded-lg">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSortBy('name')}
-                            className={cn("h-8 text-[10px] font-bold px-3 transition-all", sortBy === 'name' ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:text-slate-600")}
-                        >
-                            A-Z
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSortBy('popularity')}
-                            className={cn("h-8 text-[10px] font-bold px-3 transition-all", sortBy === 'popularity' ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:text-slate-600")}
-                        >
-                            POPULARITY
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSortBy('spend')}
-                            className={cn("h-8 text-[10px] font-bold px-3 transition-all", sortBy === 'spend' ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:text-slate-600")}
-                        >
-                            SPEND
-                        </Button>
+                        {[
+                            { id: 'name', label: 'A-Z', defaultOrder: 'asc' },
+                            { id: 'popularity', label: 'POPULARITY', defaultOrder: 'desc' },
+                            { id: 'spend', label: 'SPEND', defaultOrder: 'desc' }
+                        ].map((btn) => (
+                            <Button
+                                key={btn.id}
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                    if (sortBy === btn.id) {
+                                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                                    } else {
+                                        setSortBy(btn.id as any);
+                                        setSortOrder(btn.defaultOrder as any);
+                                    }
+                                }}
+                                className={cn(
+                                    "h-8 text-[10px] font-bold px-3 transition-all gap-1.5",
+                                    sortBy === btn.id ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:text-slate-600"
+                                )}
+                            >
+                                {btn.label}
+                                {sortBy === btn.id && (
+                                    sortOrder === 'asc' ? <ChevronDown className="w-3 h-3" /> : <ChevronDown className="w-3 h-3 rotate-180" />
+                                )}
+                            </Button>
+                        ))}
                     </div>
                     <div className="relative w-full md:w-64">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -666,17 +895,17 @@ export const SourceManager = () => {
                 <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setFilterRecurring(!filterRecurring)}
+                    onClick={() => setFilterOrphans(!filterOrphans)}
                     className={cn(
                         "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5",
-                        filterRecurring ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" : "bg-white text-slate-500 hover:bg-slate-50"
+                        filterOrphans ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100" : "bg-white text-slate-500 hover:bg-slate-50"
                     )}
                 >
-                    <RefreshCw className={cn("w-3 h-3", filterRecurring ? "animate-spin-slow" : "")} />
-                    RECURRING
+                    <AlertCircle className={cn("w-3 h-3", filterOrphans ? "text-amber-500" : "")} />
+                    UNMAPPED ({unprocessedCount})
                 </Button>
 
-                {(filterAuto || filterExcluded || filterRecurring || search) && (
+                {(filterAuto || filterExcluded || filterRecurring || filterOrphans || search) && (
                     <Button
                         variant="ghost"
                         size="sm"
@@ -684,6 +913,7 @@ export const SourceManager = () => {
                             setFilterAuto(false);
                             setFilterExcluded(false);
                             setFilterRecurring(false);
+                            setFilterOrphans(false);
                             setSearch('');
                         }}
                         className="h-7 px-2 text-[10px] text-slate-400 hover:text-slate-600 font-bold ml-auto"
@@ -847,10 +1077,11 @@ export const SourceManager = () => {
                                                             <div className="grid grid-cols-2 gap-4">
                                                                 <div className="space-y-2">
                                                                     <Label className="text-[10px] uppercase font-bold text-slate-500">Recurring</Label>
-                                                                    <Select value={scanRule.auto_recurring} onValueChange={(v) => setScanRule({ ...scanRule, auto_recurring: v })}>
+                                                                    <Select value={scanRule.auto_recurring || 'always-ask'} onValueChange={(v) => setScanRule({ ...scanRule, auto_recurring: v === 'always-ask' ? '' : v })}>
                                                                         <SelectTrigger className="h-10 bg-white shadow-sm"><SelectValue /></SelectTrigger>
                                                                         <SelectContent>
-                                                                            {['N/A', 'Monthly', 'Annually', 'Bi-annually', 'Quarterly', 'Weekly', 'One-off'].map(opt => (
+                                                                            <SelectItem value="always-ask" className="font-bold italic text-slate-500">Always Ask</SelectItem>
+                                                                            {['Monthly', 'Annually', 'Bi-annually', 'Quarterly', 'Weekly', 'One-off'].map(opt => (
                                                                                 <SelectItem key={opt} value={opt}>{opt}</SelectItem>
                                                                             ))}
                                                                         </SelectContent>
@@ -1076,17 +1307,48 @@ export const SourceManager = () => {
                                     <div className="flex items-center gap-4 flex-1">
                                         <div className="flex flex-col gap-1">
                                             <div className="flex items-center gap-2">
-                                                <Badge className="bg-blue-600 text-white font-black px-3 py-0.5 rounded-full text-sm">
-                                                    {group.name}
-                                                </Badge>
+                                                <div className="group/name relative">
+                                                    {renamingGroup === group.name ? (
+                                                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                                            <Input
+                                                                autoFocus
+                                                                className="h-7 py-0 px-2 text-sm font-bold min-w-[150px]"
+                                                                value={renameValue}
+                                                                onChange={e => setRenameValue(e.target.value)}
+                                                                onKeyDown={e => {
+                                                                    if (e.key === 'Enter') handleRenameSourceGroup(group.name, renameValue);
+                                                                    if (e.key === 'Escape') setRenamingGroup(null);
+                                                                }}
+                                                                onBlur={() => handleRenameSourceGroup(group.name, renameValue)}
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-1">
+                                                            <Badge
+                                                                className="bg-blue-600 text-white font-black px-3 py-0.5 rounded-full text-sm cursor-text hover:bg-blue-700 transition-colors"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setRenamingGroup(group.name);
+                                                                    setRenameValue(group.name);
+                                                                }}
+                                                            >
+                                                                {group.name}
+                                                                <Pencil className="w-3 h-3 ml-2 opacity-0 group-hover/name:opacity-100 transition-opacity" />
+                                                            </Badge>
+                                                        </div>
+                                                    )}
+                                                </div>
                                                 {group.hasAuto && <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 text-[9px] h-4">Auto</Badge>}
                                                 <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none text-[10px] font-bold">
-                                                    {group.rules.length} Pattern{group.rules.length !== 1 ? 's' : ''}
+                                                    {(group.rules || []).length} Pattern{(group.rules || []).length !== 1 ? 's' : ''}
                                                 </Badge>
                                             </div>
                                             <div className="flex items-center gap-4 text-xs text-slate-500 font-medium">
                                                 <span className="flex items-center gap-1">
-                                                    <Badge variant="outline" className="text-[10px] border-slate-200 text-slate-600 font-bold px-1.5 py-0 rounded">
+                                                    <Badge variant="outline" className={cn(
+                                                        "text-[10px] font-bold px-1.5 py-0 rounded",
+                                                        group.category === 'Uncategorized' ? "border-amber-200 text-amber-600 bg-amber-50" : "border-slate-200 text-slate-600"
+                                                    )}>
                                                         {group.category}
                                                     </Badge>
                                                     {group.sub_category && <span className="text-slate-300">/</span>}
@@ -1094,50 +1356,111 @@ export const SourceManager = () => {
                                                 </span>
                                                 {group.hasRecurring && <span className="flex items-center gap-1 text-blue-500"><RefreshCw className="w-3 h-3" /> Recurring</span>}
                                                 {group.hasExcluded && <span className="flex items-center gap-1 text-rose-500"><EyeOff className="w-3 h-3" /> Excluded</span>}
-                                                <span className="flex items-center gap-3 ml-2 pl-3 border-l border-slate-100">
-                                                    <span className="flex items-center gap-1.5">
-                                                        <span className="text-slate-400 uppercase text-[9px] font-black">History:</span>
-                                                        <Badge variant="secondary" className="bg-slate-50 text-slate-700 text-[10px] px-1.5 py-0 h-4 border-slate-100">{group.transactionCount}</Badge>
-                                                    </span>
-                                                    <span className="flex items-center gap-1.5">
-                                                        <span className="text-slate-400 uppercase text-[9px] font-black">Spend:</span>
-                                                        <span className="text-slate-700 font-bold text-[10px]">{formatCurrency(group.totalSpend, settings.currency)}</span>
-                                                    </span>
-                                                </span>
+                                                {group.isOrphan && <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200 text-[8px] h-3.5 px-1 font-black">NO RULES</Badge>}
                                             </div>
                                         </div>
                                     </div>
 
                                     <div className="flex items-center gap-4">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className={cn("h-8 w-8 p-0 transition-colors", refiningSource === group.name ? "text-blue-600 bg-blue-50" : "text-slate-400 hover:text-blue-600")}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setRefiningSource(refiningSource === group.name ? null : group.name);
-                                            }}
-                                        >
-                                            <Search className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setEditingRule({
-                                                    clean_source_name: group.name,
-                                                    auto_category: group.category,
-                                                    auto_sub_category: group.sub_category,
-                                                    auto_recurring: group.hasRecurring ? 'Monthly' : 'N/A',
-                                                    skip_triage: group.hasAuto,
-                                                    match_mode: 'fuzzy'
-                                                });
-                                            }}
-                                        >
-                                            <Plus className="w-4 h-4" />
-                                        </Button>
+                                        <div className="flex flex-col items-end gap-1 mr-2 border-r pr-4 border-slate-100">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-slate-400 uppercase text-[8px] font-black tracking-tight"># of Transactions:</span>
+                                                <Badge variant="secondary" className="bg-slate-50 text-slate-700 text-[10px] px-1.5 py-0 h-4 border-slate-100 font-black">{group.transactionCount}</Badge>
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-slate-400 uppercase text-[8px] font-black tracking-tight">Spend:</span>
+                                                <span className="text-slate-700 font-bold text-[10px]">{formatCurrency(group.totalSpend, settings.currency)}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                title="Transaction History"
+                                                className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600 hover:bg-slate-100"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setHistoryRule({
+                                                        id: `group-${group.name}`,
+                                                        clean_source_name: group.name,
+                                                        isGroup: true,
+                                                        patterns: group.rules.map(r => r.source_name)
+                                                    });
+                                                    setHistorySelectedIds(new Set());
+                                                }}
+                                            >
+                                                <Clock className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                title="Discover Potential Matches"
+                                                className={cn("h-8 w-8 p-0 transition-colors", refiningSource === group.name ? "text-blue-600 bg-blue-50" : "text-slate-400 hover:text-blue-600 hover:bg-slate-100")}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setRefiningSource(refiningSource === group.name ? null : group.name);
+                                                }}
+                                            >
+                                                <Search className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                title="Source Settings & Defaults"
+                                                className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600 hover:bg-slate-100"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingRule({
+                                                        id: `group-defaults-${group.name}`,
+                                                        clean_source_name: group.name,
+                                                        auto_category: group.category || '',
+                                                        auto_sub_category: group.sub_category || '',
+                                                        auto_recurring: group.hasRecurring ? 'Monthly' : '',
+                                                        skip_triage: group.hasAuto,
+                                                        auto_budget: group.hasExcluded ? 'Exclude' : 'Budgeted',
+                                                        isGroupDefault: true
+                                                    });
+                                                }}
+                                            >
+                                                <SettingsIcon className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                title="Add New Pattern Match"
+                                                className="h-8 w-8 p-0 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingRule({
+                                                        clean_source_name: group.name,
+                                                        auto_category: group.category || '',
+                                                        auto_sub_category: group.sub_category || '',
+                                                        auto_recurring: group.hasRecurring ? 'Monthly' : '',
+                                                        skip_triage: group.hasAuto,
+                                                        match_mode: 'fuzzy'
+                                                    });
+                                                }}
+                                            >
+                                                <Plus className="w-4 h-4" />
+                                            </Button>
+                                            {group.transactionCount === 0 && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    title="Delete Source & Rules"
+                                                    className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm(`Delete source "${group.name}" and all associated rules?`)) {
+                                                            deleteGroupMutation.mutate(group.name);
+                                                        }
+                                                    }}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            )}
+                                        </div>
                                         <div className={cn("transition-transform duration-200", isExpanded && "rotate-180")}>
                                             <ChevronDown className="w-4 h-4 text-slate-300" />
                                         </div>
@@ -1182,15 +1505,20 @@ export const SourceManager = () => {
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600"
-                                                        onClick={() => setHistoryRule(rule)}
+                                                        title="Pattern History"
+                                                        className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600 hover:bg-slate-100"
+                                                        onClick={() => {
+                                                            setHistoryRule(rule);
+                                                            setHistorySelectedIds(new Set());
+                                                        }}
                                                     >
                                                         <HistoryIcon className="w-3.5 h-3.5" />
                                                     </Button>
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600"
+                                                        title="Edit Pattern"
+                                                        className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600 hover:bg-slate-100"
                                                         onClick={() => setEditingRule({ ...rule })}
                                                     >
                                                         <Pencil className="w-3.5 h-3.5" />
@@ -1198,7 +1526,8 @@ export const SourceManager = () => {
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600"
+                                                        title="Delete Pattern"
+                                                        className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
                                                         onClick={() => { if (confirm('Delete this pattern?')) deleteMutation.mutate(rule.id); }}
                                                     >
                                                         <Trash2 className="w-3.5 h-3.5" />
@@ -1218,106 +1547,186 @@ export const SourceManager = () => {
             <Dialog open={!!editingRule} onOpenChange={(o) => !o && setEditingRule(null)}>
                 <DialogContent className="max-w-xl">
                     <DialogHeader>
-                        <DialogTitle>Edit Source Rule</DialogTitle>
+                        <DialogTitle>Edit Source Rule Configuration</DialogTitle>
+                        <DialogDescription>
+                            Configure how "{editingRule?.clean_source_name || editingRule?.source_name || 'this source'}" should be handled during import and validation.
+                        </DialogDescription>
                     </DialogHeader>
                     {editingRule && (
-                        <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Resolved Source Name</Label>
-                                    <SourceNameSelector
-                                        value={editingRule.clean_source_name}
-                                        onChange={(v) => setEditingRule({ ...editingRule, clean_source_name: v })}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Category</Label>
-                                    <CategorySelector
-                                        value={editingRule.auto_category}
-                                        onValueChange={(v) => {
-                                            if (v.includes(':')) {
-                                                const [cat, sub] = v.split(':');
-                                                setEditingRule({ ...editingRule, auto_category: cat, auto_sub_category: sub });
-                                            } else {
-                                                setEditingRule({ ...editingRule, auto_category: v, auto_sub_category: '' });
-                                            }
-                                        }}
-                                        type="all"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Sub-category</Label>
-                                    <Select
-                                        value={editingRule.auto_sub_category}
-                                        onValueChange={(v) => setEditingRule({ ...editingRule, auto_sub_category: v })}
-                                    >
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            {(displaySubCategories[editingRule.auto_category] || []).map(s => (
-                                                <SelectItem key={s} value={s}>{s}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Recurring</Label>
-                                    <Select value={editingRule.auto_recurring} onValueChange={(v) => setEditingRule({ ...editingRule, auto_recurring: v })}>
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            {['N/A', 'Monthly', 'Annually', 'Bi-annually', 'Quarterly', 'Weekly', 'One-off'].map(opt => (
-                                                <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-6 py-2 border-t pt-4">
-                                <div className="flex items-center space-x-2">
-                                    <Switch
-                                        checked={editingRule.skip_triage}
-                                        onCheckedChange={(v) => setEditingRule({ ...editingRule, skip_triage: v })}
-                                    />
-                                    <Label>Auto-Complete</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <Switch
-                                        checked={editingRule.auto_budget === 'Exclude'}
-                                        onCheckedChange={(v) => setEditingRule({ ...editingRule, auto_budget: v ? 'Exclude' : null })}
-                                    />
-                                    <Label>Exclude</Label>
-                                </div>
-                            </div>
-                        </div>
+                        <SourceRuleForm
+                            initialRule={{
+                                raw_name: editingRule.source_name || editingRule.clean_source_name,
+                                name: editingRule.clean_source_name,
+                                category: editingRule.auto_category || '',
+                                sub_category: editingRule.auto_sub_category || '',
+                                auto_recurring: editingRule.auto_recurring || '',
+                                auto_planned: editingRule.auto_planned ?? true,
+                                auto_exclude: editingRule.auto_budget === 'Exclude',
+                                skip_triage: editingRule.skip_triage || false,
+                                match_mode: editingRule.match_mode || 'fuzzy'
+                            }}
+                            transactions={transactions}
+                            isSaving={editMutation.isPending}
+                            onCancel={() => setEditingRule(null)}
+                            onSave={(ruleData) => {
+                                // Important: Determine if this is an ADD or EDIT
+                                if (!editingRule.id || editingRule.id.toString().startsWith('temp-')) {
+                                    // It's a new pattern entry
+                                    findMatches({
+                                        name: ruleData.name,
+                                        raw_name: ruleData.raw_name,
+                                        category: ruleData.category,
+                                        sub_category: ruleData.sub_category,
+                                        auto_recurring: ruleData.auto_recurring,
+                                        auto_planned: ruleData.auto_planned,
+                                        auto_exclude: ruleData.auto_exclude,
+                                        skip_triage: ruleData.skip_triage,
+                                        match_mode: ruleData.match_mode
+                                    });
+                                } else {
+                                    // It's an existing pattern OR group defaults
+                                    editMutation.mutate({
+                                        ...editingRule,
+                                        clean_source_name: ruleData.name,
+                                        source_name: ruleData.raw_name, // Update raw pattern name if possible
+                                        auto_category: ruleData.category,
+                                        auto_sub_category: ruleData.sub_category,
+                                        auto_recurring: ruleData.auto_recurring,
+                                        auto_planned: ruleData.auto_planned,
+                                        auto_budget: ruleData.auto_exclude ? 'Exclude' : 'Budgeted',
+                                        skip_triage: ruleData.skip_triage,
+                                        match_mode: ruleData.match_mode
+                                    });
+                                }
+                            }}
+                        />
                     )}
-                    <DialogFooter>
-                        <Button variant="ghost" onClick={() => setEditingRule(null)}>Cancel</Button>
-                        <Button onClick={() => editMutation.mutate(editingRule)}>Save Changes</Button>
-                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 
             {/* History Drill-down Dialog */}
-            <Dialog open={!!historyRule} onOpenChange={(o) => !o && setHistoryRule(null)}>
-                <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-3">
-                            <HistoryIcon className="w-5 h-5 text-slate-400" />
-                            Transactions for "{historyRule?.clean_source_name}"
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-auto min-h-0 border rounded-lg">
-                        <table className="w-full text-sm">
-                            <thead className="bg-slate-50 sticky top-0 z-10 border-b">
+            <Dialog open={!!historyRule} onOpenChange={(o) => {
+                if (!o) {
+                    setHistoryRule(null);
+                    setHistorySelectedIds(new Set());
+                }
+            }}>
+                <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+                    <div className="p-6 pb-4 border-b bg-slate-50/50">
+                        <DialogHeader>
+                            <div className="flex items-center justify-between gap-4">
+                                <div className="space-y-1">
+                                    <DialogTitle className="flex items-center gap-3 text-xl">
+                                        <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center border border-blue-200">
+                                            <Search className="w-5 h-5 text-blue-600" />
+                                        </div>
+                                        <div>
+                                            <span className="text-slate-500 font-normal">History for</span>
+                                            <span className="block font-black text-slate-800">"{historyRule?.clean_source_name}"</span>
+                                        </div>
+                                    </DialogTitle>
+                                    <DialogDescription className="pl-13">
+                                        Managing transactions matching pattern: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-blue-700 font-mono text-xs">{historyRule?.source_name}</code>
+                                    </DialogDescription>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    {historySelectedIds.size > 0 && (
+                                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2">
+                                            <span className="text-xs font-bold text-slate-500 whitespace-nowrap mr-2">
+                                                {historySelectedIds.size} selected
+                                            </span>
+                                            <Button
+                                                size="sm"
+                                                className="bg-emerald-600 hover:bg-emerald-700 h-8 gap-1.5 font-bold shadow-sm"
+                                                onClick={() => handleBulkUpdate({ status: 'Complete' })}
+                                                disabled={isBulkUpdating}
+                                            >
+                                                <Check className="w-3.5 h-3.5" />
+                                                Confirm All
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="h-8 gap-1.5 font-bold border-rose-200 text-rose-600 hover:bg-rose-50"
+                                                onClick={() => handleBulkUpdate({ excluded: true })}
+                                                disabled={isBulkUpdating}
+                                            >
+                                                <EyeOff className="w-3.5 h-3.5" />
+                                                Exclude
+                                            </Button>
+                                            <div className="h-4 w-px bg-slate-200 mx-1" />
+                                            <CategorySelector
+                                                type="all"
+                                                value=""
+                                                onValueChange={(v) => {
+                                                    if (v.includes(':')) {
+                                                        const [cat, sub] = v.split(':');
+                                                        handleBulkUpdate({ category: cat, sub_category: sub });
+                                                    } else {
+                                                        handleBulkUpdate({ category: v, sub_category: '' });
+                                                    }
+                                                }}
+                                                className="h-8 text-xs w-48"
+                                                placeholder="Bulk Category..."
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </DialogHeader>
+                    </div>
+
+                    <div className="flex-1 overflow-auto bg-white">
+                        <table className="w-full text-sm border-collapse">
+                            <thead className="bg-slate-50 sticky top-0 z-10 border-b shadow-sm">
                                 <tr className="text-[10px] uppercase font-black text-slate-400">
-                                    <th className="py-3 px-4 text-left">Date</th>
-                                    <th className="py-3 px-4 text-left">Raw Source</th>
-                                    <th className="py-3 px-4 text-left">Category</th>
-                                    <th className="py-3 px-4 text-right">Amount</th>
-                                    <th className="py-3 px-4 text-center">Actions</th>
+                                    <th className="py-3 px-4 w-12 text-center">
+                                        <Checkbox
+                                            checked={(() => {
+                                                const matches = transactions.filter(t => {
+                                                    const clean = cleanSource(t.source, settings.noiseFilters).toLowerCase();
+                                                    const target = historyRule?.clean_source_name?.toLowerCase();
+                                                    if (historyRule?.isGroup) {
+                                                        const patterns = historyRule.patterns || [];
+                                                        return clean === target ||
+                                                            t.clean_source?.toLowerCase() === target ||
+                                                            patterns.some(p => (t.source || '').toLowerCase().includes(p.toLowerCase()));
+                                                    }
+                                                    const raw = historyRule?.source_name?.toLowerCase();
+                                                    return clean === target || t.clean_source?.toLowerCase() === target || t.source?.toLowerCase().includes(raw);
+                                                });
+                                                return matches.length > 0 && matches.every(t => historySelectedIds.has(t.id));
+                                            })()}
+                                            onCheckedChange={(checked) => {
+                                                const matches = transactions.filter(t => {
+                                                    const clean = cleanSource(t.source, settings.noiseFilters).toLowerCase();
+                                                    const target = historyRule?.clean_source_name?.toLowerCase();
+                                                    if (historyRule?.isGroup) {
+                                                        const patterns = historyRule.patterns || [];
+                                                        return clean === target ||
+                                                            t.clean_source?.toLowerCase() === target ||
+                                                            patterns.some(p => (t.source || '').toLowerCase().includes(p.toLowerCase()));
+                                                    }
+                                                    const raw = historyRule?.source_name?.toLowerCase();
+                                                    return clean === target || t.clean_source?.toLowerCase() === target || t.source?.toLowerCase().includes(raw);
+                                                });
+                                                if (checked) {
+                                                    setHistorySelectedIds(new Set([...Array.from(historySelectedIds), ...matches.map(m => m.id)]));
+                                                } else {
+                                                    const next = new Set(historySelectedIds);
+                                                    matches.forEach(m => next.delete(m.id));
+                                                    setHistorySelectedIds(next);
+                                                }
+                                            }}
+                                        />
+                                    </th>
+                                    <th className="py-3 px-4 text-left font-black tracking-wider">Date</th>
+                                    <th className="py-3 px-4 text-left font-black tracking-wider">Original Source (Raw)</th>
+                                    <th className="py-3 px-4 text-left font-black tracking-wider">Status</th>
+                                    <th className="py-3 px-4 text-left font-black tracking-wider">Category / Sub</th>
+                                    <th className="py-3 px-4 text-right font-black tracking-wider">Amount</th>
+                                    <th className="py-3 px-4 text-center font-black tracking-wider">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -1325,33 +1734,150 @@ export const SourceManager = () => {
                                     .filter(t => {
                                         const clean = cleanSource(t.source, settings.noiseFilters).toLowerCase();
                                         const target = historyRule?.clean_source_name?.toLowerCase();
+
+                                        if (historyRule?.isGroup) {
+                                            const patterns = historyRule.patterns || [];
+                                            return clean === target ||
+                                                t.clean_source?.toLowerCase() === target ||
+                                                patterns.some(p => (t.source || '').toLowerCase().includes(p.toLowerCase()));
+                                        }
+
                                         const raw = historyRule?.source_name?.toLowerCase();
                                         return clean === target || t.clean_source?.toLowerCase() === target || t.source?.toLowerCase().includes(raw);
                                     })
+                                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                                     .map((tx) => (
-                                        <tr key={tx.id} className="hover:bg-slate-50/50">
-                                            <td className="py-2.5 px-4 font-mono text-xs text-slate-500">{tx.date}</td>
-                                            <td className="py-2.5 px-4 font-medium text-slate-700">{tx.source}</td>
-                                            <td className="py-2.5 px-4">
-                                                <Badge variant="outline" className="font-normal">{tx.category || 'None'}</Badge>
+                                        <tr key={tx.id} className={cn(
+                                            "hover:bg-slate-50/80 transition-colors group/row",
+                                            historySelectedIds.has(tx.id) && "bg-blue-50/40"
+                                        )}>
+                                            <td className="py-2.5 px-4 text-center">
+                                                <Checkbox
+                                                    checked={historySelectedIds.has(tx.id)}
+                                                    onCheckedChange={(checked) => {
+                                                        const next = new Set(historySelectedIds);
+                                                        if (checked) next.add(tx.id);
+                                                        else next.delete(tx.id);
+                                                        setHistorySelectedIds(next);
+                                                    }}
+                                                />
                                             </td>
-                                            <td className={cn("py-2.5 px-4 text-right font-bold", tx.amount < 0 ? "text-slate-800" : "text-emerald-600")}>
+                                            <td className="py-2.5 px-4 font-mono text-xs text-slate-500">{tx.date}</td>
+                                            <td className="py-2.5 px-4">
+                                                <div className="font-medium text-slate-800 line-clamp-1" title={tx.source}>{tx.source}</div>
+                                            </td>
+                                            <td className="py-2.5 px-4">
+                                                {tx.status === 'Complete' ? (
+                                                    <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 text-[10px] font-bold">
+                                                        <Check className="w-2.5 h-2.5 mr-1" /> COMPLETE
+                                                    </Badge>
+                                                ) : (
+                                                    <Badge variant="outline" className="text-slate-400 border-slate-200 text-[10px] font-bold">
+                                                        PENDING
+                                                    </Badge>
+                                                )}
+                                            </td>
+                                            <td className="py-2.5 px-4">
+                                                <div className="flex flex-wrap gap-1">
+                                                    <Badge variant="outline" className="bg-slate-50 border-slate-200 font-bold text-slate-700 text-[10px]">
+                                                        {tx.category || 'Other'}
+                                                    </Badge>
+                                                    {tx.sub_category && (
+                                                        <Badge variant="outline" className="bg-white border-slate-100 text-slate-500 font-medium text-[10px]">
+                                                            {tx.sub_category}
+                                                        </Badge>
+                                                    )}
+                                                    {tx.excluded && (
+                                                        <Badge className="bg-rose-50 text-rose-600 border-rose-100 text-[9px] font-black uppercase">EXCLUDED</Badge>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className={cn("py-2.5 px-4 text-right font-black tabular-nums", tx.amount < 0 ? "text-slate-800" : "text-emerald-600")}>
                                                 {formatCurrency(tx.amount, settings.currency)}
                                             </td>
                                             <td className="py-2.5 px-4 text-center">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => setSelectedTransactionForEdit(tx)}
-                                                    className="h-7 w-7 p-0"
-                                                >
-                                                    <Pencil className="w-3.5 h-3.5 text-slate-400" />
-                                                </Button>
+                                                <div className="flex items-center justify-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                    {tx.clean_source && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (confirmingUnlinkId === tx.id) {
+                                                                    handleUnlinkTransaction(tx);
+                                                                } else {
+                                                                    setConfirmingUnlinkId(tx.id);
+                                                                    setTimeout(() => setConfirmingUnlinkId(null), 3000);
+                                                                }
+                                                            }}
+                                                            className={cn(
+                                                                "h-8 px-2 transition-all gap-1.5",
+                                                                confirmingUnlinkId === tx.id
+                                                                    ? "bg-rose-500 text-white hover:bg-rose-600 shadow-sm"
+                                                                    : "text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                                                            )}
+                                                            title={confirmingUnlinkId === tx.id ? "Confirm Unlink" : "Unlink from Source"}
+                                                        >
+                                                            {confirmingUnlinkId === tx.id ? (
+                                                                <><AlertTriangle className="w-3.5 h-3.5" /><span className="text-[10px] font-black uppercase">Confirm</span></>
+                                                            ) : (
+                                                                <Link2Off className="w-3.5 h-3.5" />
+                                                            )}
+                                                        </Button>
+                                                    )}
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => setSelectedTransactionForEdit(tx)}
+                                                        className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600"
+                                                        title="Edit Transaction"
+                                                    >
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </Button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
                             </tbody>
                         </table>
+                        {transactions.filter(t => {
+                            const clean = cleanSource(t.source, settings.noiseFilters).toLowerCase();
+                            const target = historyRule?.clean_source_name?.toLowerCase();
+                            const raw = historyRule?.source_name?.toLowerCase();
+                            return clean === target || t.clean_source?.toLowerCase() === target || t.source?.toLowerCase().includes(raw);
+                        }).length === 0 && (
+                                <div className="py-20 text-center space-y-3">
+                                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto border border-dashed border-slate-200">
+                                        <HistoryIcon className="w-8 h-8 text-slate-300" />
+                                    </div>
+                                    <p className="text-slate-400 italic">No transactions found for this pattern.</p>
+                                </div>
+                            )}
+                    </div>
+
+                    <div className="p-4 bg-slate-50 border-t flex justify-end gap-3 sticky bottom-0">
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setHistoryRule(null);
+                                setHistorySelectedIds(new Set());
+                            }}
+                            className="font-bold border-slate-200 text-slate-600 hover:bg-white"
+                        >
+                            Close
+                        </Button>
+                        {historyRule && (
+                            <Button
+                                className="bg-blue-600 hover:bg-blue-700 font-black px-6"
+                                onClick={() => {
+                                    setEditingRule({ ...historyRule });
+                                    setHistoryRule(null);
+                                }}
+                            >
+                                <Pencil className="w-4 h-4 mr-2" />
+                                Edit Pattern Rule
+                            </Button>
+                        )}
                     </div>
                 </DialogContent>
             </Dialog>

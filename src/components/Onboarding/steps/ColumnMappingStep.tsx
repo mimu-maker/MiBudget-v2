@@ -26,14 +26,14 @@ export const ColumnMappingStep: React.FC = () => {
 
   // Mandatory columns that must be mapped
   const mandatoryColumns = [
-    { field: 'merchant', label: 'Merchant', dataType: 'text' },
+    { field: 'source', label: 'Source', dataType: 'text' },
     { field: 'date', label: 'Date', dataType: 'date' },
     { field: 'amount', label: 'Amount', dataType: 'number' }
   ];
 
   // Available MiBudget fields for mapping
   const availableFields = [
-    { value: 'merchant', label: 'Merchant', dataType: 'text' },
+    { value: 'source', label: 'Source', dataType: 'text' },
     { value: 'date', label: 'Date', dataType: 'date' },
     { value: 'amount', label: 'Amount', dataType: 'number' },
     { value: 'account', label: 'Account', dataType: 'text' },
@@ -72,10 +72,10 @@ export const ColumnMappingStep: React.FC = () => {
         const lowerColumn = column.toLowerCase();
 
         // Auto-detect mandatory columns
-        if (lowerColumn.includes('merchant') || lowerColumn.includes('description') || lowerColumn.includes('payee')) {
+        if (lowerColumn.includes('source') || lowerColumn.includes('merchant') || lowerColumn.includes('description') || lowerColumn.includes('payee')) {
           initialMappings.push({
             sourceColumn: column,
-            targetField: 'merchant',
+            targetField: 'source',
             dataType: 'text',
             sampleData: importData.sampleData[0]?.[column] || '',
             isNewField: false

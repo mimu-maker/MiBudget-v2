@@ -31,14 +31,11 @@ const FutureTransactionsTable = ({ transactions, onDelete }: FutureTransactionsT
             <thead>
               <tr className="border-b border-gray-200">
                 <th className="text-left py-3 px-2 font-semibold text-gray-700">Date</th>
-                <th className="text-left py-3 px-2 font-semibold text-gray-700">Merchant</th>
+                <th className="text-left py-3 px-2 font-semibold text-gray-700">Source</th>
                 <th className="text-right py-3 px-2 font-semibold text-gray-700">Amount</th>
-                <th className="text-left py-3 px-2 font-semibold text-gray-700">Account</th>
-                <th className="text-left py-3 px-2 font-semibold text-gray-700">Status</th>
-                <th className="text-left py-3 px-2 font-semibold text-gray-700">Budget</th>
                 <th className="text-left py-3 px-2 font-semibold text-gray-700">Category</th>
-                <th className="text-left py-3 px-2 font-semibold text-gray-700">Sub-category</th>
-                <th className="text-center py-3 px-2 font-semibold text-gray-700">Unplanned</th>
+                <th className="text-left py-3 px-2 font-semibold text-gray-700">Stream</th>
+                <th className="text-center py-3 px-2 font-semibold text-gray-700">Planned</th>
                 <th className="text-left py-3 px-2 font-semibold text-gray-700">Recurring</th>
                 <th className="text-center py-3 px-2 font-semibold text-gray-700">Actions</th>
               </tr>
@@ -46,7 +43,7 @@ const FutureTransactionsTable = ({ transactions, onDelete }: FutureTransactionsT
             <tbody>
               {transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-8 text-gray-500">
+                  <td colSpan={8} className="text-center py-8 text-gray-500">
                     No future transactions planned. Add some to see your projection.
                   </td>
                 </tr>
@@ -57,7 +54,7 @@ const FutureTransactionsTable = ({ transactions, onDelete }: FutureTransactionsT
                     <tr key={transaction.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-2 text-sm">{transaction.date}</td>
                       <td className="py-3 px-2">
-                        <div className="font-medium">{transaction.merchant}</div>
+                        <div className="font-medium">{transaction.source}</div>
                         {transaction.description && (
                           <div className="text-xs text-gray-500 mt-1">{transaction.description}</div>
                         )}
@@ -68,17 +65,8 @@ const FutureTransactionsTable = ({ transactions, onDelete }: FutureTransactionsT
                           {transaction.amount.toLocaleString()} DKK
                         </span>
                       </td>
-                      <td className="py-3 px-2 text-sm">{transaction.account}</td>
-                      <td className="py-3 px-2">
-                        <Badge variant="secondary">{transaction.status}</Badge>
-                      </td>
-                      <td className="py-3 px-2">
-                        <Badge variant={getBudgetBadgeVariant(transaction.budget)}>
-                          {transaction.budget}
-                        </Badge>
-                      </td>
                       <td className="py-3 px-2 text-sm">{transaction.category}</td>
-                      <td className="py-3 px-2 text-sm">{transaction.subCategory}</td>
+                      <td className="py-3 px-2 text-sm">{transaction.stream}</td>
                       <td className="py-3 px-2 text-center">
                         <Badge variant={transaction.planned ? 'default' : 'outline'}>
                           {transaction.planned ? 'Yes' : 'No'}
@@ -89,7 +77,7 @@ const FutureTransactionsTable = ({ transactions, onDelete }: FutureTransactionsT
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => onDelete(transaction.id)}
+                          onClick={() => onDelete(transaction.id as number)}
                           className="text-red-600 hover:bg-red-50"
                         >
                           Delete

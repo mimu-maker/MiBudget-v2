@@ -34,8 +34,21 @@ Use this skill when the user wants to commit code, push changes, or create new f
      - UI/styling updates.
      - Bug fixes.
 
-## 3. Commit Message Generation
-Construct a **Conventional Commit** message based on your analysis.
+## 3. Local Scribe (Session Recording)
+Use this role during active implementation to maintain a persistent record of changes without making Git commits.
+
+- **Objective**: Appending brief, descriptive notes to `.agent/IMPLEMENTATION_LOG.md`.
+- **Command**: Use `write_to_file` in append mode (or read then write).
+- **Format**: `[<TIMESTAMP>] <scope>: <brief description of what changed and why>`
+- **Example**: `[2024-03-20 14:00] feat(auth): added validation for password strength.`
+
+## 4. Commit Message Generation
+When the user is ready to commit, construct a **Conventional Commit** message by synthesizing technical diffs and local notes.
+
+**CRITICAL STEPS:**
+1. **Read the Log**: Always run `view_file` on `.agent/IMPLEMENTATION_LOG.md`. This captures the "why" and any subtle logic changes you might miss in a raw diff.
+2. **Analyze the Diff**: Run `git diff --staged`.
+3. **Synthesize**: Combine the log's narrative with the diff's technical details.
 
 **Format:**
 ```
@@ -47,28 +60,9 @@ Construct a **Conventional Commit** message based on your analysis.
 - <bullet_point_2>
 ```
 
-**Types:**
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation only
-- `style`: Formatting, missing semi colons, etc; no code change
-- `refactor`: Refactoring production code
-- `perf`: Performance improvement
-- `test`: Adding tests, refactoring test; no production code change
-- `chore`: Updating build tasks, package manager configs, etc; no production code change
+... (rest of the Conventional Commit types unchanged)
 
-**Guidelines:**
-- **Subject:** Imperative, present tense ("add" not "added"). No period at the end.
-- **Body:** Explain *what* and *why* vs. *how*.
-- **Scope:** The module or component affected (e.g., `auth`, `ui`, `api`).
-
-## 4. Execution
-Commit with the structured message and push.
-
-```bash
-# multiline commit using -m for subject and -m for body
-git commit -m "<type>(<scope>): <subject>" -m "<body_paragraph>" -m "- <bullet_point_1>" -m "- <bullet_point_2>"
-
-# Push changes
-git push -u origin <branch_name>
-```
+## 5. Execution & Cleanup
+1. **Commit**: Use the synthesized message.
+2. **Push**: If requested or standard for the branch.
+3. **Cleanup (MANDATORY)**: Clear or delete `.agent/IMPLEMENTATION_LOG.md` after a successful commit to prepare for the next task.

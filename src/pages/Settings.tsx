@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { AlertTriangle } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useSettings } from '@/hooks/useSettings';
@@ -11,13 +14,18 @@ import { useCategorySource } from '@/hooks/useBudgetCategories';
 // Import refactored components
 import { GeneralSettings } from '@/components/Settings/GeneralSettings';
 import { UnifiedCategoryManager } from '@/components/Settings/UnifiedCategoryManager';
-import { MerchantManager } from '@/components/Settings/MerchantManager';
+import { SourceManager } from '@/components/Settings/SourceManager';
+import { NoiseFilterSettings } from '@/components/Settings/NoiseFilterSettings';
 import { EmergencyDataManagement } from '@/components/Settings/EmergencyDataManagement';
 
 import UserManagement from '@/components/Settings/UserManagement';
 import { cn } from '@/lib/utils';
 
 const Settings = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentTab = searchParams.get('tab') || 'budget';
+  const initialSearch = searchParams.get('search') || '';
+
   const {
     settings,
     saveSettings
@@ -26,6 +34,13 @@ const Settings = () => {
   const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
 
   const [saveMessage] = useState('');
+
+  const handleTabChange = (value: string) => {
+    setSearchParams(prev => {
+      prev.set('tab', value);
+      return prev;
+    });
+  };
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -43,10 +58,10 @@ const Settings = () => {
         </Alert>
       )}
 
-      <Tabs defaultValue="budget" className="w-full">
+      <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="budget" className="px-6">Budget Categories</TabsTrigger>
-          <TabsTrigger value="merchants" className="px-6">Merchant Rules</TabsTrigger>
+          <TabsTrigger value="sources" className="px-6">Source Rules</TabsTrigger>
           <TabsTrigger value="users" className="px-6">Users</TabsTrigger>
           <TabsTrigger value="general" className="px-6">General</TabsTrigger>
         </TabsList>
@@ -56,63 +71,53 @@ const Settings = () => {
           <UnifiedCategoryManager />
 
           {/* Budget Balancing Card */}
-          <Card className="border-slate-200 shadow-sm bg-white">
+          <Card className="border-slate-200 shadow-sm bg-white opacity-60">
             <CardHeader className="pb-4 border-b bg-slate-50/50 flex flex-row items-center justify-between">
               <div>
-                <CardTitle className="text-lg font-semibold text-slate-800">Budget Balancing</CardTitle>
+                <CardTitle className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                  Budget Balancing
+                  <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-600 border-amber-200 font-bold uppercase">Pending</Badge>
+                </CardTitle>
                 <CardDescription>Automatically overflow unspent budget to any category or sub-category you want.</CardDescription>
               </div>
               <Switch
-                checked={!!settings.balancingSubCategory}
-                onCheckedChange={(checked) => {
-                  if (checked) {
-                    // Try to find a default "Savings" or "Opsparing" category
-                    const defaultCat = displayCategories.find(c => c.toLowerCase().includes('saving') || c.toLowerCase().includes('opsparing')) || displayCategories[0];
-                    const defaultSub = displaySubCategories[defaultCat]?.[0] || '';
-                    saveSettings({ balancingSubCategory: { category: defaultCat, subCategory: defaultSub } });
-                  } else {
-                    saveSettings({ balancingSubCategory: null });
-                  }
-                }}
+                checked={false}
+                disabled={true}
+                onCheckedChange={() => { }}
               />
             </CardHeader>
             <CardContent className="pt-6">
-              <div className={cn("space-y-4 transition-all duration-300", !settings.balancingSubCategory && "opacity-50 grayscale pointer-events-none")}>
-                <p className="text-sm text-slate-600">
-                  When enabled, any monthly budget surplus (or deficit) will be automatically applied to this category.
-                </p>
-                <div className="flex flex-col md:flex-row gap-4 items-end">
-                  <div className="flex-1 space-y-2">
-                    <Label className="text-xs uppercase font-bold text-slate-500">Target Category</Label>
-                    <Select
-                      value={settings.balancingSubCategory?.category || ''}
-                      onValueChange={(cat) => saveSettings({ balancingSubCategory: { category: cat, subCategory: displaySubCategories[cat]?.[0] || '' } })}
-                      disabled={!settings.balancingSubCategory}
-                    >
-                      <SelectTrigger className="h-10 bg-white">
-                        <SelectValue placeholder="Select Category..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {displayCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <Label className="text-xs uppercase font-bold text-slate-500">Target Sub-category</Label>
-                    <Select
-                      value={settings.balancingSubCategory?.subCategory || ''}
-                      onValueChange={(sub) => saveSettings({ balancingSubCategory: { ...settings.balancingSubCategory!, subCategory: sub } })}
-                      disabled={!settings.balancingSubCategory || !settings.balancingSubCategory?.category}
-                    >
-                      <SelectTrigger className="h-10 bg-white">
-                        <SelectValue placeholder="Select Sub-category..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(displaySubCategories[settings.balancingSubCategory?.category || ''] || []).map(s => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+              <div className="space-y-4">
+                <Alert className="bg-amber-50 border-amber-100 py-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <AlertTitle className="text-amber-800 text-xs font-bold uppercase">Work in Progress</AlertTitle>
+                  <AlertDescription className="text-[11px] text-amber-700 leading-normal">
+                    The Budget Balancing feature is currently disabled while the logic is being refactored.
+                    Surplus/Deficit management is not functional at this time.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="opacity-40 pointer-events-none grayscale">
+                  <p className="text-sm text-slate-600 mb-4">
+                    When enabled, any monthly budget surplus (or deficit) will be automatically applied to this category.
+                  </p>
+                  <div className="flex flex-col md:flex-row gap-4 items-end">
+                    <div className="flex-1 space-y-2">
+                      <Label className="text-xs uppercase font-bold text-slate-500">Target Category</Label>
+                      <Select disabled={true}>
+                        <SelectTrigger className="h-10 bg-white">
+                          <SelectValue placeholder="Disabled..." />
+                        </SelectTrigger>
+                      </Select>
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <Label className="text-xs uppercase font-bold text-slate-500">Target Sub-category</Label>
+                      <Select disabled={true}>
+                        <SelectTrigger className="h-10 bg-white">
+                          <SelectValue placeholder="Disabled..." />
+                        </SelectTrigger>
+                      </Select>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -150,8 +155,19 @@ const Settings = () => {
           <EmergencyDataManagement />
         </TabsContent>
 
-        <TabsContent value="merchants">
-          <MerchantManager />
+        <TabsContent value="sources" className="space-y-6">
+          <Tabs defaultValue="management" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-6 h-12">
+              <TabsTrigger value="management" className="text-sm font-bold h-10">Scan & Match Logic</TabsTrigger>
+              <TabsTrigger value="filters" className="text-sm font-bold h-10">System Noise Filters</TabsTrigger>
+            </TabsList>
+            <TabsContent value="management">
+              <SourceManager initialSearch={initialSearch} />
+            </TabsContent>
+            <TabsContent value="filters">
+              <NoiseFilterSettings />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
     </div>

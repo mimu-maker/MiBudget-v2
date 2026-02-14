@@ -7,6 +7,7 @@ import { BudgetCategory } from '@/hooks/useAnnualBudget';
 
 interface BudgetSankeyProps {
     budgetData: BudgetCategory[];
+    denominator?: number;
 }
 
 const COLORS = {
@@ -18,7 +19,7 @@ const COLORS = {
     ]
 };
 
-const BudgetSankey: React.FC<BudgetSankeyProps> = ({ budgetData }) => {
+const BudgetSankey: React.FC<BudgetSankeyProps> = ({ budgetData, denominator }) => {
     const { settings } = useSettings();
 
     const sankeyData = useMemo(() => {
@@ -38,64 +39,84 @@ const BudgetSankey: React.FC<BudgetSankeyProps> = ({ budgetData }) => {
         // Diagnostic logging
         console.log('Sankey Budget Data:', budgetData);
 
-        const incomeCategories = budgetData.filter(item => item.category_group === 'income' && (item.budget_amount > 0 || item.spent > 0));
-        const expenseCategories = budgetData.filter(item => item.category_group !== 'income' && (item.budget_amount > 0 || item.spent > 0));
+        const incomeCategories = budgetData.filter(item =>
+            item.category_group === 'income' &&
+            ((item.budget_amount || 0) > 0 || (item.spent || 0) > 0)
+        );
+        const expenseCategories = budgetData.filter(item =>
+            item.category_group !== 'income' &&
+            ((item.budget_amount || 0) > 0 || (item.spent || 0) > 0)
+        );
 
-        const totalIncome = incomeCategories.reduce((sum, item) => sum + Math.max(item.budget_amount, item.spent), 0);
-        const totalExpenses = expenseCategories.reduce((sum, item) => sum + Math.max(item.budget_amount, item.spent), 0);
-        const unallocated = Math.max(0, totalIncome - totalExpenses);
+        // 1. Calculate the raw sums from the data
+        const incomeSum = incomeCategories.reduce((sum, cat) => {
+            const subSum = (cat.sub_categories || []).reduce((s, sub) => s + Math.max(sub.budget_amount || 0, sub.spent || 0), 0);
+            return sum + subSum;
+        }, 0);
 
+        const expenseSum = expenseCategories.reduce((sum, item) => sum + Math.max(item.budget_amount || 0, item.spent || 0), 0);
+
+        if (incomeSum === 0 && expenseSum === 0) return { nodes: [], links: [] };
+
+        const imbalance = incomeSum - expenseSum;
+
+        // The "Invisible" Center Node
         const fundsNodeIndex = getOrCreateNode('Total Funds', COLORS.total, 'Wallet', 'total');
 
         // Stage 1: Income Sub-Categories -> Total Funds
-        const incomeSubCategories: { name: string; amount: number; icon: string }[] = [];
         incomeCategories.forEach(cat => {
-            cat.sub_categories.forEach(sub => {
-                const value = Math.max(sub.budget_amount, sub.spent);
+            (cat.sub_categories || []).forEach(sub => {
+                const value = Math.max(sub.budget_amount || 0, sub.spent || 0);
                 if (value > 0) {
-                    incomeSubCategories.push({
-                        name: sub.name,
-                        amount: value,
-                        icon: cat.icon || 'Banknote'
+                    const nodeIndex = getOrCreateNode(sub.name, COLORS.income, cat.icon || 'Banknote', 'income');
+                    links.push({
+                        source: nodeIndex,
+                        target: fundsNodeIndex,
+                        value: Math.max(value, 0.01),
+                        color: COLORS.income,
+                        opacity: 0.4
                     });
                 }
             });
         });
 
-        console.log('Sankey Income SubCategories:', incomeSubCategories);
-
-        incomeSubCategories.sort((a, b) => b.amount - a.amount).forEach((item) => {
-            const nodeIndex = getOrCreateNode(item.name, COLORS.income, item.icon, 'income');
+        // Add "From Savings" on the LEFT if we spent more than we earned
+        if (imbalance < 0) {
+            const deficit = Math.abs(imbalance);
+            const deficitNodeIndex = getOrCreateNode('From Savings / Overspending', COLORS.expense, 'TrendingUp', 'income');
             links.push({
-                source: nodeIndex,
+                source: deficitNodeIndex,
                 target: fundsNodeIndex,
-                value: Math.max(item.amount, 0.01),
-                color: COLORS.income,
+                value: Math.max(deficit, 0.01),
+                color: COLORS.expense,
                 opacity: 0.4
             });
-        });
+        }
 
         // Stage 2: Total Funds -> Expense Categories
-        expenseCategories.sort((a, b) => b.budget_amount - a.budget_amount).forEach((item, i) => {
+        expenseCategories.sort((a, b) => (b.budget_amount || 0) - (a.budget_amount || 0)).forEach((item, i) => {
             const themeColor = item.color || COLORS.expensePalette[i % COLORS.expensePalette.length];
             const nodeIndex = getOrCreateNode(item.name, themeColor, item.icon || 'CreditCard', 'expense');
+            const value = Math.max(item.budget_amount || 0, item.spent || 0);
 
-            links.push({
-                source: fundsNodeIndex,
-                target: nodeIndex,
-                value: Math.max(item.budget_amount, 0.01),
-                color: themeColor,
-                opacity: 0.4
-            });
+            if (value > 0) {
+                links.push({
+                    source: fundsNodeIndex,
+                    target: nodeIndex,
+                    value: Math.max(value, 0.01),
+                    color: themeColor,
+                    opacity: 0.4
+                });
+            }
         });
 
         // Stage 2b: Total Funds -> Unallocated (if any)
-        if (unallocated > 0) {
+        if (imbalance > 0) {
             const savingsNodeIndex = getOrCreateNode('Unallocated / Savings', '#3b82f6', 'PiggyBank', 'savings');
             links.push({
                 source: fundsNodeIndex,
                 target: savingsNodeIndex,
-                value: unallocated,
+                value: Math.max(imbalance, 0.01),
                 color: '#3b82f6',
                 opacity: 0.4
             });
@@ -107,7 +128,9 @@ const BudgetSankey: React.FC<BudgetSankeyProps> = ({ budgetData }) => {
     const CustomTooltip = ({ active, payload }: any) => {
         if (active && payload && payload.length) {
             const data = payload[0].payload;
-            const isNode = data.name !== undefined;
+
+            // Recharts Sankey payloads vary based on if you hover a Node or a Link
+            const isNode = data.name !== undefined && data.source === undefined;
 
             if (isNode) {
                 return (
@@ -125,8 +148,16 @@ const BudgetSankey: React.FC<BudgetSankeyProps> = ({ budgetData }) => {
 
             // It's a link
             const isBudget = data.color === '#3b82f6';
-            const sourceName = typeof data.source === 'object' ? data.source.name : sankeyData.nodes[data.source]?.name || 'Unknown';
-            const targetName = typeof data.target === 'object' ? data.target.name : sankeyData.nodes[data.target]?.name || 'Unknown';
+
+            const getSourceTargetName = (item: any) => {
+                if (typeof item === 'string') return item;
+                if (typeof item === 'number') return sankeyData.nodes[item]?.name || 'Unknown';
+                if (item && typeof item === 'object') return item.name || 'Unknown';
+                return 'Unknown';
+            };
+
+            const sourceName = getSourceTargetName(data.source);
+            const targetName = getSourceTargetName(data.target);
 
             return (
                 <div className="bg-slate-900/95 border border-slate-700 p-4 rounded-2xl shadow-2xl backdrop-blur-md">
@@ -148,6 +179,10 @@ const BudgetSankey: React.FC<BudgetSankeyProps> = ({ budgetData }) => {
 
     const CustomNode = (props: any) => {
         const { x, y, width, height, index, payload, containerWidth } = props;
+
+        // Make the center node invisible as requested
+        if (payload.name === 'Total Funds') return null;
+
         const isLeft = x < containerWidth / 3;
         const isRight = x > (containerWidth * 2) / 3;
         const color = payload.color || COLORS.expense;
@@ -202,45 +237,52 @@ const BudgetSankey: React.FC<BudgetSankeyProps> = ({ budgetData }) => {
                 <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-rose-500 rounded-full blur-[120px]" />
             </div>
 
-            <ResponsiveContainer width="100%" height="100%">
-                <Sankey
-                    data={sankeyData}
-                    node={<CustomNode containerWidth={1000} />}
-                    nodePadding={6}
-                    margin={{ top: 40, right: 180, bottom: 40, left: 180 }}
-                    link={(props: any) => {
-                        const { sourceX, sourceY, targetX, targetY, linkWidth, payload } = props;
-                        if (!payload) return null;
+            {sankeyData.nodes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4 animate-in fade-in duration-700">
+                    <LucideIcons.SearchX className="w-16 h-16 opacity-20" />
+                    <p className="text-lg font-bold uppercase tracking-widest opacity-50">No flow data available for this period</p>
+                </div>
+            ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                    <Sankey
+                        data={sankeyData}
+                        node={<CustomNode containerWidth={1000} />}
+                        nodePadding={6}
+                        margin={{ top: 40, right: 180, bottom: 40, left: 180 }}
+                        link={(props: any) => {
+                            const { sourceX, sourceY, targetX, targetY, linkWidth, payload } = props;
+                            if (!payload) return null;
 
-                        const color = payload.color || 'url(#linkGradient)';
-                        const opacity = payload.opacity || 0.3;
+                            const color = payload.color || 'url(#linkGradient)';
+                            const opacity = payload.opacity || 0.3;
 
-                        return (
-                            <path
-                                d={`
-                                    M${sourceX},${sourceY}
-                                    C${(sourceX + targetX) / 2},${sourceY}
-                                    ${(sourceX + targetX) / 2},${targetY}
-                                    ${targetX},${targetY}
-                                `}
-                                fill="none"
-                                stroke={color}
-                                strokeWidth={Math.max(linkWidth, 1)}
-                                strokeOpacity={opacity}
-                            />
-                        );
-                    }}
-                >
-                    <defs>
-                        <linearGradient id="linkGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
-                            <stop offset="50%" stopColor="#059669" stopOpacity="0.6" />
-                            <stop offset="100%" stopColor="#f43f5e" stopOpacity="0.4" />
-                        </linearGradient>
-                    </defs>
-                    <Tooltip content={<CustomTooltip />} />
-                </Sankey>
-            </ResponsiveContainer>
+                            return (
+                                <path
+                                    d={`
+                                        M${sourceX},${sourceY}
+                                        C${(sourceX + targetX) / 2},${sourceY}
+                                        ${(sourceX + targetX) / 2},${targetY}
+                                        ${targetX},${targetY}
+                                    `}
+                                    fill="none"
+                                    stroke={color}
+                                    strokeWidth={Math.max(linkWidth, 1)}
+                                    strokeOpacity={opacity}
+                                />
+                            );
+                        }}
+                    >
+                        <defs>
+                            <linearGradient id="linkGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
+                                <stop offset="50%" stopColor="#059669" stopOpacity="0.6" />
+                                <stop offset="100%" stopColor="#f43f5e" stopOpacity="0.4" />
+                            </linearGradient>
+                        </defs>
+                        <Tooltip content={<CustomTooltip />} />
+                    </Sankey>
+                </ResponsiveContainer>
+            )}
         </div >
     );
 };

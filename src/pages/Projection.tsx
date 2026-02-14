@@ -55,7 +55,7 @@ const Projection = () => {
 
   const [newTransaction, setNewTransaction] = useState<NewTransactionForm>({
     date: new Date().toISOString().slice(0, 10),
-    merchant: '',
+    source: '',
     amount: '',
     category: 'Food',
     stream: '',
@@ -78,8 +78,8 @@ const Projection = () => {
         if (tx.projection_id) return false;
 
         const txMonth = tx.date.slice(0, 7);
-        const nameMatch = tx.clean_merchant?.toLowerCase() === p.merchant.toLowerCase() ||
-          tx.merchant.toLowerCase() === p.merchant.toLowerCase();
+        const nameMatch = tx.clean_source?.toLowerCase() === p.source.toLowerCase() ||
+          tx.source.toLowerCase() === p.source.toLowerCase();
         return txMonth === projMonth && nameMatch;
       });
 
@@ -245,8 +245,8 @@ const Projection = () => {
   }, [futureTransactions, selectedYear]);
 
   const handleAddTransaction = () => {
-    // Loosened validation: allow merchant OR stream
-    if ((!newTransaction.merchant && !newTransaction.stream) || !newTransaction.amount) {
+    // Loosened validation: allow source OR stream
+    if ((!newTransaction.source && !newTransaction.stream) || !newTransaction.amount) {
       return;
     }
 
@@ -261,7 +261,7 @@ const Projection = () => {
   const resetForm = () => {
     setNewTransaction({
       date: new Date().toISOString().slice(0, 10),
-      merchant: '',
+      source: '',
       amount: '',
       category: transactionType === 'income' ? 'Income' : 'Food',
       stream: '',
@@ -284,7 +284,7 @@ const Projection = () => {
     setTransactionType(type);
     setNewTransaction({
       date: new Date().toISOString().slice(0, 10),
-      merchant: '',
+      source: '',
       amount: '',
       category: type === 'income' ? 'Income' : 'Food',
       stream: '',

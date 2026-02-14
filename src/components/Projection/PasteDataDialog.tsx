@@ -69,23 +69,19 @@ const PasteDataDialog = ({ open, onClose, onImport, transactionType }: PasteData
                     : (amount < 0 ? -amount : amount);
 
                 // Optional fields
-                const details = rest[0]?.trim() || '';
-                const merchant = rest[1]?.trim() || '';
-                const account = rest[2]?.trim() || 'Master';
+                const stream = rest[0]?.trim() || '';
+                const source = rest[1]?.trim() || '';
                 const description = rest[3]?.trim() || '';
 
                 parsed.push({
                     id: Date.now() + index,
                     date,
-                    merchant: merchant,
+                    source,
                     amount: finalAmount,
-                    account: account,
-                    status: 'Planned',
-                    budget: 'Budgeted',
                     category: transactionType === 'income' ? 'Income' : 'Food',
-                    subCategory: details,
+                    stream,
                     planned: true,
-                    recurring: false,
+                    recurring: 'N/A',
                     description: description
                 });
             });
@@ -126,7 +122,7 @@ const PasteDataDialog = ({ open, onClose, onImport, transactionType }: PasteData
                         <h3 className="text-sm font-semibold mb-2">Paste Data</h3>
                         <p className="text-xs text-gray-600 mb-2">
                             <strong>Required:</strong> Date/Month, Amount<br />
-                            <strong>Optional:</strong> Details, Merchant, Account, Description
+                            <strong>Optional:</strong> Stream, Source, Account, Description
                         </p>
                         <p className="text-xs text-gray-500 mb-2">
                             Paste tab-separated data. Date formats: "31/1/2025", "Jan 2026", or "2026-01"
@@ -178,7 +174,7 @@ const PasteDataDialog = ({ open, onClose, onImport, transactionType }: PasteData
                                                         year: 'numeric'
                                                     })}
                                                 </td>
-                                                <td className="p-2">{t.subCategory || t.merchant || '-'}</td>
+                                                <td className="p-2">{t.stream || t.source || '-'}</td>
                                                 <td className={`p-2 text-right ${t.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                                     DKK {Math.abs(t.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </td>

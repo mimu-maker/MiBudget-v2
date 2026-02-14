@@ -1,222 +1,61 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ComposedChart, Area, ReferenceLine, Legend } from 'recharts';
-import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
-import { useSettings } from '@/hooks/useSettings';
-import { usePeriod } from '@/contexts/PeriodContext';
-import { filterByPeriod, getPeriodInterval } from '@/lib/dateUtils';
-import { format, parseISO, startOfMonth, eachMonthOfInterval, isWithinInterval } from 'date-fns';
-import { da } from 'date-fns/locale';
-import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { ResponsiveContainer, ComposedChart, Area, ReferenceLine, Bar, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
+import * as LucideIcons from 'lucide-react';
+import { useOverviewData } from '@/components/Overview/hooks/useOverviewData';
 import { formatCurrency } from '@/lib/formatUtils';
-import { useAnnualBudget } from '@/hooks/useAnnualBudget';
+import { cn } from '@/lib/utils';
+import BudgetSankey from '@/components/Budget/BudgetSankey';
 
 export const MainOverview = () => {
-  const { transactions } = useTransactionTable();
-  const { settings } = useSettings();
-  const { selectedPeriod, customDateRange } = usePeriod();
-  const [includeSpecial, setIncludeSpecial] = useState(true);
-  const [includeKlintemarken, setIncludeKlintemarken] = useState(true);
+  const [localIncludeSpecial, setLocalIncludeSpecial] = useState(false);
+  const [localIncludeKlintemarken, setLocalIncludeKlintemarken] = useState(false);
+  const [flowTab, setFlowTab] = useState<'cashflow' | 'categoryflow'>('cashflow');
 
-  const currentYear = useMemo(() => {
-    if (/^\d{4}$/.test(selectedPeriod)) return parseInt(selectedPeriod);
+  const {
+    budgetLoading,
+    settings,
+    amountFormat,
+    summary,
+    netIncome,
+    splitBalanceTrend,
+    y2Data,
+    lineGradientOffset,
+    radarData, // Still needed for the total budgeted amount in the expense card
+    budgetData,
+    flowFiltered,
+  } = useOverviewData({
+    includeSpecial: localIncludeSpecial,
+    includeKlintemarken: localIncludeKlintemarken
+  });
 
-    const interval = getPeriodInterval(selectedPeriod, customDateRange);
-    const startYear = interval.start.getFullYear();
-    const endYear = interval.end.getFullYear();
-
-    // If it's a wide range (like 'All') or very old, default to current year for budget mapping
-    if (startYear < 2022 || startYear !== endYear) return new Date().getFullYear();
-
-    return startYear;
-  }, [selectedPeriod, customDateRange]);
-
-  const { budget: budgetData, loading: budgetLoading } = useAnnualBudget(currentYear);
-
-  const periodFiltered = useMemo(() => {
-    const interval = getPeriodInterval(selectedPeriod, customDateRange);
-    const targetYearStr = currentYear.toString();
-
-    let filtered = transactions.filter(t => {
-      // Handle budgetYear logic for standard years
-      // Ensure we compare strings to avoid type mismatch (e.g. 2025 !== "2025")
-      if (t.budgetYear && selectedPeriod !== 'Custom' && selectedPeriod !== 'All') {
-        if (t.budgetYear.toString() !== targetYearStr) return false;
-        try {
-          const d = parseISO(t.date);
-          const effectiveDate = new Date(parseInt(t.budgetYear.toString()), d.getMonth(), d.getDate());
-          return isWithinInterval(effectiveDate, interval);
-        } catch {
-          return false;
-        }
-      }
-
-      return filterByPeriod([t], selectedPeriod, customDateRange).length > 0;
-    });
-
-    if (!includeSpecial) filtered = filtered.filter(t => t.budget !== 'Special');
-    if (!includeKlintemarken) filtered = filtered.filter(t => t.budget !== 'Klintemarken');
-    filtered = filtered.filter(t => t.budget !== 'Exclude' && !t.excluded && t.status !== 'Pending Reconciliation' && !t.status?.startsWith('Pending: '));
-    return filtered;
-  }, [transactions, selectedPeriod, customDateRange, includeSpecial, includeKlintemarken, currentYear]);
-
-  const summary = useMemo(() => {
-    return periodFiltered.reduce((acc, t) => {
-      if (t.amount > 0) acc.income += t.amount;
-      else acc.expense += Math.abs(t.amount);
-      return acc;
-    }, { income: 0, expense: 0 });
-  }, [periodFiltered]);
-
-  const netIncome = summary.income - summary.expense;
-
-  const chartColors = useMemo(() => ({
+  const chartColors = {
     grid: settings.darkMode ? '#1e293b' : '#f0f0f0',
     text: settings.darkMode ? '#94a3b8' : '#64748b',
     tooltip: settings.darkMode ? '#0f172a' : '#fff',
     radarGrid: settings.darkMode ? '#334155' : '#e2e8f0',
-  }), [settings.darkMode]);
+  };
 
-  const monthlyData = useMemo(() => {
-    const interval = getPeriodInterval(selectedPeriod, customDateRange);
-    const months = eachMonthOfInterval(interval);
+  const renderLineDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    if (payload.fullMonth === 'Start') return null;
 
-    return months.map(monthDate => {
-      const monthLabel = format(monthDate, 'MM/yy', { locale: da });
-      const fullMonthName = format(monthDate, 'MM/yyyy', { locale: da });
-      const monthStart = startOfMonth(monthDate);
-      const nextMonthStart = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1);
+    const isProfit = payload.balance > 0;
+    const dotColor = isProfit ? '#10b981' : '#f43f5e';
 
-      const monthTransactions = transactions.filter(t => {
-        const d = parseISO(t.date);
-        const isInMonth = d >= monthStart && d < nextMonthStart;
-        const isNotExcluded = t.budget !== 'Exclude' && !t.excluded;
-        const isSpecialAllowed = includeSpecial || t.budget !== 'Special';
-        const isKlintemarkenAllowed = includeKlintemarken || t.budget !== 'Klintemarken';
-
-        return isInMonth && isNotExcluded && isSpecialAllowed && isKlintemarkenAllowed;
-      });
-
-      const income = monthTransactions.reduce((sum, t) => sum + (t.amount > 0 ? t.amount : 0), 0);
-      const expense = monthTransactions.reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
-
-      // Process subcategory contributors for the tooltip
-      const subcategorySums: Record<string, number> = {};
-      monthTransactions.forEach(t => {
-        if (t.amount < 0) {
-          const sub = t.subCategory || t.category || 'Other';
-          subcategorySums[sub] = (subcategorySums[sub] || 0) + Math.abs(t.amount);
-        }
-      });
-
-      const majorExpenses = Object.entries(subcategorySums)
-        .sort(([, a], [, b]) => b - a)
-        .filter(([, sum]) => expense > 0 && (sum / expense) > 0.25) // Threshold: > 25% of monthly expense
-        .map(([name, sum]) => ({ name, sum }));
-
-      return {
-        month: monthLabel,
-        fullMonth: fullMonthName,
-        income,
-        expense,
-        balance: income - expense,
-        majorExpenses
-      };
-    });
-  }, [transactions, selectedPeriod, customDateRange]);
-
-  const balanceTrend = useMemo(() => {
-    let runningBalance = 0;
-    return monthlyData.map(d => {
-      runningBalance += d.balance;
-      return { ...d, cumulativeBalance: runningBalance };
-    });
-  }, [monthlyData]);
-
-  const radarData = useMemo(() => {
-    const interval = getPeriodInterval(selectedPeriod, customDateRange);
-    const monthsInPeriod = eachMonthOfInterval(interval).length;
-
-    // Filter categories from budget if available
-    const filteredBudgeted = budgetData?.categories.filter(cat => {
-      const isExpenditure = cat.category_group === 'expenditure';
-      const isSpecial = cat.category_group === 'special';
-      const isKlintemarken = cat.category_group === 'klintemarken';
-
-      if (isSpecial && !includeSpecial) return false;
-      if (isKlintemarken && !includeKlintemarken) return false;
-
-      return isExpenditure || isSpecial || isKlintemarken;
-    }) || [];
-
-    const dataMap: Record<string, { budgeted: number; actual: number }> = {};
-
-    // Initialize map with budgeted categories
-    filteredBudgeted.forEach(cat => {
-      dataMap[cat.name] = {
-        budgeted: Math.round(cat.budget_amount * monthsInPeriod),
-        actual: 0
-      };
-    });
-
-    // Add/merge actual spending from Transactions
-    periodFiltered.forEach(t => {
-      if (t.amount < 0) {
-        const catName = t.category || 'Other';
-        if (!dataMap[catName]) {
-          dataMap[catName] = { budgeted: 0, actual: 0 };
-        }
-        dataMap[catName].actual += Math.abs(t.amount);
-      }
-    });
-
-    return Object.entries(dataMap).map(([category, vals]) => ({
-      category,
-      budgeted: vals.budgeted,
-      actual: Math.round(vals.actual)
-    })).filter(d => d.budgeted > 0 || d.actual > 0)
-      .sort((a, b) => b.budgeted - a.budgeted);
-  }, [budgetData, periodFiltered, selectedPeriod, customDateRange, includeSpecial, includeKlintemarken]);
-
-  const y2Data = useMemo(() => {
-    const values = balanceTrend.map(d => d.cumulativeBalance);
-    if (values.length === 0) return { domain: [-1000, 1000], ticks: [-1000, -500, 0, 500, 1000] };
-
-    const absMax = Math.max(...values.map(v => Math.abs(v)), 100);
-    // Find the next "nice" power of 10 or multiple of 5/10/25/50/100
-    const magnitude = Math.pow(10, Math.floor(Math.log10(absMax)));
-    const firstDigit = absMax / magnitude;
-    let roundedMax;
-    if (firstDigit <= 1) roundedMax = 1 * magnitude;
-    else if (firstDigit <= 2) roundedMax = 2 * magnitude;
-    else if (firstDigit <= 5) roundedMax = 5 * magnitude;
-    else roundedMax = 10 * magnitude;
-
-    // If it's too tight, go one step higher
-    if (roundedMax < absMax * 1.1) {
-      if (roundedMax === 1 * magnitude) roundedMax = 2 * magnitude;
-      else if (roundedMax === 2 * magnitude) roundedMax = 5 * magnitude;
-      else if (roundedMax === 5 * magnitude) roundedMax = 10 * magnitude;
-      else roundedMax = 20 * magnitude;
-    }
-
-    return {
-      domain: [-roundedMax, roundedMax],
-      ticks: [-roundedMax, -roundedMax / 2, 0, roundedMax / 2, roundedMax]
-    };
-  }, [balanceTrend]);
-
-  // Split balance for conditional area filling
-  const splitBalanceTrend = useMemo(() => {
-    return balanceTrend.map(d => ({
-      ...d,
-      posBalance: d.cumulativeBalance > 0 ? d.cumulativeBalance : 0,
-      negBalance: d.cumulativeBalance < 0 ? d.cumulativeBalance : 0,
-    }));
-  }, [balanceTrend]);
-
+    return (
+      <circle
+        key={`dot-${payload.month}`}
+        cx={cx}
+        cy={cy}
+        r={4}
+        fill={dotColor}
+        stroke={settings.darkMode ? '#0f172a' : '#fff'}
+        strokeWidth={2}
+      />
+    );
+  };
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -227,16 +66,16 @@ export const MainOverview = () => {
           <div className="space-y-1.5">
             <div className="flex justify-between items-center gap-8">
               <span className="text-xs text-emerald-500 font-medium">Income:</span>
-              <span className="text-xs font-bold text-emerald-500">{formatCurrency(data.income, settings.currency)}</span>
+              <span className="text-xs font-bold text-emerald-500">{formatCurrency(data.income, settings.currency, amountFormat)}</span>
             </div>
             <div className="flex justify-between items-center gap-8">
               <span className="text-xs text-rose-500 font-medium">Expense:</span>
-              <span className="text-xs font-bold text-rose-500">{formatCurrency(data.expense, settings.currency)}</span>
+              <span className="text-xs font-bold text-rose-500">{formatCurrency(data.expense, settings.currency, amountFormat)}</span>
             </div>
             <div className="flex justify-between items-center gap-8 pt-1 border-t">
               <span className="text-xs text-blue-500 font-medium">Cumulative:</span>
               <span className={cn("text-xs font-bold", data.cumulativeBalance >= 0 ? "text-blue-500" : "text-amber-500")}>
-                {formatCurrency(data.cumulativeBalance, settings.currency)}
+                {formatCurrency(data.cumulativeBalance, settings.currency, amountFormat)}
               </span>
             </div>
           </div>
@@ -248,7 +87,7 @@ export const MainOverview = () => {
                 {data.majorExpenses.map((exp: any, i: number) => (
                   <div key={i} className="flex justify-between items-start gap-4">
                     <span className="text-[11px] text-foreground/70 flex-1 leading-tight">{exp.name}</span>
-                    <span className="text-[11px] font-mono font-bold text-foreground">{formatCurrency(exp.sum, settings.currency)}</span>
+                    <span className="text-[11px] font-mono font-bold text-foreground">{formatCurrency(exp.sum, settings.currency, amountFormat)}</span>
                   </div>
                 ))}
               </div>
@@ -259,6 +98,48 @@ export const MainOverview = () => {
     }
     return null;
   };
+
+  // Categories with Actuals for Sankey (using flowFiltered logic from hook would be ideal, 
+  // but hook returns flowFiltered transactions. We need to process them for Sankey.)
+  // Replicating for now as it's specific to Sankey view.
+  const categoriesWithActuals = budgetData?.categories
+    .filter(cat => {
+      if (!localIncludeSpecial && cat.category_group === 'special') return false;
+      if (!localIncludeKlintemarken && cat.category_group === 'klintemarken') return false;
+      return true;
+    })
+    .map(cat => {
+      const actualSpent = flowFiltered
+        .filter(t => t.category === cat.name)
+        .reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
+
+      const actualIncome = flowFiltered
+        .filter(t => t.category === cat.name)
+        .reduce((sum, t) => sum + (t.amount > 0 ? t.amount : 0), 0);
+
+      return {
+        ...cat,
+        spent: cat.category_group === 'income' ? actualIncome : actualSpent,
+        actual_income: actualIncome,
+        sub_categories: cat.sub_categories.map(sub => {
+          const subActualSpent = flowFiltered
+            .filter(t => t.category === cat.name && t.subCategory === sub.name)
+            .reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
+          const subActualIncome = flowFiltered
+            .filter(t => t.category === cat.name && t.subCategory === sub.name)
+            .reduce((sum, t) => sum + (t.amount > 0 ? t.amount : 0), 0);
+
+          return {
+            ...sub,
+            spent: cat.category_group === 'income' ? subActualIncome : subActualSpent,
+            actual_income: subActualIncome
+          };
+        })
+      };
+    }) || [];
+
+  const totalActualIncome = flowFiltered.reduce((sum, t) => sum + (t.amount > 0 ? t.amount : 0), 0);
+
 
   if (budgetLoading) {
     return (
@@ -272,195 +153,201 @@ export const MainOverview = () => {
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-foreground tracking-tight">{selectedPeriod} Overview</h2>
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="include-special"
-                checked={includeSpecial}
-                onCheckedChange={setIncludeSpecial}
-                className="data-[state=checked]:bg-emerald-500"
-              />
-              <Label htmlFor="include-special" className="text-sm font-medium text-muted-foreground">Include Special</Label>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 group hover:shadow-emerald-500/10 transition-all duration-300">
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+              <LucideIcons.TrendingUp className="w-16 h-16 text-emerald-500" />
             </div>
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="include-klintemarken"
-                checked={includeKlintemarken}
-                onCheckedChange={setIncludeKlintemarken}
-                className="data-[state=checked]:bg-emerald-500"
-              />
-              <Label htmlFor="include-klintemarken" className="text-sm font-medium text-muted-foreground">Include Klintemarken</Label>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-black text-emerald-600/70 uppercase tracking-[0.2em]">Total Income</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-black text-emerald-500 tracking-tight">
+                {formatCurrency(summary.income, settings.currency, amountFormat)}
+              </div>
+              <div className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-emerald-600/60 uppercase">
+                <LucideIcons.ArrowUpRight className="w-3 h-3" />
+                Verified Sources
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-rose-500/10 to-rose-500/5 group hover:shadow-rose-500/10 transition-all duration-300">
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+              <LucideIcons.TrendingDown className="w-16 h-16 text-rose-500" />
             </div>
-          </div>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-black text-rose-600/70 uppercase tracking-[0.2em]">Total Expenses</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col">
+                <div className="text-3xl font-black text-rose-500 tracking-tight">
+                  {formatCurrency(summary.expense, settings.currency, amountFormat)}
+                </div>
+                {radarData.length > 0 && (
+                  <div className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-rose-600/60 uppercase">
+                    <LucideIcons.Target className="w-3 h-3" />
+                    OF {formatCurrency(radarData.reduce((sum, d) => sum + d.budgeted, 0), settings.currency, amountFormat)} BUDGET
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className={cn(
+            "relative overflow-hidden border-none shadow-lg group transition-all duration-300",
+            netIncome >= 0
+              ? "bg-gradient-to-br from-blue-500/10 to-blue-500/5 hover:shadow-blue-500/10"
+              : "bg-gradient-to-br from-amber-500/10 to-amber-500/5 hover:shadow-amber-500/10"
+          )}>
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+              <LucideIcons.PiggyBank className={cn("w-16 h-16", netIncome >= 0 ? "text-blue-500" : "text-amber-500")} />
+            </div>
+            <CardHeader className="pb-2">
+              <CardTitle className={cn("text-xs font-black uppercase tracking-[0.2em]", netIncome >= 0 ? "text-blue-600/70" : "text-amber-600/70")}>Net Savings</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className={cn("text-3xl font-black tracking-tight", netIncome >= 0 ? "text-blue-500" : "text-amber-500")}>
+                {formatCurrency(netIncome, settings.currency, amountFormat)}
+              </div>
+              <div className={cn("mt-2 flex items-center gap-1.5 text-[10px] font-bold uppercase", netIncome >= 0 ? "text-blue-600/60" : "text-amber-600/60")}>
+                <LucideIcons.Scale className="w-3 h-3" />
+                {netIncome >= 0 ? "Surplus" : "Deficit"} this period
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="border-l-4 border-l-emerald-500 shadow-sm bg-card transition-colors">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Total Income</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-emerald-500">
-                {formatCurrency(summary.income, settings.currency)}
+        <div className="grid grid-cols-1 gap-6">
+          <Card className="col-span-1 shadow-sm bg-card transition-colors">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <div className="flex bg-muted p-1 rounded-lg">
+                <Button
+                  variant={flowTab === 'cashflow' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="rounded-md h-8 text-xs font-bold"
+                  onClick={() => setFlowTab('cashflow')}
+                >
+                  Cash Flow
+                </Button>
+                <Button
+                  variant={flowTab === 'categoryflow' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="rounded-md h-8 text-xs font-bold"
+                  onClick={() => setFlowTab('categoryflow')}
+                >
+                  Category Flow
+                </Button>
               </div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-rose-500 shadow-sm bg-card transition-colors">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Total Expenses</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-rose-500">
-                {formatCurrency(summary.expense, settings.currency)}
+
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLocalIncludeKlintemarken(!localIncludeKlintemarken)}
+                  className={cn(
+                    "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
+                    localIncludeKlintemarken
+                      ? "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+                      : "bg-background border-border text-muted-foreground hover:bg-accent"
+                  )}
+                >
+                  <LucideIcons.Wallet className={cn("w-3 h-3", localIncludeKlintemarken ? "fill-amber-500/50" : "")} />
+                  FEEDER
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLocalIncludeSpecial(!localIncludeSpecial)}
+                  className={cn(
+                    "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
+                    localIncludeSpecial
+                      ? "bg-purple-500/10 border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
+                      : "bg-background border-border text-muted-foreground hover:bg-accent"
+                  )}
+                >
+                  <LucideIcons.PiggyBank className={cn("w-3 h-3", localIncludeSpecial ? "fill-purple-500/50" : "")} />
+                  SLUSH
+                </Button>
               </div>
-            </CardContent>
-          </Card>
-          <Card className={cn("border-l-4 shadow-sm bg-card transition-colors", netIncome >= 0 ? "border-l-blue-500" : "border-l-amber-500")}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Net Savings</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className={cn("text-2xl font-bold", netIncome >= 0 ? "text-blue-500" : "text-amber-500")}>
-                {formatCurrency(netIncome, settings.currency)}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="lg:col-span-2 shadow-sm bg-card transition-colors">
-            <CardHeader>
-              <CardTitle className="text-lg">Cash Flow Trends</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[400px] w-full mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={splitBalanceTrend}>
-                    <defs>
-                      <linearGradient id="lineColor" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0.5" stopColor="#10b981" stopOpacity={1} />
-                        <stop offset="0.5" stopColor="#f43f5e" stopOpacity={1} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartColors.grid} />
-                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: chartColors.text, fontSize: 12 }} />
-                    <YAxis
-                      yAxisId="left"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: chartColors.text, fontSize: 10 }}
-                      domain={[0, 'auto']}
-                      tickFormatter={(val) => val === 0 ? '0 kr' : `${(val / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })}k kr`}
-                    />
-                    <YAxis
-                      yAxisId="right"
-                      orientation="right"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: chartColors.text, fontSize: 10 }}
-                      domain={y2Data.domain}
-                      ticks={y2Data.ticks}
-                      tickFormatter={(val) => Math.abs(val) < 1 ? '0 kr' : `${(val / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })}k kr`}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <ReferenceLine yAxisId="right" y={0} stroke={chartColors.grid} strokeWidth={2} />
-                    <Bar yAxisId="left" dataKey="income" fill="#10b981" name="Income" radius={[4, 4, 0, 0]} barSize={30} />
-                    <Bar yAxisId="left" dataKey="expense" fill="#f43f5e" name="Expense" radius={[4, 4, 0, 0]} barSize={30} />
-
-                    <Area
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="posBalance"
-                      fill="#10b981"
-                      fillOpacity={0.3}
-                      stroke="transparent"
-                      connectNulls
-                      isAnimationActive={false}
-                    />
-                    <Area
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="negBalance"
-                      fill="#f43f5e"
-                      fillOpacity={0.3}
-                      stroke="transparent"
-                      connectNulls
-                      isAnimationActive={false}
-                    />
-
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="cumulativeBalance"
-                      strokeWidth={3}
-                      name="Cumulative"
-                      stroke="url(#lineColor)"
-                      dot={{ r: 4, strokeWidth: 2, stroke: settings.darkMode ? '#0f172a' : '#fff', fill: '#10b981' }}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-sm bg-card transition-colors">
-            <CardHeader>
-              <CardTitle className="text-lg">Spending by Category</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[300px] w-full">
-                {radarData.length > 0 ? (
+              {flowTab === 'cashflow' ? (
+                <div className="h-[400px] w-full mt-4">
                   <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart data={radarData}>
-                      <PolarGrid stroke={chartColors.radarGrid} />
-                      <PolarAngleAxis dataKey="category" tick={{ fill: chartColors.text, fontSize: 10 }} />
-                      <PolarRadiusAxis axisLine={false} tick={false} />
-                      <Radar name="Budget" dataKey="budgeted" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} />
-                      <Radar name="Actual" dataKey="actual" stroke="#ef4444" fill="#ef4444" fillOpacity={0.4} />
-                      <Tooltip contentStyle={{ backgroundColor: chartColors.tooltip, border: 'none', borderRadius: '8px' }} />
-                      <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-muted-foreground italic">
-                    No categories found for this period
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                    <ComposedChart data={splitBalanceTrend}>
+                      <defs>
+                        <linearGradient id="lineColor" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0" stopColor="#10b981" stopOpacity={1} />
+                          <stop offset={lineGradientOffset} stopColor="#10b981" stopOpacity={1} />
+                          <stop offset={lineGradientOffset} stopColor="#f43f5e" stopOpacity={1} />
+                          <stop offset="1" stopColor="#f43f5e" stopOpacity={1} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartColors.grid} />
+                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: chartColors.text, fontSize: 12 }} />
+                      <YAxis
+                        yAxisId="left"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fill: chartColors.text, fontSize: 10 }}
+                        domain={[0, 'auto']}
+                        tickFormatter={(val) => !val ? '0' : formatCurrency(val, settings.currency, amountFormat).split(' ')[0].split('.')[0].split(',')[0]}
+                      />
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fill: chartColors.text, fontSize: 10 }}
+                        domain={y2Data.domain}
+                        ticks={y2Data.ticks}
+                        tickFormatter={(val) => !val ? '0' : formatCurrency(val, settings.currency, amountFormat).split(' ')[0].split('.')[0].split(',')[0]}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      <ReferenceLine yAxisId="right" y={0} stroke={chartColors.grid} strokeWidth={2} />
+                      <Bar yAxisId="left" dataKey="income" fill="#10b981" name="Income" radius={[4, 4, 0, 0]} barSize={30} />
+                      <Bar yAxisId="left" dataKey="expense" fill="#f43f5e" name="Expense" radius={[4, 4, 0, 0]} barSize={30} />
 
-          <Card className="shadow-sm bg-card transition-colors">
-            <CardHeader>
-              <CardTitle className="text-lg">Category Breakdown</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                {radarData.map((item, index) => (
-                  <div key={index} className="flex items-center justify-between group">
-                    <div className="flex flex-col flex-1 mr-4">
-                      <span className="font-semibold text-foreground/80">{item.category}</span>
-                      <div className="w-full h-1.5 bg-muted rounded-full mt-1.5 overflow-hidden">
-                        <div
-                          className="h-full bg-blue-500 rounded-full transition-all duration-1000"
-                          style={{ width: `${Math.min(100, (item.actual / (summary.expense || 1)) * 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-foreground whitespace-nowrap">{formatCurrency(item.actual, settings.currency)}</div>
-                      <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">
-                        {((item.actual / (summary.expense || 1)) * 100).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {radarData.length === 0 && (
-                  <div className="text-center py-10 text-muted-foreground italic">No expense data for this period</div>
-                )}
-              </div>
+                      <Area
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="posBalance"
+                        fill="#10b981"
+                        fillOpacity={0.3}
+                        stroke="transparent"
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+                      <Area
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="negBalance"
+                        fill="#f43f5e"
+                        fillOpacity={0.3}
+                        stroke="transparent"
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="cumulativeBalance"
+                        strokeWidth={3}
+                        name="Cumulative"
+                        stroke="url(#lineColor)"
+                        dot={renderLineDot}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <BudgetSankey
+                  budgetData={categoriesWithActuals as any}
+                  denominator={totalActualIncome}
+                />
+              )}
             </CardContent>
           </Card>
         </div>

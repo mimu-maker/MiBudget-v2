@@ -51,7 +51,7 @@ export const ImportMappingStep = ({
                     <MappingCard
                         key={field}
                         field={field}
-                        mandatory={['date', 'merchant', 'amount'].includes(field)}
+                        mandatory={['date', 'source', 'amount'].includes(field)}
                         columnMapping={columnMapping}
                         setColumnMapping={setColumnMapping}
                         csvHeaders={hasHeaders ? csvData[0] : undefined}

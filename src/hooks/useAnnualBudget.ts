@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { format, parseISO, startOfMonth } from 'date-fns';
 
 export interface BudgetCategory {
   id: string;
@@ -15,6 +16,7 @@ export interface BudgetCategory {
   remaining: number;
   remaining_percent: number;
   sub_categories: BudgetSubCategory[];
+  last_year_data?: { budget: number, spent: number };
 }
 
 export interface BudgetSubCategory {
@@ -177,26 +179,70 @@ export const useAnnualBudget = (year?: number) => {
 
       // 2.5 FETCH ACTUAL TRANSACTIONS for spent calculation (Frontend Override)
       // This ensures we use budget_month instead of transaction date
-      const { data: yearTransactions } = await supabase
+      const { data: yearTransactions, error: fetchError } = await (supabase as any)
         .from('transactions')
-        .select('amount, category, sub_category, budget_month, budget')
-        .gte('budget_month', `${targetYear}-01-01`)
-        .lte('budget_month', `${targetYear}-12-31`)
+        .select('amount, category, sub_category, budget_month, budget, date, status, budget_year')
         .eq('user_id', user.id)
-        .not('status', 'ilike', 'Pending%')
-        .not('budget', 'eq', 'Exclude');
+        .not('budget', 'eq', 'Exclude')
+        .or(`budget_year.eq.${targetYear},and(budget_month.gte.${targetYear}-01-01,budget_month.lte.${targetYear}-12-31)`);
 
-      const transactions = yearTransactions || [];
+      if (fetchError) {
+        console.warn('Error fetching budget transactions:', fetchError.message);
+      }
+
+      // Map to standardized Transaction structure (matches useTransactionTable)
+      const transactions = (yearTransactions || []).map((t: any) => {
+        // Compatibility logic
+        const sourceName = t.source || t.merchant || 'Unknown';
+
+        let budget_month = t.budget_month;
+        let budget_year = t.budget_year;
+
+        if (!budget_month || !budget_year) {
+          const d = parseISO(t.date);
+          if (!isNaN(d.getTime())) {
+            budget_month = budget_month || format(startOfMonth(d), 'yyyy-MM-01');
+            budget_year = budget_year || d.getFullYear();
+          }
+        }
+
+        return {
+          ...t,
+          source: sourceName,
+          budget_month,
+          budget_year,
+          category: t.category || 'Uncategorized',
+          subCategory: t.sub_category || '', // Standardize to camelCase
+        };
+      }).filter((t: any) => {
+        // Double check it's in the target year
+        return t.budget_month && t.budget_month.startsWith(`${targetYear}-`);
+      });
 
       // Fetch last year hierarchical data if exists
       let lastYearHierarchicalMap: Record<string, any> = {};
-      const { data: lastYearBudget } = await supabase
+
+      // Try to find budget with same type first
+      let { data: lastYearBudget } = await supabase
         .from('budgets')
         .select('id')
         .eq('user_id', profile.id)
         .eq('year', targetYear - 1)
         .eq('budget_type', budgetData.budget_type)
         .maybeSingle();
+
+      // If not found, try fallback (e.g. if current is Unified but last year was Primary)
+      if (!lastYearBudget) {
+        const { data: fallbackBudget } = await supabase
+          .from('budgets')
+          .select('id')
+          .eq('user_id', profile.id)
+          .eq('year', targetYear - 1)
+          .neq('budget_type', budgetData.budget_type) // Try the other type
+          .maybeSingle();
+
+        lastYearBudget = fallbackBudget;
+      }
 
       if (lastYearBudget) {
         const { data: lastYearHierarchical, error: lastYearError } = await supabase
@@ -217,6 +263,7 @@ export const useAnnualBudget = (year?: number) => {
 
       // 3. Build the combined list
       const categories: BudgetCategory[] = (allCategories || []).map((cat: any) => {
+        const isIncome = cat.category_group === 'income';
         const hCat = hierarchicalMap[cat.id];
 
         const subCategories = (cat.sub_categories || [])
@@ -227,8 +274,14 @@ export const useAnnualBudget = (year?: number) => {
 
             // Recalculate spent locally
             const subSpent = transactions
-              .filter(t => t.category === cat.name && t.sub_category === sub.name)
-              .reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
+              .filter(t => t.category === cat.name && t.subCategory === sub.name)
+              .reduce((sum, t) => {
+                const amount = Number(t.amount) || 0;
+                if (isIncome) {
+                  return sum + (amount > 0 ? amount : 0);
+                }
+                return sum + (amount < 0 ? Math.abs(amount) : 0);
+              }, 0);
 
             const isActive = hSub ? (hSub.is_active !== false) : true;
 
@@ -256,7 +309,20 @@ export const useAnnualBudget = (year?: number) => {
         // Recalculate category-level spent locally
         const catSpent = transactions
           .filter(t => t.category === cat.name)
-          .reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
+          .reduce((sum, t) => {
+            const amount = Number(t.amount) || 0;
+            if (isIncome) {
+              return sum + (amount > 0 ? amount : 0);
+            }
+            return sum + (amount < 0 ? Math.abs(amount) : 0);
+          }, 0);
+
+        // Map last year's data for top-level category
+        const lastYearCat = lastYearHierarchicalMap[cat.id];
+        const lastYearData = lastYearCat ? {
+          budget: lastYearCat.budget_amount,
+          spent: lastYearCat.spent
+        } : undefined;
 
         return {
           id: cat.id,
@@ -265,12 +331,13 @@ export const useAnnualBudget = (year?: number) => {
           display_order: cat.display_order,
           icon: cat.icon,
           color: cat.color,
-          budget_amount: subTotalBudget,
+          budget_amount: (cat.name === 'Special' || subCategories.length === 0) ? (hCat?.budget_amount || 0) : subTotalBudget,
           alert_threshold: 0,
           spent: catSpent,
           remaining: subTotalBudget - catSpent,
           remaining_percent: subTotalBudget > 0 ? ((subTotalBudget - catSpent) / subTotalBudget) * 100 : 0,
-          sub_categories: subCategories
+          sub_categories: subCategories,
+          last_year_data: lastYearData
         };
       }).filter(cat => cat.sub_categories.length > 0);
 

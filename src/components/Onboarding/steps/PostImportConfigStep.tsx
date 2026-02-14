@@ -39,16 +39,16 @@ export const PostImportConfigStep: React.FC = () => {
 
   // Default categories to suggest
   const defaultCategories = [
-    { name: 'Food & Dining', icon: '🍔', color: '#ef4444' },
-    { name: 'Transportation', icon: '🚗', color: '#f59e0b' },
-    { name: 'Shopping', icon: '🛍', color: '#8b5cf6' },
-    { name: 'Entertainment', icon: '🎬', color: '#ec4899' },
-    { name: 'Bills & Utilities', icon: '💡', color: '#f97316' },
+    { name: 'Food', icon: '🍔', color: '#14B8A6' },
+    { name: 'Property', icon: '🏠', color: '#64748B' },
+    { name: 'Transport', icon: '🚗', color: '#8b5cf6' },
+    { name: 'Personal & Lifestyle', icon: '✈', color: '#ec4899' },
+    { name: 'Utilities', icon: '💡', color: '#f59e0b' },
     { name: 'Healthcare', icon: '⚕', color: '#06b6d4' },
     { name: 'Income', icon: '💰', color: '#10b981' },
-    { name: 'Personal Care', icon: '💄', color: '#84cc16' },
-    { name: 'Education', icon: '📚', color: '#6366f1' },
-    { name: 'Travel', icon: '✈', color: '#0ea5e9' }
+    { name: 'Household', icon: '🏠', color: '#3b82f6' },
+    { name: 'Children & Education', icon: '📚', color: '#67E8F9' },
+    { name: 'Savings & Investing', icon: '💰', color: '#6366f1' }
   ];
 
   // Get columns from import data
@@ -219,15 +219,15 @@ export const PostImportConfigStep: React.FC = () => {
 
                     {column === 'planned' && (
                       <Select
-                        value={defaultValues[column]?.toString() || 'false'}
+                        value={defaultValues[column]?.toString() || 'true'}
                         onValueChange={(value) => handleDefaultValueChange(column, value === 'true')}
                       >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="true">Yes</SelectItem>
-                          <SelectItem value="false">No</SelectItem>
+                          <SelectItem value="true">No</SelectItem>
+                          <SelectItem value="false">Yes</SelectItem>
                         </SelectContent>
                       </Select>
                     )}

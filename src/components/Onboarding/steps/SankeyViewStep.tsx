@@ -52,7 +52,7 @@ const MockTableView: React.FC<{ data: any[], years: number[] }> = ({ data, years
             <thead>
               <tr className="bg-muted">
                 <th className="text-left p-3 font-medium">Date</th>
-                <th className="text-left p-3 font-medium">Merchant</th>
+                <th className="text-left p-3 font-medium">Source</th>
                 <th className="text-right p-3 font-medium">Amount</th>
                 <th className="text-left p-3 font-medium">Category</th>
                 <th className="text-left p-3 font-medium">Account</th>
@@ -62,7 +62,7 @@ const MockTableView: React.FC<{ data: any[], years: number[] }> = ({ data, years
               {data.slice(0, 20).map((transaction, index) => (
                 <tr key={index} className="border-b hover:bg-muted/50">
                   <td className="p-3">{transaction.date}</td>
-                  <td className="p-3">{transaction.merchant}</td>
+                  <td className="p-3">{transaction.source}</td>
                   <td className={`p-3 text-right font-medium ${parseFloat(transaction.amount) >= 0 ? 'text-green-600' : 'text-red-600'
                     }`}>
                     {parseFloat(transaction.amount) >= 0 ? '+' : ''}{transaction.amount}
@@ -99,11 +99,12 @@ export const SankeyViewStep: React.FC = () => {
     if (!importData) return [];
 
     return importData.sampleData.map((row, index) => {
-      const merchant = row[Object.keys(row).find(k =>
+      const source = row[Object.keys(row).find(k =>
+        k.toLowerCase().includes('source') ||
         k.toLowerCase().includes('merchant') ||
         k.toLowerCase().includes('description') ||
         k.toLowerCase().includes('payee')
-      )] || `Merchant ${index + 1}`;
+      )] || `Source ${index + 1}`;
 
       const amount = row[Object.keys(row).find(k =>
         k.toLowerCase().includes('amount') ||
@@ -117,7 +118,7 @@ export const SankeyViewStep: React.FC = () => {
       return {
         id: index + 1,
         date,
-        merchant,
+        source,
         amount: parseFloat(amount) || 0,
         category: row.category || 'Uncategorized',
         account: row.account || 'Checking'

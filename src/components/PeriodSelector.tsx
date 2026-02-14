@@ -1,58 +1,91 @@
 import React from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar } from 'lucide-react';
 import { usePeriod } from '@/contexts/PeriodContext';
 import { DatePickerWithRange } from '@/components/ui/date-range-picker';
-import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
-import { parseISO, getYear } from 'date-fns';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Calendar } from 'lucide-react';
+import { getQuarter, getMonth } from 'date-fns';
 
 export const PeriodSelector = () => {
     const { selectedPeriod, setSelectedPeriod, customDateRange, setCustomDateRange } = usePeriod();
-    const { transactions } = useTransactionTable();
 
-    const availableYears = React.useMemo(() => {
-        const years = new Set<number>();
-        const currentYear = new Date().getFullYear();
-        years.add(currentYear);
+    const specialOptions = React.useMemo(() => {
+        const now = new Date();
+        const month = getMonth(now); // 0-indexed
+        const quarter = getQuarter(now);
 
-        transactions.forEach(t => {
-            try {
-                if (t.date) {
-                    const year = getYear(parseISO(t.date));
-                    if (year) years.add(year);
-                }
-            } catch (e) { }
-        });
+        const options: { label: string, value: string }[] = [];
 
-        return Array.from(years).sort((a, b) => b - a);
-    }, [transactions]);
+        // This Year (only if in second half: month >= 6)
+        if (month >= 6) {
+            options.push({ label: 'This Year', value: 'This Year' });
+        }
+
+        // Year to Date
+        options.push({ label: 'Year to Date', value: 'Year to Date' });
+
+        // This Quarter
+        options.push({ label: `This Q${quarter}`, value: 'This Quarter' });
+
+        return options;
+    }, []);
+
+    // Set default value if not set or if it was a saved value that's no longer preferred
+    React.useEffect(() => {
+        const now = new Date();
+        const quarter = getQuarter(now);
+
+        if (!localStorage.getItem('mibudget_selected_period_v2')) {
+            if (quarter === 1) {
+                setSelectedPeriod('This Quarter');
+            } else {
+                setSelectedPeriod('Year to Date');
+            }
+        }
+    }, [setSelectedPeriod]);
 
     return (
-        <div className="flex items-center gap-2">
-            <div className="w-48">
-                <Select value={selectedPeriod} onValueChange={(val: any) => setSelectedPeriod(val)}>
-                    <SelectTrigger className="w-full bg-[var(--background)] shadow-sm border-border">
-                        <Calendar className="w-4 h-4 mr-2 text-muted-foreground" />
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="All">All</SelectItem>
-                        <SelectItem value="This month">This month</SelectItem>
-                        <SelectItem value="Last Month">Last Month</SelectItem>
-                        <SelectItem value="This Quarter">This Quarter</SelectItem>
-                        <SelectItem value="Last Quarter">Last Quarter</SelectItem>
-                        <SelectItem value="Year to Date">Year to Date</SelectItem>
-                        <SelectItem value="This Year">This Year</SelectItem>
-                        <SelectItem value="Last Year">Last Year</SelectItem>
-                        {availableYears.map(year => (
-                            <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-                        ))}
-                        <SelectItem value="Custom">Custom Range...</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
+        <div className="flex flex-col items-center gap-2">
+            <Tabs
+                value={selectedPeriod}
+                onValueChange={(val: any) => setSelectedPeriod(val)}
+                className="w-auto"
+            >
+                <TabsList className="bg-muted/50 p-1 h-12 rounded-full border border-border/50 shadow-sm">
+                    <TabsTrigger
+                        value="All"
+                        className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all font-bold tracking-tight"
+                    >
+                        All
+                    </TabsTrigger>
+                    <TabsTrigger
+                        value="Last Year"
+                        className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all font-bold tracking-tight"
+                    >
+                        Last Year
+                    </TabsTrigger>
+
+                    {specialOptions.map((opt) => (
+                        <TabsTrigger
+                            key={opt.value}
+                            value={opt.value}
+                            className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all font-bold tracking-tight"
+                        >
+                            {opt.label}
+                        </TabsTrigger>
+                    ))}
+
+                    <TabsTrigger
+                        value="Custom"
+                        className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all font-bold tracking-tight gap-2"
+                    >
+                        <Calendar className="w-4 h-4" />
+                        Custom
+                    </TabsTrigger>
+                </TabsList>
+            </Tabs>
+
             {selectedPeriod === 'Custom' && (
-                <div className="animate-in fade-in slide-in-from-left-4 duration-300">
+                <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                     <DatePickerWithRange
                         date={customDateRange}
                         setDate={setCustomDateRange}

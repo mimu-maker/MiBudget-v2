@@ -1,109 +1,98 @@
-import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/formatUtils';
+import { cn } from '@/lib/utils';
+import { TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight, RefreshCcw, Sparkles } from 'lucide-react';
 
 interface BudgetSummaryCardsProps {
-    selectedYear: number;
-    totalBudget: number;
-    totalSpent: number;
-    totalRemaining: number;
-    monthlyContribution: number;
-    projectedIncome: number;
+    currency: string;
+    income: number;
+    expenses: number;
+    slush: number;
+    feeder: number;
 }
 
 export const BudgetSummaryCards = ({
-    selectedYear,
-    totalBudget,
-    totalSpent,
-    totalRemaining,
-    monthlyContribution,
-    projectedIncome
+    currency,
+    income,
+    expenses,
+    slush,
+    feeder
 }: BudgetSummaryCardsProps) => {
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth() + 1; // 1-12
-
-    // Calculate YTD values
-    // If selectedYear is currentYear, use current month, otherwise use 12
-    const isPastYear = selectedYear < currentYear;
-    const projectionMonths = selectedYear === currentYear ? currentMonth : 12;
-    const ytdBudget = monthlyContribution * projectionMonths;
-    const ytdRemaining = ytdBudget - totalSpent;
+    const totalRemaining = income + feeder - expenses - slush;
+    const isPositive = totalRemaining >= 0;
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 mt-4">
-            <Card className="border-t-4 border-t-emerald-500 shadow-md">
-                <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                        Actual Income
-                    </CardTitle>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8 mt-2">
+            {/* 1. Income */}
+            <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-white to-emerald-50/50 dark:from-slate-900 dark:to-emerald-950/10">
+                <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/50 rounded-full" />
+                <CardHeader className="pb-1 pt-4 px-5">
+                    <CardTitle className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-1">Budgeted Income</CardTitle>
                 </CardHeader>
-                <CardContent>
-                    <div className="space-y-1">
-                        <div className="text-2xl font-bold text-emerald-600">{formatCurrency(projectedIncome)}</div>
-                        <div className="text-xs text-gray-500">
-                            Realized from Completed Transactions
-                        </div>
+                <CardContent className="px-5 pb-5">
+                    <div className="text-2xl font-black text-emerald-700 dark:text-emerald-400 tracking-tight">
+                        {formatCurrency(income, currency)}
                     </div>
                 </CardContent>
             </Card>
 
-            <Card className="border-t-4 border-t-blue-500 shadow-md">
-                <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                        Budget {isPastYear ? "" : "(YTD)"}
-                    </CardTitle>
+            {/* 2. Feeder Budgets */}
+            <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-900 dark:to-blue-950/10">
+                <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50 rounded-full" />
+                <CardHeader className="pb-1 pt-4 px-5">
+                    <CardTitle className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-1">Budgeted Feeder</CardTitle>
                 </CardHeader>
-                <CardContent>
-                    <div className="space-y-1">
-                        <div className="text-2xl font-bold text-blue-600">{formatCurrency(ytdBudget)}</div>
-                        <div className="flex flex-col text-xs text-gray-500 gap-0.5">
-                            {!isPastYear && <span>Full Year: {formatCurrency(totalBudget)}</span>}
-                            <span>Monthly: {formatCurrency(monthlyContribution)}</span>
-                        </div>
+                <CardContent className="px-5 pb-5">
+                    <div className="text-2xl font-black text-blue-700 dark:text-blue-400 tracking-tight">
+                        {formatCurrency(feeder, currency)}
                     </div>
                 </CardContent>
             </Card>
 
-            <Card className="border-t-4 border-t-rose-500 shadow-md">
-                <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-bold text-gray-400 uppercase tracking-widest">Actual Spend {isPastYear ? "" : "(YTD)"}</CardTitle>
+            {/* 3. Expenses */}
+            <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-white to-rose-50/50 dark:from-slate-900 dark:to-rose-950/10">
+                <div className="absolute top-0 left-0 w-1 h-full bg-rose-500/50 rounded-full" />
+                <CardHeader className="pb-1 pt-4 px-5">
+                    <CardTitle className="text-[10px] font-black text-rose-600 uppercase tracking-[0.2em] mb-1">Budgeted Expenses</CardTitle>
                 </CardHeader>
-                <CardContent>
-                    <div className="space-y-1">
-                        <div className="text-2xl font-bold text-rose-600">{formatCurrency(totalSpent)}</div>
-                        <div className="text-xs text-gray-500">
-                            Avg Monthly: {formatCurrency(totalSpent / Math.max(projectionMonths, 1))}
-                        </div>
+                <CardContent className="px-5 pb-5">
+                    <div className="text-2xl font-black text-rose-700 dark:text-rose-400 tracking-tight">
+                        {formatCurrency(expenses, currency)}
                     </div>
                 </CardContent>
             </Card>
 
-            <Card className={`border-t-4 ${ytdRemaining >= 0 ? 'border-t-emerald-500' : 'border-t-rose-500'} shadow-md transition-all duration-300`}>
-                <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-bold text-gray-400 uppercase tracking-widest flex justify-between items-center">
-                        Remaining {isPastYear ? "" : "(YTD)"}
-                        {ytdRemaining < 0 ? (
-                            <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full font-black">OVER</span>
-                        ) : (
-                            <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-black">UNDER</span>
-                        )}
+            {/* 4. Slush Fund */}
+            <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-slate-900 dark:to-purple-950/10">
+                <div className="absolute top-0 left-0 w-1 h-full bg-purple-500/50 rounded-full" />
+                <CardHeader className="pb-1 pt-4 px-5">
+                    <CardTitle className="text-[10px] font-black text-purple-600 uppercase tracking-[0.2em] mb-1">Budgeted Slush</CardTitle>
+                </CardHeader>
+                <CardContent className="px-5 pb-5">
+                    <div className="text-2xl font-black text-purple-700 dark:text-purple-400 tracking-tight">
+                        {formatCurrency(slush, currency)}
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* 5. Total Remaining */}
+            <Card className={cn(
+                "relative overflow-hidden border-none shadow-xl transition-all duration-500",
+                isPositive
+                    ? "bg-gradient-to-br from-emerald-600 via-emerald-500 to-teal-600 text-white"
+                    : "bg-gradient-to-br from-rose-600 via-rose-500 to-orange-600 text-white"
+            )}>
+                <CardHeader className="pb-1 pt-4 px-5 text-center">
+                    <CardTitle className="text-[10px] font-black text-white/80 uppercase tracking-[0.2em] mb-1 flex justify-center items-center gap-2">
+                        Remaining
+                        <span className="bg-white/20 text-white text-[8px] font-black px-1.5 h-4 rounded flex items-center">
+                            {isPositive ? "SURPLUS" : "DEFICIT"}
+                        </span>
                     </CardTitle>
                 </CardHeader>
-                <CardContent>
-                    <div className="space-y-1">
-                        <div className={`text-2xl font-bold ${ytdRemaining >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {formatCurrency(ytdRemaining)}
-                        </div>
-                        <div className="flex flex-col text-xs text-gray-400 font-medium gap-0.5">
-                            <span className={ytdRemaining < 0 ? 'text-rose-400' : ''}>
-                                {ytdRemaining < 0
-                                    ? `${formatCurrency(Math.abs(ytdRemaining))} over ${isPastYear ? 'target' : 'YTD target'}`
-                                    : `${formatCurrency(ytdRemaining)} ahead of target`
-                                }
-                            </span>
-                            {!isPastYear && <span>Full Year Remaining: {formatCurrency(totalRemaining)}</span>}
-                        </div>
+                <CardContent className="px-5 pb-5 text-center">
+                    <div className="text-2xl font-black tracking-tighter">
+                        {formatCurrency(totalRemaining, currency)}
                     </div>
                 </CardContent>
             </Card>

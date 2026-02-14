@@ -1,9 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from '@/components/ui/select';
+import { CategorySelector } from '@/components/Budget/CategorySelector';
 import { NewTransactionForm, RecurringInterval } from '@/types/projection';
-import { useMerchants } from '@/hooks/useMerchants';
+import { useSources } from '@/hooks/useSources';
 import { useBudgetCategoriesManager } from '@/hooks/useBudgetCategories';
 import { useState, useMemo } from 'react';
 import { ClipboardPaste } from 'lucide-react';
@@ -27,9 +28,9 @@ const AddTransactionFormV2 = ({
     onCancel,
     onPasteClick
 }: AddTransactionFormV2Props) => {
-    const { data: merchants = [] } = useMerchants();
+    const { data: sources = [] } = useSources();
     const { categories } = useBudgetCategoriesManager();
-    const [showNewMerchant, setShowNewMerchant] = useState(false);
+    const [showNewSource, setShowNewSource] = useState(false);
     const [showNewStream, setShowNewStream] = useState(false);
 
     // Custom/Local stream storage for additions within session is replaced by direct string input for 'new'
@@ -79,13 +80,13 @@ const AddTransactionFormV2 = ({
         'July', 'August', 'September', 'October', 'November', 'December'
     ];
 
-    const handleMerchantChange = (value: string) => {
+    const handleSourceChange = (value: string) => {
         if (value === '__new__') {
-            setShowNewMerchant(true);
-            onTransactionChange({ merchant: '' });
+            setShowNewSource(true);
+            onTransactionChange({ source: '' });
         } else {
-            setShowNewMerchant(false);
-            onTransactionChange({ merchant: value });
+            setShowNewSource(false);
+            onTransactionChange({ source: value });
         }
     };
 
@@ -235,18 +236,20 @@ const AddTransactionFormV2 = ({
                 <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                         <label className="block text-sm font-medium mb-1">Category</label>
-                        <Select value={newTransaction.category} onValueChange={(value) => {
-                            onTransactionChange({ category: value, stream: '' }); // Reset stream when category changes
-                        }}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select Category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {availableCategories.map(c => (
-                                    <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                        <CategorySelector
+                            value={newTransaction.category}
+                            onValueChange={(value) => {
+                                if (value.includes(':')) {
+                                    const [cat, sub] = value.split(':');
+                                    onTransactionChange({ category: cat, stream: sub });
+                                } else {
+                                    onTransactionChange({ category: value, stream: '' }); // Reset stream when category changes
+                                }
+                            }}
+                            type={transactionType === 'income' ? 'income' : 'expense'}
+                            suggestionLimit={3}
+                            className="h-10 shadow-sm"
+                        />
                     </div>
 
                     <div>
@@ -286,27 +289,27 @@ const AddTransactionFormV2 = ({
 
                 <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
-                        <label className="block text-sm font-medium mb-1">Merchant</label>
-                        {showNewMerchant ? (
+                        <label className="block text-sm font-medium mb-1">Source</label>
+                        {showNewSource ? (
                             <div className="flex gap-2">
                                 <Input
-                                    value={newTransaction.merchant}
-                                    onChange={(e) => onTransactionChange({ merchant: e.target.value })}
-                                    placeholder="Enter merchant name"
+                                    value={newTransaction.source}
+                                    onChange={(e) => onTransactionChange({ source: e.target.value })}
+                                    placeholder="Enter source name"
                                     autoFocus
                                 />
-                                <Button variant="outline" size="sm" onClick={() => setShowNewMerchant(false)}>Cancel</Button>
+                                <Button variant="outline" size="sm" onClick={() => setShowNewSource(false)}>Cancel</Button>
                             </div>
                         ) : (
-                            <Select value={newTransaction.merchant} onValueChange={handleMerchantChange}>
+                            <Select value={newTransaction.source} onValueChange={handleSourceChange}>
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Select merchant (optional)" />
+                                    <SelectValue placeholder="Select source (optional)" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="__new__">+ Add New Merchant</SelectItem>
-                                    {merchants.map(merchant => (
-                                        <SelectItem key={merchant} value={merchant}>
-                                            {merchant}
+                                    <SelectItem value="__new__">+ Add New Source</SelectItem>
+                                    {sources.map(source => (
+                                        <SelectItem key={source} value={source}>
+                                            {source}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>

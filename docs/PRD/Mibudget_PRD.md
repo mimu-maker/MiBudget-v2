@@ -13,6 +13,10 @@ MiBudget is not just a tracker; it is a **single source of truth** for a shared 
 *   **Temporal**: YY/MM/DD format, Copenhagen (CET) timezone.
 *   **Accessibility**: High-contrast, interactive dashboards optimized for desktop oversight.
 
+### 🎨 Design Philosophy
+*   **Inspiration Source**: [Tailwind UI Plus Application UI](https://tailwindcss.com/plus/ui-blocks/application-ui) is the primary reference for **new element** design.
+*   **Knowledge Base**: See `docs/UI_KNOWLEDGE_BASE.md` for specific patterns and bookmarks.
+*   **Consistency**: Prioritize "Application UI" layouts (dashboards, tables, forms) to maintain a premium financial OS feel.
 ---
 
 ## 🏛️ Strategic Architecture

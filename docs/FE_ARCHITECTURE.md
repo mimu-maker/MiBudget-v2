@@ -38,8 +38,13 @@ Components like `UnifiedCategoryManager` should support a "Local Fallback" mode 
 - Implemented robust `handleAddSubInline` logic that works in both modes.
 
 ### Hierarchy & Naming
-- Categories and Sub-categories are linked via `category_id`.
 - Transactions store the *names* of categories/sub-categories for resilience/flexibility (though this requires careful renaming logic).
+
+### 4. Consistent Data Selection
+To ensure a uniform user experience, all category and sub-category selections must use the standard grouping and sorting logic.
+- **Hook**: Use `useGroupedCategories` to fetch categories organized by type (Income, Feeder, Expense) and alphabetically sorted.
+- **Component**: Use `CategorySelectContent` within Radix `SelectContent` to render the standard grouped dropdown structure.
+- **Filtering**: When a transaction type is known (e.g., amount > 0 or < 0), pass the `type` prop to filter the available categories.
 
 ## Troubleshooting "Missing Data"
 If categories or sub-categories are missing in the UI:

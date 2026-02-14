@@ -11,9 +11,11 @@ interface SourceNameSelectorProps {
     value: string;
     onChange: (value: string) => void;
     className?: string;
+    hideAddNew?: boolean;
+    disabled?: boolean;
 }
 
-export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, onChange, className }) => {
+export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, onChange, className, hideAddNew, disabled }) => {
     const [open, setOpen] = useState(false);
     const [searchValue, setSearchValue] = useState("");
 
@@ -92,8 +94,10 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
                 <Button
                     variant="outline"
                     role="combobox"
+                    disabled={disabled}
                     aria-expanded={open}
                     className={cn("w-full justify-between bg-white font-bold text-blue-600 h-10 border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all", className)}
+                    onFocus={() => setOpen(true)}
                 >
                     <span className="truncate">
                         {value || "Select or search resolved source..."}
@@ -111,7 +115,7 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
                     />
                     <CommandList className="max-h-[300px]">
                         <CommandEmpty className="p-0">
-                            {searchValue && (
+                            {searchValue && !hideAddNew && (
                                 <div className="p-2 border-t border-slate-50 bg-slate-50/50">
                                     <Button
                                         variant="ghost"
@@ -128,27 +132,44 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
                                     </Button>
                                 </div>
                             )}
-                            {!searchValue && (
+                            {(hideAddNew || !searchValue) && (
                                 <div className="p-4 text-center text-xs text-slate-400 italic">
                                     Type to search...
                                 </div>
                             )}
                         </CommandEmpty>
 
-                        <CommandGroup heading="Actions" className="p-1 border-b border-slate-50">
-                            <CommandItem
-                                value="USER_INTENT_ADD_NEW"
-                                onSelect={() => {
-                                    onChange(""); // Empty string triggers new source flow with blank name
-                                    setOpen(false);
-                                    setSearchValue("");
-                                }}
-                                className="rounded-md cursor-pointer bg-blue-50 text-blue-700 font-bold hover:bg-blue-600 hover:text-white transition-colors my-1"
-                            >
-                                <Plus className="mr-2 h-4 w-4" />
-                                Add New Source
-                            </CommandItem>
-                        </CommandGroup>
+                        {!hideAddNew && (
+                            <CommandGroup className="p-1 border-b border-slate-50">
+                                {searchValue && !rankedSources.some(m => m.name.toLowerCase() === searchValue.toLowerCase()) ? (
+                                    <CommandItem
+                                        value={searchValue}
+                                        onSelect={() => {
+                                            onChange(searchValue);
+                                            setOpen(false);
+                                            setSearchValue("");
+                                        }}
+                                        className="rounded-md cursor-pointer bg-blue-600 text-white font-black hover:bg-blue-700 transition-colors my-1"
+                                    >
+                                        <Plus className="mr-2 h-4 w-4" />
+                                        Add "{searchValue}"
+                                    </CommandItem>
+                                ) : (
+                                    <CommandItem
+                                        value="USER_INTENT_ADD_NEW"
+                                        onSelect={() => {
+                                            onChange(""); // Empty string triggers new source flow with blank name
+                                            setOpen(false);
+                                            setSearchValue("");
+                                        }}
+                                        className="rounded-md cursor-pointer bg-blue-50 text-blue-700 font-bold hover:bg-blue-600 hover:text-white transition-colors my-1"
+                                    >
+                                        <Plus className="mr-2 h-4 w-4" />
+                                        Add New Source Name
+                                    </CommandItem>
+                                )}
+                            </CommandGroup>
+                        )}
 
                         {displayedSources.length > 0 && (
                             <CommandGroup heading={searchValue ? "Matching Sources" : "Top Suggestions"} className="p-1">
@@ -181,23 +202,6 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
                                         </p>
                                     </div>
                                 )}
-                            </CommandGroup>
-                        )}
-
-                        {searchValue && !rankedSources.some(m => m.name.toLowerCase() === searchValue.toLowerCase()) && (
-                            <CommandGroup heading="New Name" className="p-1 border-t border-slate-50">
-                                <CommandItem
-                                    value={searchValue}
-                                    onSelect={() => {
-                                        onChange(searchValue);
-                                        setOpen(false);
-                                        setSearchValue("");
-                                    }}
-                                    className="rounded-md cursor-pointer bg-blue-50 text-blue-700 font-bold hover:bg-blue-600 hover:text-white transition-colors"
-                                >
-                                    <Plus className="mr-2 h-4 w-4" />
-                                    Add Source Display Name: "{searchValue}"
-                                </CommandItem>
                             </CommandGroup>
                         )}
                     </CommandList>

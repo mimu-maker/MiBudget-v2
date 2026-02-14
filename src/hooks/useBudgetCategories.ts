@@ -340,17 +340,34 @@ const useCategoryMutations = (profileId?: string, budgetId?: string | null) => {
 
       if (!bid) throw new Error('Missing budget id');
 
-      const { error } = await supabase.from('budget_category_limits').upsert({
-        budget_id: bid,
-        category_id: categoryId,
-        sub_category_id: subCategoryId || null,
-        limit_amount: amount,
-        is_active: true
-      }, {
-        onConflict: subCategoryId ? 'budget_id,sub_category_id' : 'budget_id,category_id'
-      });
+      let query = supabase.from('budget_category_limits').select('id').eq('budget_id', bid).eq('category_id', categoryId);
 
-      if (error) throw error;
+      if (subCategoryId) {
+        query = query.eq('sub_category_id', subCategoryId);
+      } else {
+        query = query.is('sub_category_id', null);
+      }
+
+      const { data: existing, error: fetchError } = await query.maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      if (existing) {
+        const { error } = await supabase.from('budget_category_limits').update({
+          limit_amount: amount,
+          is_active: true
+        }).eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('budget_category_limits').insert({
+          budget_id: bid,
+          category_id: categoryId,
+          sub_category_id: subCategoryId || null,
+          limit_amount: amount,
+          is_active: true
+        });
+        if (error) throw error;
+      }
     },
     onSuccess: invalidate
   });

@@ -8,7 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Transaction } from './hooks/useTransactionTable';
 import { useSettings } from '@/hooks/useSettings';
-import { useCategorySource } from '@/hooks/useBudgetCategories';
+import { useCategorySource, useUnifiedCategoryActions } from '@/hooks/useBudgetCategories';
+import { CategorySelector } from '@/components/Budget/CategorySelector';
+import { SmartSelector } from '@/components/ui/smart-selector';
 
 interface BulkEditDialogProps {
     open: boolean;
@@ -23,17 +25,17 @@ export const BulkEditDialog = ({
     onApply,
     selectedCount,
 }: BulkEditDialogProps) => {
-    const { settings, addSubCategory } = useSettings();
+    const { settings } = useSettings();
+    const { addCategory, addSubCategory } = useUnifiedCategoryActions();
     const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
     const [enabledFields, setEnabledFields] = useState<Record<string, boolean>>({
         status: false,
         budget: false,
         category: false,
         sub_category: false,
-        planned: false,
-        recurring: false,
-        merchant: false,
-        description: false,
+        unplanned: false,
+        source: false,
+        notes: false,
     });
 
     const [values, setValues] = useState<Partial<Transaction>>({
@@ -42,24 +44,37 @@ export const BulkEditDialog = ({
         category: '',
         sub_category: '',
         planned: false,
-        recurring: 'N/A', // Changed from boolean to string
-        merchant: '',
-        description: '',
+        source: '',
+        notes: '',
     });
 
     const handleToggleField = (field: string) => {
         setEnabledFields(prev => ({ ...prev, [field]: !prev[field] }));
     };
 
-    const handleCategoryChange = (newCategory: string) => {
-        setValues(prev => ({ ...prev, category: newCategory, sub_category: '' }));
+    const handleCategoryChange = async (newCategory: string) => {
+        if (newCategory === 'add-new') {
+            const name = prompt("Enter new category name:");
+            if (name) {
+                await addCategory(name);
+                setValues(prev => ({ ...prev, category: name, sub_category: '' }));
+            }
+            return;
+        }
+
+        if (newCategory.includes(':')) {
+            const [cat, sub] = newCategory.split(':');
+            setValues(prev => ({ ...prev, category: cat, sub_category: sub }));
+        } else {
+            setValues(prev => ({ ...prev, category: newCategory, sub_category: '' }));
+        }
     };
 
-    const handleSubCategoryChange = (newValue: string) => {
+    const handleSubCategoryChange = async (newValue: string) => {
         if (newValue === 'add-new') {
             const newSubCategory = prompt('Enter new sub-category:');
             if (newSubCategory && values.category) {
-                addSubCategory(values.category, newSubCategory);
+                await addSubCategory(values.category, newSubCategory);
                 setValues(prev => ({ ...prev, sub_category: newSubCategory }));
             }
         } else {
@@ -67,11 +82,16 @@ export const BulkEditDialog = ({
         }
     };
 
+
     const handleApply = () => {
         const updates: Partial<Transaction> = {};
         (Object.keys(enabledFields) as (keyof typeof enabledFields)[]).forEach(field => {
             if (enabledFields[field]) {
-                (updates as any)[field] = values[field as keyof Transaction];
+                if (field === 'unplanned') {
+                    updates.planned = values.planned;
+                } else {
+                    (updates as any)[field] = values[field as keyof Transaction];
+                }
             }
         });
         onApply(updates);
@@ -86,39 +106,39 @@ export const BulkEditDialog = ({
                 </DialogHeader>
                 <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
                     <div className="space-y-4">
-                        {/* Merchant */}
+                        {/* Source */}
                         <div className="flex items-center space-x-4">
                             <Checkbox
-                                id="edit-merchant"
-                                checked={enabledFields.merchant}
-                                onCheckedChange={() => handleToggleField('merchant')}
+                                id="edit-source"
+                                checked={enabledFields.source}
+                                onCheckedChange={() => handleToggleField('source')}
                             />
                             <div className="grid flex-1 gap-1.5">
-                                <Label htmlFor="merchant">Merchant</Label>
+                                <Label htmlFor="source">Source</Label>
                                 <Input
-                                    id="merchant"
-                                    disabled={!enabledFields.merchant}
-                                    value={values.merchant}
-                                    onChange={(e) => setValues({ ...values, merchant: e.target.value })}
+                                    id="source"
+                                    disabled={!enabledFields.source}
+                                    value={values.source}
+                                    onChange={(e) => setValues({ ...values, source: e.target.value })}
                                     placeholder="e.g. Amazon"
                                 />
                             </div>
                         </div>
 
-                        {/* Description */}
+                        {/* Notes */}
                         <div className="flex items-center space-x-4">
                             <Checkbox
-                                id="edit-description"
-                                checked={enabledFields.description}
-                                onCheckedChange={() => handleToggleField('description')}
+                                id="edit-notes"
+                                checked={enabledFields.notes}
+                                onCheckedChange={() => handleToggleField('notes')}
                             />
                             <div className="grid flex-1 gap-1.5">
-                                <Label htmlFor="description">Description</Label>
+                                <Label htmlFor="notes">Notes</Label>
                                 <Input
-                                    id="description"
-                                    disabled={!enabledFields.description}
-                                    value={values.description}
-                                    onChange={(e) => setValues({ ...values, description: e.target.value })}
+                                    id="notes"
+                                    disabled={!enabledFields.notes}
+                                    value={values.notes}
+                                    onChange={(e) => setValues({ ...values, notes: e.target.value })}
                                     placeholder="Details..."
                                 />
                             </div>
@@ -142,8 +162,9 @@ export const BulkEditDialog = ({
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="Complete">Complete</SelectItem>
-                                        <SelectItem value="Pending">Pending</SelectItem>
-                                        <SelectItem value="New">New</SelectItem>
+                                        <SelectItem value="Pending Triage">Pending Triage</SelectItem>
+                                        <SelectItem value="Pending Reconciliation">Pending Reconciliation</SelectItem>
+                                        <SelectItem value="Review Needed">Review Needed</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -184,20 +205,14 @@ export const BulkEditDialog = ({
                             />
                             <div className="grid flex-1 gap-1.5">
                                 <Label htmlFor="category">Category</Label>
-                                <Select
+                                <CategorySelector
                                     disabled={!enabledFields.category}
                                     value={values.category}
                                     onValueChange={handleCategoryChange}
-                                >
-                                    <SelectTrigger id="category">
-                                        <SelectValue placeholder="Select category" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {displayCategories.map(cat => (
-                                            <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                    type="all"
+                                    suggestionLimit={3}
+                                    onAddCategory={() => { }}
+                                />
                             </div>
                         </div>
 
@@ -210,74 +225,37 @@ export const BulkEditDialog = ({
                             />
                             <div className="grid flex-1 gap-1.5">
                                 <Label htmlFor="sub_category">Sub-category</Label>
-                                <Select
+                                <SmartSelector
                                     disabled={!enabledFields.sub_category || !values.category}
                                     value={values.sub_category}
                                     onValueChange={handleSubCategoryChange}
-                                >
-                                    <SelectTrigger id="sub_category">
-                                        <SelectValue placeholder={values.category ? "Select sub-category" : "Select a category first"} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {displaySubCategories?.[values.category || '']?.map(sub => (
-                                            <SelectItem key={sub} value={sub}>{sub}</SelectItem>
-                                        ))}
-                                        {values.category && (
-                                            <SelectItem value="add-new" className="text-blue-600 font-medium">
-                                                + Add New Sub-category
-                                            </SelectItem>
-                                        )}
-                                    </SelectContent>
-                                </Select>
+                                    options={[
+                                        ...(displaySubCategories?.[values.category || '']?.map(sub => ({ label: sub, value: sub })) || []),
+                                        ...(values.category ? [{ label: '+ Add New Sub-category', value: 'add-new' }] : [])
+                                    ]}
+                                    placeholder={values.category ? "Select sub-category" : "Select a category first"}
+                                />
                             </div>
                         </div>
 
                         {/* Planned */}
                         <div className="flex items-center space-x-4">
                             <Checkbox
-                                id="edit-planned"
-                                checked={enabledFields.planned}
-                                onCheckedChange={() => handleToggleField('planned')}
+                                id="edit-unplanned"
+                                checked={enabledFields.unplanned}
+                                onCheckedChange={() => handleToggleField('unplanned')}
                             />
                             <div className="flex items-center space-x-2">
                                 <Checkbox
-                                    id="planned"
-                                    disabled={!enabledFields.planned}
-                                    checked={values.planned}
-                                    onCheckedChange={(v) => setValues({ ...values, planned: !!v })}
+                                    id="unplanned"
+                                    disabled={!enabledFields.unplanned}
+                                    checked={!values.planned}
+                                    onCheckedChange={(v) => setValues({ ...values, planned: !v })}
                                 />
-                                <Label htmlFor="planned">Unplanned transaction</Label>
+                                <Label htmlFor="unplanned">Mark as Unplanned</Label>
                             </div>
                         </div>
 
-                        <div className="flex items-center space-x-4">
-                            <Checkbox
-                                id="edit-recurring"
-                                checked={enabledFields.recurring}
-                                onCheckedChange={() => handleToggleField('recurring')}
-                            />
-                            <div className="grid flex-1 gap-1.5">
-                                <Label htmlFor="recurring">Recurring</Label>
-                                <Select
-                                    disabled={!enabledFields.recurring}
-                                    value={values.recurring}
-                                    onValueChange={(v) => setValues({ ...values, recurring: v })}
-                                >
-                                    <SelectTrigger id="recurring">
-                                        <SelectValue placeholder="Select frequency" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="Annually">Annually</SelectItem>
-                                        <SelectItem value="Bi-annually">Bi-annually</SelectItem>
-                                        <SelectItem value="Quarterly">Quarterly</SelectItem>
-                                        <SelectItem value="Monthly">Monthly</SelectItem>
-                                        <SelectItem value="Weekly">Weekly</SelectItem>
-                                        <SelectItem value="One-off">One-off</SelectItem>
-                                        <SelectItem value="N/A">N/A</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
                     </div>
                 </div>
                 <DialogFooter>

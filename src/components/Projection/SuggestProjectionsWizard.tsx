@@ -8,7 +8,7 @@ import { FutureTransaction, RecurringInterval } from '@/types/projection';
 import { formatCurrency } from '@/lib/formatUtils';
 import { Sparkles, Check, X, RefreshCw, Trash2, Edit2 } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
-import { useMerchants } from '@/hooks/useMerchants';
+import { useSources } from '@/hooks/useSources';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -17,8 +17,8 @@ import React, { useMemo } from 'react';
 
 interface Suggestion {
     id: string;
-    merchant: string;      // This will be the "Display Name" (clean)
-    rawMerchant: string;   // This is the original "Input Name"
+    source: string;      // This will be the "Display Name" (clean)
+    rawSource: string;   // This is the original "Input Name"
     amount: number;
     interval: RecurringInterval;
     count: number;
@@ -38,7 +38,7 @@ interface SuggestProjectionsWizardProps {
 
 const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestProjectionsWizardProps) => {
     const { settings } = useSettings();
-    const { data: cleanMerchantsData = [] } = useMerchants();
+    const { data: cleanSourcesData = [] } = useSources();
     const { budget } = useAnnualBudget(new Date().getFullYear());
     const [loading, setLoading] = useState(false);
     const [progress, setProgress] = useState(0);
@@ -54,23 +54,23 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
         try {
             const { data: transactions, error } = await supabase
                 .from('transactions')
-                .select('merchant, clean_merchant, amount, date, category, sub_category')
+                .select('source, clean_source, amount, date, category, sub_category')
                 .order('date', { ascending: false });
 
             if (error) throw error;
 
-            const groupsMap: Record<string, { merchant: string; rawMerchant: string; amount: number; dates: string[]; category: string; subCategory: string }> = {};
+            const groupsMap: Record<string, { source: string; rawSource: string; amount: number; dates: string[]; category: string; subCategory: string }> = {};
 
             transactions?.forEach(t => {
-                const cleanName = t.clean_merchant || '';
-                const rawName = t.merchant;
+                const cleanName = t.clean_source || '';
+                const rawName = t.source;
                 const displayName = cleanName || rawName;
 
                 const key = `${displayName}_${Math.round(t.amount)}`;
                 if (!groupsMap[key]) {
                     groupsMap[key] = {
-                        merchant: cleanName,
-                        rawMerchant: rawName,
+                        source: cleanName,
+                        rawSource: rawName,
                         amount: Number(t.amount),
                         dates: [],
                         category: t.category || 'Food',
@@ -124,8 +124,8 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
                     if (interval !== 'N/A') {
                         chunkSuggestions.push({
                             id: Math.random().toString(36).substr(2, 9),
-                            merchant: group.merchant,
-                            rawMerchant: group.rawMerchant,
+                            source: group.source,
+                            rawSource: group.rawSource,
                             amount: group.amount,
                             interval,
                             count: group.dates.length,
@@ -176,14 +176,14 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
         const toAdd: FutureTransaction[] = selectedSuggestions.map(s => ({
             id: Date.now() + Math.random(),
             date: new Date().toISOString().slice(0, 10),
-            merchant: s.merchant || s.rawMerchant,
+            source: s.source || s.rawSource,
             amount: s.amount,
             category: s.category,
-            stream: s.subCategory || s.merchant || s.rawMerchant,
+            stream: s.subCategory || s.source || s.rawSource,
             planned: true,
             recurring: s.interval,
             budget_year: new Date().getFullYear(),
-            description: `Auto-suggested (Raw: ${s.rawMerchant})`
+            description: `Auto-suggested (Raw: ${s.rawSource})`
         }));
 
         // 2. Save Rules if checked
@@ -191,8 +191,8 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
         if (rulesToSave.length > 0) {
             const { data: userData } = await supabase.auth.getUser();
             const payload = rulesToSave.map(s => ({
-                merchant_name: s.rawMerchant,
-                clean_merchant_name: s.merchant || s.rawMerchant,
+                source_name: s.rawSource,
+                clean_source_name: s.source || s.rawSource,
                 auto_category: s.category,
                 auto_sub_category: s.subCategory,
                 auto_recurring: s.interval,
@@ -201,7 +201,7 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
                 user_id: userData.user?.id
             }));
 
-            await supabase.from('merchant_rules').insert(payload);
+            await supabase.from('source_rules').insert(payload);
         }
 
         onAddProjections(toAdd);
@@ -282,14 +282,14 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
                                                         <div className="space-y-1">
                                                             <label className="text-[10px] uppercase font-bold text-muted-foreground">Display Name</label>
                                                             <Select
-                                                                value={s.merchant}
-                                                                onValueChange={(val) => updateSuggestion(s.id, { merchant: val })}
+                                                                value={s.source}
+                                                                onValueChange={(val) => updateSuggestion(s.id, { source: val })}
                                                             >
                                                                 <SelectTrigger className="h-8 py-0">
                                                                     <SelectValue placeholder="Select name" />
                                                                 </SelectTrigger>
                                                                 <SelectContent>
-                                                                    {cleanMerchantsData.map(m => (
+                                                                    {cleanSourcesData.map(m => (
                                                                         <SelectItem key={m} value={m}>{m}</SelectItem>
                                                                     ))}
                                                                     <SelectItem value="__new__">+ New Name</SelectItem>
@@ -351,7 +351,7 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
                                                             </Select>
                                                         </div>
                                                     </div>
-                                                    <p className="text-[10px] text-muted-foreground italic">Input: {s.rawMerchant}</p>
+                                                    <p className="text-[10px] text-muted-foreground italic">Input: {s.rawSource}</p>
                                                     <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100">
                                                         <Checkbox
                                                             id={`save-rule-${s.id}`}
@@ -359,16 +359,16 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
                                                             onCheckedChange={(val) => updateSuggestion(s.id, { saveAsRule: val === true })}
                                                         />
                                                         <Label htmlFor={`save-rule-${s.id}`} className="text-[10px] font-bold text-slate-500 uppercase cursor-pointer">
-                                                            Save as Merchant Rule (Auto-approve)
+                                                            Save as Source Rule (Auto-approve)
                                                         </Label>
                                                     </div>
                                                 </div>
                                             ) : (
                                                 <div className="flex flex-col">
                                                     <span className="font-bold text-lg">
-                                                        {s.merchant || s.rawMerchant}
-                                                        {s.merchant && s.merchant !== s.rawMerchant && (
-                                                            <span className="ml-2 text-xs font-normal text-muted-foreground">({s.rawMerchant})</span>
+                                                        {s.source || s.rawSource}
+                                                        {s.source && s.source !== s.rawSource && (
+                                                            <span className="ml-2 text-xs font-normal text-muted-foreground">({s.rawSource})</span>
                                                         )}
                                                     </span>
                                                     <div className="flex items-center gap-2">

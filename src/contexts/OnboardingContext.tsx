@@ -23,7 +23,7 @@ export interface ColumnMapping {
 export interface IncomeStream {
   id?: string;
   name: string;
-  merchantPattern?: string;
+  sourcePattern?: string;
   expectedAmount?: number;
   frequency: 'monthly' | 'bi-weekly' | 'weekly' | 'yearly' | 'quarterly';
   isActive: boolean;
@@ -98,7 +98,7 @@ export interface OnboardingContextType extends OnboardingState {
   nextPhase: () => void;
   previousPhase: () => void;
   goToPhase: (phase: number) => void;
-  
+
   // Phase-specific actions
   updatePreferences: (preferences: Partial<UserPreferences>) => void;
   setImportData: (data: ImportData) => void;
@@ -108,13 +108,13 @@ export interface OnboardingContextType extends OnboardingState {
   removeIncomeStream: (id: string) => void;
   addCategory: (category: Category) => void;
   updateBudget: (budget: Budget) => void;
-  
+
   // Progress management
   saveProgress: () => Promise<void>;
   loadProgress: () => Promise<void>;
   completeOnboarding: () => Promise<void>;
   abortOnboarding: () => void;
-  
+
   // Validation
   validateCurrentPhase: () => boolean;
   getPhaseProgress: () => number;
@@ -135,9 +135,9 @@ interface OnboardingProviderProps {
   userProfile: any; // From AuthContext
 }
 
-export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ 
-  children, 
-  userProfile 
+export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({
+  children,
+  userProfile
 }) => {
   const [state, setState] = useState<OnboardingState>({
     currentPhase: 1,
@@ -207,7 +207,7 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({
   const updateColumnMapping = useCallback((mapping: ColumnMapping) => {
     setState(prev => ({
       ...prev,
-      columnMappings: prev.columnMappings.map(m => 
+      columnMappings: prev.columnMappings.map(m =>
         m.sourceColumn === mapping.sourceColumn ? mapping : m
       )
     }));
@@ -223,7 +223,7 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({
   const updateIncomeStream = useCallback((id: string, updates: Partial<IncomeStream>) => {
     setState(prev => ({
       ...prev,
-      incomeStreams: prev.incomeStreams.map(stream => 
+      incomeStreams: prev.incomeStreams.map(stream =>
         stream.id === id ? { ...stream, ...updates } : stream
       )
     }));
@@ -246,7 +246,7 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({
   const updateBudget = useCallback((budget: Budget) => {
     setState(prev => ({
       ...prev,
-      budgets: prev.budgets.map(b => 
+      budgets: prev.budgets.map(b =>
         b.id === budget.id ? budget : b
       )
     }));
@@ -327,7 +327,7 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({
       // Update user profile to mark setup as complete
       const { error: profileError } = await (supabase as any)
         .from('user_profiles')
-        .update({ 
+        .update({
           is_setup_complete: true,
           onboarding_step: 7,
           date_format: state.userPreferences.dateFormat,
@@ -383,8 +383,8 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({
       case 3:
         if (!state.importData) return false;
         // Check if mandatory columns are mapped
-        const mandatoryColumns = ['merchant', 'date', 'amount'];
-        return mandatoryColumns.every(col => 
+        const mandatoryColumns = ['source', 'date', 'amount'];
+        return mandatoryColumns.every(col =>
           state.columnMappings.some(m => m.targetField === col)
         );
       case 4:

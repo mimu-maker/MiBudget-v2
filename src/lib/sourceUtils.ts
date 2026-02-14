@@ -5,14 +5,15 @@ import { cleanSource } from "./importBrain";
 export interface SimilarTransactionMatch {
     transaction: Transaction;
     score: number;
-    matchType: 'exact_name' | 'contains_name' | 'none';
+    matchType: 'direct' | 'fuzzy' | 'none';
 }
 
 export const findSimilarTransactions = (
     currentTransaction: Transaction,
     allTransactions: Transaction[],
     inputName: string,
-    matchMode: 'exact' | 'fuzzy' = 'fuzzy'
+    matchMode: 'exact' | 'fuzzy' = 'fuzzy',
+    noiseFilters: string[] = []
 ): SimilarTransactionMatch[] => {
     if (!inputName) return [];
 
@@ -25,31 +26,35 @@ export const findSimilarTransactions = (
             let score = 0;
             let matchType: SimilarTransactionMatch['matchType'] = 'none';
 
-            const tSource = (t.source || "").toLowerCase();
-            const tClean = (t.clean_source || cleanSource(t.source) || "").toLowerCase();
+            const tSource = (t.source || "").toLowerCase().trim();
+            const tClean = (t.clean_source || cleanSource(t.source, noiseFilters) || "").toLowerCase().trim();
 
             // 1. Name Matching
-            if (tSource === normalizedInput || tClean === normalizedInput) {
+            // Direct matches are identical raw sources
+            if (tSource === currentTransaction.source.toLowerCase().trim()) {
                 score = 100;
-                matchType = 'exact_name';
+                matchType = 'direct';
+            } else if (tSource === normalizedInput || tClean === normalizedInput) {
+                score = 90;
+                matchType = 'fuzzy';
             } else if (matchMode === 'fuzzy' && (tSource.includes(normalizedInput) || normalizedInput.includes(tSource))) {
                 score = 60;
-                matchType = 'contains_name';
+                matchType = 'fuzzy';
             }
 
-            // 2. Amount Similarity (Added only if name matched or if we want fuzzy discovery)
+            // 2. Amount Similarity (Added only if name matched)
             if (matchType !== 'none') {
                 const tAmount = Math.abs(t.amount);
-                if (currentAmount > 0 && Math.abs(tAmount - currentAmount) < 0.05) {
-                    score += 20;
-                } else if (currentAmount > 0 && Math.abs(tAmount - currentAmount) / currentAmount < 0.1) {
-                    score += 10;
+                if (currentAmount > 0 && Math.abs(tAmount - currentAmount) < 0.01) {
+                    score += 10; // Exact amount match is strong signal
+                } else if (currentAmount > 0 && Math.abs(tAmount - currentAmount) < 0.05) {
+                    score += 5;
                 }
             }
 
             // Filter out low scores or non-matches in exact mode
             if (score === 0) return null;
-            if (matchMode === 'exact' && matchType !== 'exact_name') return null;
+            if (matchMode === 'exact' && matchType !== 'direct' && tSource !== normalizedInput) return null;
 
             return {
                 transaction: t,
@@ -58,7 +63,12 @@ export const findSimilarTransactions = (
             };
         })
         .filter((item): item is SimilarTransactionMatch => item !== null)
-        .sort((a, b) => b.score - a.score);
+        .sort((a, b) => {
+            // Sort by match type first (direct matches top), then score
+            if (a.matchType === 'direct' && b.matchType !== 'direct') return -1;
+            if (a.matchType !== 'direct' && b.matchType === 'direct') return 1;
+            return b.score - a.score;
+        });
 
     return matches;
 };

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
 
 export const EmergencyDataManagement = () => {
-    const { emergencyClearAll } = useTransactionTable();
+    const { emergencyClearAll, fixUnplannedStatus } = useTransactionTable();
 
     return (
         <Card className="border-red-200 shadow-sm bg-white">
@@ -27,6 +27,14 @@ export const EmergencyDataManagement = () => {
                         className="bg-red-600 hover:bg-red-700 text-white border-red-600"
                     >
                         🚨 Clear All Transaction Data
+                    </Button>
+
+                    <Button
+                        onClick={fixUnplannedStatus}
+                        variant="outline"
+                        className="w-full border-amber-200 text-amber-700 hover:bg-amber-50"
+                    >
+                        Reset All "Unplanned" Status
                     </Button>
 
                     <p className="text-xs text-slate-500">

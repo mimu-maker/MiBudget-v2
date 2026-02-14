@@ -9,6 +9,8 @@ import { ManualTransactionForm } from './AddTransactionDialog/ManualTransactionF
 import { ImportSourceStep } from './AddTransactionDialog/ImportSourceStep';
 import { ImportMappingStep } from './AddTransactionDialog/ImportMappingStep';
 import { ImportPreviewStep } from './AddTransactionDialog/ImportPreviewStep';
+import { ImportDuplicateCheckStep } from './AddTransactionDialog/ImportDuplicateCheckStep';
+import { ImportCategoryMappingStep } from './AddTransactionDialog/ImportCategoryMappingStep';
 import { ProcessingStatus } from './AddTransactionDialog/ProcessingStatus';
 
 interface UnifiedAddTransactionsDialogProps {
@@ -29,22 +31,28 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
         columnMapping, setColumnMapping,
         fieldConfigs, setFieldConfigs,
         errors, setErrors,
-        preview, trustCsvCategories,
+        preview, updatePreviewRow, bulkUpdatePreview, applyRuleToPreview, deletePreviewRow, bulkDeletePreviewRows, differentiatePreviewRow,
+        trustCsvCategories,
         pasteContent, setPasteContent,
+        conflicts, selectedConflictIds, toggleConflictSelection, selectAllConflicts,
+        uniqueCsvCategories, uniqueCsvSubCategories,
+        categoryValueMapping, setCategoryValueMapping,
+        subCategoryValueMapping, setSubCategoryValueMapping,
+        applyValueMappings,
         processingProgress,
-        parseCSV, readFile, generatePreview, checkForUnknownAccounts, handleResolutionSave
+        suggestions, // Exposed from hook
+        parseCSV, readFile, generatePreview, checkForUnknownAccounts, executeImport, handleResolutionSave, reset
     } = useTransactionImport(onImport);
 
     // Reset state on open/close
     useEffect(() => {
         if (!open) {
             setTimeout(() => {
-                setStep(1);
-                setErrors([]);
+                reset();
                 setMode('entry');
             }, 300);
         }
-    }, [open, setStep, setErrors]);
+    }, [open, reset]);
 
     const handleFormCancel = () => onOpenChange(false);
 
@@ -72,7 +80,7 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                                 }
                             </DialogDescription>
                         </div>
-                        {mode === 'import' && <div className="text-sm text-slate-500">Step {step} of 3</div>}
+                        {mode === 'import' && <div className="text-sm text-slate-500">Step {step} of 6</div>}
                     </div>
 
                     {errors.length > 0 && (
@@ -141,11 +149,58 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                         )}
 
                         {step === 3 && (
+                            <ImportCategoryMappingStep
+                                mode="category"
+                                uniqueCsvCategories={uniqueCsvCategories}
+                                uniqueCsvSubCategories={uniqueCsvSubCategories}
+                                categoryValueMapping={categoryValueMapping}
+                                setCategoryValueMapping={setCategoryValueMapping}
+                                subCategoryValueMapping={subCategoryValueMapping}
+                                setSubCategoryValueMapping={setSubCategoryValueMapping}
+                                setStep={setStep}
+                                applyValueMappings={applyValueMappings}
+                                suggestions={suggestions}
+                            />
+                        )}
+
+                        {step === 4 && (
+                            <ImportCategoryMappingStep
+                                mode="sub-category"
+                                uniqueCsvCategories={uniqueCsvCategories}
+                                uniqueCsvSubCategories={uniqueCsvSubCategories}
+                                categoryValueMapping={categoryValueMapping}
+                                setCategoryValueMapping={setCategoryValueMapping}
+                                subCategoryValueMapping={subCategoryValueMapping}
+                                setSubCategoryValueMapping={setSubCategoryValueMapping}
+                                setStep={setStep}
+                                applyValueMappings={applyValueMappings}
+                                suggestions={suggestions}
+                            />
+                        )}
+
+                        {step === 5 && (
                             <ImportPreviewStep
                                 preview={preview}
-                                columnMapping={columnMapping}
                                 setStep={setStep}
                                 checkForUnknownAccounts={checkForUnknownAccounts}
+                                updatePreviewRow={updatePreviewRow}
+                                bulkUpdatePreview={bulkUpdatePreview}
+                                applyRuleToPreview={applyRuleToPreview}
+                                onDelete={deletePreviewRow}
+                                onBulkDelete={bulkDeletePreviewRows}
+                                onKeep={differentiatePreviewRow}
+                            />
+                        )}
+
+                        {step === 6 && (
+                            <ImportDuplicateCheckStep
+                                conflicts={conflicts}
+                                selectedConflictIds={selectedConflictIds}
+                                toggleConflictSelection={toggleConflictSelection}
+                                selectAllConflicts={selectAllConflicts}
+                                setStep={setStep}
+                                executeImport={executeImport}
+                                isProcessing={isProcessing}
                             />
                         )}
                     </div>
@@ -155,6 +210,7 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                     <ProcessingStatus
                         processingProgress={processingProgress}
                         setIsProcessing={setIsProcessing}
+                        onClose={() => onOpenChange(false)}
                     />
                 )}
             </DialogContent>

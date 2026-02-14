@@ -8,6 +8,7 @@ import { cleanSource } from '@/lib/importBrain';
 import { SourceRuleForm, SourceRuleState } from '@/components/Settings/SourceRuleForm';
 import { Sparkles } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useSettings } from '@/hooks/useSettings';
 
 interface SourceResolveDialogProps {
     transaction: Transaction;
@@ -16,6 +17,7 @@ interface SourceResolveDialogProps {
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
     initialName?: string;
+    minimal?: boolean;
 }
 
 export const SourceResolveDialog = ({
@@ -24,7 +26,8 @@ export const SourceResolveDialog = ({
     allTransactions = [],
     open: controlledOpen,
     onOpenChange: setControlledOpen,
-    initialName
+    initialName,
+    minimal = false
 }: SourceResolveDialogProps) => {
     const [internalOpen, setInternalOpen] = useState(false);
 
@@ -36,9 +39,11 @@ export const SourceResolveDialog = ({
     const { user } = useAuth();
     const queryClient = useQueryClient();
     const { toast } = useToast();
+    const { settings } = useSettings();
+    const noiseFilters = settings.noiseFilters || [];
 
     // Initialize rule state from transaction
-    const baseName = initialName !== undefined ? initialName : (transaction.clean_source || cleanSource(transaction.source));
+    const baseName = initialName !== undefined ? initialName : (transaction.clean_source || cleanSource(transaction.source, noiseFilters));
 
     const [initialRule, setInitialRule] = useState<SourceRuleState>({
         raw_name: transaction.source,
@@ -52,12 +57,11 @@ export const SourceResolveDialog = ({
         match_mode: 'fuzzy'
     });
 
-    // Update rule if inputs change
     useEffect(() => {
         if (open) {
             setInitialRule({
                 raw_name: transaction.source,
-                name: initialName !== undefined ? initialName : (transaction.clean_source || cleanSource(transaction.source)),
+                name: initialName !== undefined ? initialName : (transaction.clean_source || cleanSource(transaction.source, noiseFilters)),
                 category: transaction.category !== 'Other' ? transaction.category : '',
                 sub_category: transaction.sub_category || '',
                 auto_recurring: transaction.recurring || 'N/A',
@@ -67,7 +71,7 @@ export const SourceResolveDialog = ({
                 match_mode: 'fuzzy'
             });
         }
-    }, [open, transaction.id, initialName]);
+    }, [open, transaction.id, initialName, noiseFilters]);
 
     const addRuleMutation = useMutation({
         mutationFn: async ({ rule, selectedIds }: { rule: SourceRuleState, selectedIds: string[] }) => {
@@ -120,18 +124,24 @@ export const SourceResolveDialog = ({
             // 2. Apply to selected transactions
             if (selectedIds.length > 0) {
                 const updates: any = {
-                    // Compatibility mapping
+                    // Always standardize names
                     clean_source: rule.name,
-                    clean_merchant: rule.name
+                    clean_merchant: rule.name,
+
+                    // Apply recurring/planned settings even if not skipping triage
+                    recurring: rule.auto_recurring,
+                    planned: rule.auto_planned,
+                    excluded: rule.auto_exclude,
+                    budget: rule.auto_exclude ? 'Exclude' : 'Budgeted'
                 };
 
-                if (rule.skip_triage) {
+                // Apply categorization if we have it (even if partial)
+                if (rule.category) {
                     updates.category = rule.category;
-                    updates.sub_category = rule.sub_category;
-                    updates.recurring = rule.auto_recurring;
-                    updates.planned = rule.auto_planned;
-                    updates.excluded = rule.auto_exclude;
-                    updates.budget = rule.auto_exclude ? 'Exclude' : 'Budgeted';
+                    if (rule.sub_category) updates.sub_category = rule.sub_category;
+                }
+
+                if (rule.skip_triage) {
                     updates.status = 'Complete';
                 }
 
@@ -209,6 +219,7 @@ export const SourceResolveDialog = ({
                         onSave={(rule, selectedIds) => addRuleMutation.mutate({ rule, selectedIds })}
                         onCancel={() => setOpen(false)}
                         isSaving={addRuleMutation.isPending}
+                        showFullForm={!minimal}
                     />
                 </div>
             </DialogContent>

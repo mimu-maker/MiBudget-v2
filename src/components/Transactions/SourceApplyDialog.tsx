@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { ArrowRight, Check, Sparkles, AlertCircle, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
+import { ArrowRight, Check, Sparkles, AlertCircle, ChevronDown, ChevronUp, Pencil, Zap, Calendar, History } from 'lucide-react';
 import { Transaction } from './hooks/useTransactionTable';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,7 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { useCategorySource } from '@/hooks/useBudgetCategories';
 import { CategorySelector } from '@/components/Budget/CategorySelector';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from "@/components/ui/select";
 
 interface SourceApplyDialogProps {
     open: boolean;
@@ -28,6 +28,7 @@ interface SourceApplyDialogProps {
     targetSourceName: string;
     allTransactions?: Transaction[];
     onSuccess?: () => void;
+    minimal?: boolean;
 }
 
 export const SourceApplyDialog = ({
@@ -36,7 +37,8 @@ export const SourceApplyDialog = ({
     transaction,
     targetSourceName,
     allTransactions = [],
-    onSuccess
+    onSuccess,
+    minimal = true
 }: SourceApplyDialogProps) => {
     const { settings } = useSettings();
     const { user } = useAuth();
@@ -55,19 +57,48 @@ export const SourceApplyDialog = ({
     const [isUnplanned, setIsUnplanned] = useState(false); // Default false (Planned)
     const [isExcluded, setIsExcluded] = useState(false);
 
-    // Fetch the target rule
+    // Fetch the target rule (Check both new and legacy tables)
     const { data: rule, isLoading } = useQuery({
         queryKey: ['source-rule', targetSourceName],
         queryFn: async () => {
-            const { data, error } = await supabase
+            // 1. Check New Table
+            const { data: sourceRule, error: sourceError } = await supabase
                 .from('source_rules')
                 .select('*')
                 .eq('clean_source_name', targetSourceName)
                 .limit(1)
                 .maybeSingle();
 
-            if (error) throw error;
-            return data;
+            if (sourceError) throw sourceError;
+            if (sourceRule) return sourceRule;
+
+            // 2. Check Legacy Table
+            const { data: merchantRule, error: merchantError } = await (supabase as any)
+                .from('merchant_rules')
+                .select('*')
+                .eq('clean_merchant_name', targetSourceName)
+                .limit(1)
+                .maybeSingle();
+
+            if (merchantError) throw merchantError;
+
+            if (merchantRule) {
+                // Map legacy structure to new component state
+                return {
+                    id: merchantRule.id,
+                    clean_source_name: merchantRule.clean_merchant_name,
+                    source_name: merchantRule.merchant_name,
+                    auto_category: merchantRule.auto_category,
+                    auto_sub_category: merchantRule.auto_sub_category,
+                    auto_recurring: merchantRule.auto_recurring,
+                    auto_planned: merchantRule.auto_planned,
+                    auto_budget: merchantRule.auto_budget,
+                    skip_triage: merchantRule.skip_triage,
+                    match_mode: merchantRule.match_mode || 'fuzzy'
+                };
+            }
+
+            return null;
         },
         enabled: open && !!targetSourceName
     });
@@ -78,6 +109,7 @@ export const SourceApplyDialog = ({
             setActiveCategory(rule.auto_category || 'Other');
             setActiveSubCategory(rule.auto_sub_category || '');
             setActiveRecurring(rule.auto_recurring || 'N/A');
+            setIsUnplanned(!rule.auto_planned); // Map to isUnplanned toggle
             setIsExcluded(rule.auto_budget === 'Exclude');
         }
     }, [rule]);
@@ -107,7 +139,7 @@ export const SourceApplyDialog = ({
             if (!user?.id) throw new Error("User not authenticated");
 
             const newRulePayload: any = {
-                source_name: cleanSource(transaction.source),
+                source_name: cleanSource(transaction.source, settings.noiseFilters),
                 clean_source_name: rule.clean_source_name,
                 auto_category: activeCategory,        // Use edited value
                 auto_sub_category: activeSubCategory, // Use edited value
@@ -168,240 +200,289 @@ export const SourceApplyDialog = ({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className={`bg-white transition-[max-width] duration-300 ${showSimilarPreview ? 'max-w-3xl' : 'max-w-lg'}`}>
-                <DialogHeader className="pb-4 border-b border-slate-100">
-                    <DialogTitle className="flex items-center gap-2 text-blue-900 text-xl">
-                        <Sparkles className="w-5 h-5 text-amber-500" />
-                        Apply Rule & Map Source
-                    </DialogTitle>
-                    <DialogDescription className="text-slate-500">
-                        Create a rule to map this source validation to existing settings.
-                    </DialogDescription>
-                </DialogHeader>
+            <DialogContent className={`bg-white transition-[max-width] duration-300 overflow-hidden rounded-3xl border-none shadow-2xl p-0 ${showSimilarPreview ? 'max-w-3xl' : 'max-w-lg'}`}>
+                <div className="p-8 pb-4">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-slate-900 text-3xl font-black tracking-tight">
+                            <Sparkles className="w-8 h-8 text-amber-500" />
+                            Apply Rule & Map Source
+                        </DialogTitle>
+                        <DialogDescription className="text-slate-500 text-base font-medium">
+                            Map this transaction to an existing source rule and update future matches.
+                        </DialogDescription>
+                    </DialogHeader>
+                </div>
 
-                {isLoading ? (
-                    <div className="py-12 text-center text-slate-400">Loading rule details...</div>
-                ) : !rule ? (
-                    <div className="py-12 text-center text-rose-500 flex flex-col items-center gap-2">
-                        <AlertCircle className="w-10 h-10 opacity-50" />
-                        <p>Could not find original rule for <strong>{targetSourceName}</strong></p>
-                    </div>
-                ) : (
-                    <div className="space-y-6 pt-4">
-                        {/* Mapping Info  */}
-                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
-                            <div className="space-y-1">
-                                <Label className="text-[10px] uppercase font-bold text-slate-500">Source Name (Rule to Apply)</Label>
-                                <div className="flex items-center gap-2 text-lg font-bold text-blue-900 bg-white px-3 py-2 rounded border border-blue-100 shadow-sm">
-                                    <Sparkles className="w-4 h-4 text-amber-500" />
-                                    {targetSourceName}
-                                </div>
-                            </div>
-
-                            <div className="space-y-1">
-                                <Label className="text-[10px] uppercase font-bold text-slate-400">Original Transaction Name</Label>
-                                <div className="font-mono text-xs text-slate-600 bg-slate-100/50 px-3 py-2 rounded border border-slate-200/50">
-                                    {transaction.source}
-                                </div>
-                            </div>
+                <div className="px-8 pb-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                    {isLoading ? (
+                        <div className="py-12 text-center text-slate-400">Loading rule details...</div>
+                    ) : !rule ? (
+                        <div className="py-12 text-center text-rose-500 flex flex-col items-center gap-2">
+                            <AlertCircle className="w-10 h-10 opacity-50" />
+                            <p>Could not find original rule for <strong>{targetSourceName}</strong></p>
                         </div>
+                    ) : (
+                        <>
+                            {/* 1. Identification Summary  */}
+                            <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100 flex flex-col md:flex-row gap-6 md:items-center justify-between">
+                                <div className="space-y-1">
+                                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Source Selection</Label>
+                                    <div className="flex items-center gap-2 text-xl font-black text-blue-900">
+                                        <Zap className="w-5 h-5 text-blue-600" />
+                                        {targetSourceName}
+                                    </div>
+                                </div>
+                                <div className="md:text-right space-y-1">
+                                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Current Transaction</Label>
+                                    <div className="font-mono text-xs text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm inline-block">
+                                        {transaction.source}
+                                    </div>
+                                </div>
+                            </div>
 
-                        {/* Diff View / Edit Form */}
-                        <div className="space-y-4 px-2 relative">
-                            {/* Edit Toggle Button */}
-                            {!isEditing && (
-                                <div className="absolute top-0 right-0 z-10">
-                                    <Button size="sm" variant="ghost" onClick={() => setIsEditing(true)} className="h-6 gap-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50">
-                                        <Pencil className="w-3 h-3" /> Edit
-                                    </Button>
+                            {/* 2. Rule Configuration Section - Hidden in minimal mode */}
+                            {!minimal && (
+                                <div className="bg-blue-50/30 p-6 rounded-3xl border border-blue-100/50 space-y-6 relative">
+                                    {!isEditing && (
+                                        <div className="absolute top-6 right-6 z-10">
+                                            <Button size="sm" variant="ghost" onClick={() => setIsEditing(true)} className="h-7 gap-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-100/50 font-black text-[10px] uppercase tracking-wider rounded-full px-3">
+                                                <Pencil className="w-3.5 h-3.5" /> Edit Defaults
+                                            </Button>
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        {/* Category Column */}
+                                        <div className="space-y-2.5">
+                                            <Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block">Mapping Settings</Label>
+                                            {isEditing ? (
+                                                <div className="space-y-3 animate-in fade-in zoom-in-95 duration-200">
+                                                    <CategorySelector
+                                                        value={activeCategory}
+                                                        onValueChange={(v) => {
+                                                            if (v.includes(':')) {
+                                                                const [cat, sub] = v.split(':');
+                                                                setActiveCategory(cat);
+                                                                setActiveSubCategory(sub);
+                                                            } else {
+                                                                setActiveCategory(v);
+                                                                setActiveSubCategory('');
+                                                            }
+                                                        }}
+                                                        type="all"
+                                                        className="h-12 shadow-md border-slate-200 rounded-2xl"
+                                                    />
+                                                    <Select value={activeSubCategory || 'always-ask'} onValueChange={(v) => setActiveSubCategory(v === 'always-ask' ? '' : v)} disabled={!activeCategory}>
+                                                        <SelectTrigger className="h-12 bg-white shadow-md border-slate-200 rounded-2xl">
+                                                            <SelectValue placeholder="Always Ask" />
+                                                        </SelectTrigger>
+                                                        <SelectContent className="rounded-2xl border-slate-200">
+                                                            <SelectItem value="always-ask" className="text-slate-500 font-bold italic">Always Ask</SelectItem>
+                                                            <SelectSeparator />
+                                                            {(subCategories[activeCategory] || []).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            ) : (
+                                                <div className="bg-white p-4 rounded-2xl border border-slate-200/60 shadow-md flex items-center justify-between group h-[104px]">
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="text-[10px] text-slate-400 uppercase font-black tracking-tighter">Current Category</span>
+                                                        <div className="font-black text-lg text-blue-900 leading-tight">
+                                                            {activeCategory || <span className="text-slate-400 italic font-normal">Always Ask</span>}
+                                                        </div>
+                                                        {activeSubCategory && <div className="text-sm text-blue-600 font-bold">{activeSubCategory}</div>}
+                                                    </div>
+                                                    <div className="p-3 bg-blue-50 rounded-2xl group-hover:scale-110 transition-transform">
+                                                        <Zap className="w-6 h-6 text-blue-600" />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Recurring Column */}
+                                        <div className="space-y-2.5">
+                                            <Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block">Recurring Cadence</Label>
+                                            {isEditing ? (
+                                                <Select value={activeRecurring || 'always-ask'} onValueChange={(v) => setActiveRecurring(v === 'always-ask' ? '' : v)}>
+                                                    <SelectTrigger className="h-12 bg-white shadow-md border-slate-200 rounded-2xl">
+                                                        <SelectValue placeholder="Always Ask" />
+                                                    </SelectTrigger>
+                                                    <SelectContent className="rounded-2xl border-slate-200">
+                                                        <SelectItem value="always-ask" className="text-slate-500 font-bold italic">Always Ask</SelectItem>
+                                                        <SelectSeparator />
+                                                        {['Monthly', 'Annually', 'Bi-annually', 'Quarterly', 'Weekly', 'One-off'].map(opt => (
+                                                            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            ) : (
+                                                <div className="bg-white p-4 rounded-2xl border border-slate-200/60 shadow-md flex items-center gap-4 h-[104px]">
+                                                    <div className="p-3 bg-slate-50 rounded-2xl">
+                                                        <Calendar className="w-6 h-6 text-slate-400" />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="text-[10px] text-slate-400 uppercase font-black tracking-tighter">Budget Cadence</span>
+                                                        <span className="font-black text-lg text-slate-800 leading-tight">{activeRecurring || 'Always Ask'}</span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             )}
 
-                            {/* Category Row */}
-                            <div className="grid grid-cols-[1fr,auto,1.2fr] gap-4 items-center text-sm">
-                                <div className="text-right">
-                                    <div className="text-[10px] uppercase font-bold text-slate-400">Category</div>
-                                    <div className="font-medium text-slate-700 truncate">{transaction.category || '-'}</div>
-                                </div>
-                                <div className="text-slate-300 flex justify-center"><ArrowRight className="w-4 h-4" /></div>
-                                <div className="text-left">
-                                    <div className="text-[10px] uppercase font-bold text-blue-400">New</div>
-                                    {isEditing ? (
-                                        <div className="space-y-2 animate-in fade-in zoom-in-95 duration-200">
-                                            <CategorySelector
-                                                value={activeCategory}
-                                                onValueChange={(v) => {
-                                                    if (v.includes(':')) {
-                                                        const [cat, sub] = v.split(':');
-                                                        setActiveCategory(cat);
-                                                        setActiveSubCategory(sub);
-                                                    } else {
-                                                        setActiveCategory(v);
-                                                        setActiveSubCategory('');
-                                                    }
-                                                }}
-                                                type="all"
-                                                suggestionLimit={3}
-                                                className="h-8 shadow-sm"
-                                            />
-                                            <Select value={activeSubCategory} onValueChange={setActiveSubCategory} disabled={!activeCategory}>
-                                                <SelectTrigger className="h-8 text-xs bg-white border-blue-200 focus:ring-blue-100">
-                                                    <SelectValue placeholder="Sub-category" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {(subCategories[activeCategory] || []).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                                                </SelectContent>
-                                            </Select>
+                            {/* 3. Automation Panel - Hidden in minimal mode */}
+                            {!minimal && (
+                                <div className="bg-slate-50/50 p-6 rounded-3xl border border-slate-200/60 shadow-inner">
+                                    <div className="flex items-center justify-between mb-5">
+                                        <Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Visibility Controls</Label>
+                                    </div>
+
+                                    <div className={cn(
+                                        "p-5 rounded-2xl border transition-all duration-300",
+                                        isExcluded ? "bg-rose-50 border-rose-200 shadow-sm" : "bg-white border-slate-200"
+                                    )}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="space-y-1">
+                                                <Label htmlFor="edit-exclude" className="text-sm font-black text-slate-800">Always Exclude From Calculations</Label>
+                                                <p className="text-[11px] text-slate-500 font-medium">Ignore this source in all spending charts and totals.</p>
+                                            </div>
+                                            {isEditing ? (
+                                                <Switch
+                                                    id="edit-exclude"
+                                                    checked={isExcluded}
+                                                    onCheckedChange={setIsExcluded}
+                                                    className="data-[state=checked]:bg-rose-500 h-6 w-11 shadow-lg shadow-rose-100"
+                                                />
+                                            ) : (
+                                                <div className={cn("px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest", isExcluded ? "bg-rose-500 text-white" : "bg-slate-200 text-slate-500")}>
+                                                    {isExcluded ? "Excluded" : "Visible"}
+                                                </div>
+                                            )}
                                         </div>
-                                    ) : (
-                                        <div className="font-bold text-blue-700">
-                                            {activeCategory}
-                                            {activeSubCategory && <span className="opacity-75 font-normal"> / {activeSubCategory}</span>}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 4. History Preview Panel */}
+                            {similarMatches.length > 0 && (
+                                <div className="space-y-4">
+                                    <div
+                                        className="flex justify-between items-center bg-blue-50/50 p-5 rounded-3xl border border-blue-100 cursor-pointer hover:bg-blue-100/50 transition-all duration-300 shadow-sm group"
+                                        onClick={() => setShowSimilarPreview(!showSimilarPreview)}
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-3 bg-white rounded-2xl shadow-sm group-hover:scale-110 transition-transform">
+                                                <History className="w-5 h-5 text-blue-600" />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-black text-blue-950">
+                                                    Apply to {selectedIds.size} potential bank records
+                                                </p>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] text-blue-700/70 uppercase font-black tracking-tighter bg-blue-100/50 px-2 py-0.5 rounded">History Match</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="font-black text-[10px] text-blue-600 bg-white border-blue-100 uppercase tracking-widest">
+                                                {selectedIds.size} selected
+                                            </Badge>
+                                            <div className="p-1.5 rounded-full bg-blue-100/50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                                {showSimilarPreview ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {showSimilarPreview && (
+                                        <div className="rounded-3xl border border-slate-200 overflow-hidden animate-in slide-in-from-top-4 duration-500 shadow-2xl bg-white border-none">
+                                            <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Transaction Preview</span>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-7 text-[10px] font-black text-blue-600 hover:bg-blue-50 tracking-widest uppercase"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (selectedIds.size === similarMatches.length) setSelectedIds(new Set());
+                                                        else setSelectedIds(new Set(similarMatches.map(m => m.transaction.id)));
+                                                    }}
+                                                >
+                                                    {selectedIds.size === similarMatches.length ? "Deselect All" : "Select All"}
+                                                </Button>
+                                            </div>
+                                            <div className="max-h-[240px] overflow-y-auto custom-scrollbar">
+                                                <table className="w-full text-sm">
+                                                    <thead className="bg-slate-50/50 sticky top-0 border-b border-slate-100 z-10 backdrop-blur-md">
+                                                        <tr className="text-[10px] uppercase font-black text-slate-400">
+                                                            <th className="py-3 px-6 w-12 text-center"></th>
+                                                            <th className="py-3 px-6 text-left tracking-widest">Bank Source</th>
+                                                            <th className="py-3 px-6 text-right tracking-widest">Amount</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-50">
+                                                        {similarMatches.map(({ transaction: t, score }) => (
+                                                            <tr
+                                                                key={t.id}
+                                                                className={cn("hover:bg-blue-50/30 transition-colors cursor-pointer group/row", selectedIds.has(t.id) && "bg-blue-50/20")}
+                                                                onClick={() => {
+                                                                    const newSet = new Set(selectedIds);
+                                                                    if (newSet.has(t.id)) newSet.delete(t.id);
+                                                                    else newSet.add(t.id);
+                                                                    setSelectedIds(newSet);
+                                                                }}
+                                                            >
+                                                                <td className="py-3 px-6 text-center" onClick={(e) => e.stopPropagation()}>
+                                                                    <Checkbox
+                                                                        checked={selectedIds.has(t.id)}
+                                                                        onCheckedChange={(checked) => {
+                                                                            const newSet = new Set(selectedIds);
+                                                                            if (checked) newSet.add(t.id);
+                                                                            else newSet.delete(t.id);
+                                                                            setSelectedIds(newSet);
+                                                                        }}
+                                                                        className="rounded shadow-sm"
+                                                                    />
+                                                                </td>
+                                                                <td className="py-3 px-6">
+                                                                    <div className="flex flex-col gap-0.5">
+                                                                        <span className="font-black text-slate-800 text-xs truncate max-w-[280px]" title={t.source}>{t.source}</span>
+                                                                        <span className="text-[10px] text-slate-400 font-bold">{t.date}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className={cn("py-3 px-6 text-right font-mono text-xs font-black", t.amount < 0 ? "text-slate-700" : "text-emerald-600")}>
+                                                                    {formatCurrency(t.amount, settings.currency)}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
-                            </div>
-                        </div>
+                            )}
+                        </>
+                    )}
+                </div>
 
-                        {/* Badges / Toggles Row */}
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-50 mt-2">
-
-                            {/* Left Side: Recurring & Excluded */}
-                            <div className="flex gap-2 items-center">
-                                {isEditing ? (
-                                    <Select value={activeRecurring} onValueChange={setActiveRecurring}>
-                                        <SelectTrigger className="h-7 text-xs w-[100px] bg-white border-slate-200">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {['N/A', 'Monthly', 'Annually', 'Bi-annually', 'Quarterly', 'Weekly', 'One-off'].map(opt => (
-                                                <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                ) : (
-                                    activeRecurring && activeRecurring !== 'N/A' && (
-                                        <Badge variant="outline" className="bg-white text-slate-600 border-slate-200 h-6">{activeRecurring}</Badge>
-                                    )
-                                )}
-
-                                {/* Excluded Toggle (Only show if editing or true) */}
-                                {(isEditing || isExcluded) && (
-                                    <div className="flex items-center gap-2">
-                                        {isEditing && <Label htmlFor="edit-exclude" className="text-[10px] uppercase font-bold text-slate-400">Exclude</Label>}
-                                        {isEditing ? (
-                                            <Switch id="edit-exclude" checked={isExcluded} onCheckedChange={setIsExcluded} className="scale-75 origin-left" />
-                                        ) : (
-                                            isExcluded && <Badge variant="destructive" className="bg-rose-50 text-rose-700 border-rose-200 h-6">Excluded</Badge>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Unplanned Toggle */}
-                            <div className="flex items-center gap-2">
-                                <Label htmlFor="apply-unplanned" className="text-xs font-bold text-slate-500 uppercase">Unplanned</Label>
-                                <Switch
-                                    id="apply-unplanned"
-                                    checked={isUnplanned}
-                                    onCheckedChange={setIsUnplanned}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Similar Transactions Selection */}
-                        {similarMatches.length > 0 && (
-                            <div className="border-t border-slate-100 pt-4 mt-2">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2 cursor-pointer" onClick={() => setShowSimilarPreview(!showSimilarPreview)}>
-                                        <div className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
-                                            {similarMatches.length}
-                                        </div>
-                                        <Label className="text-sm font-medium text-slate-700 cursor-pointer">
-                                            Similar transactions found
-                                        </Label>
-                                        <Badge variant="outline" className="ml-2 font-normal text-slate-500">
-                                            {selectedIds.size} selected
-                                        </Badge>
-                                        {showSimilarPreview ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <Label className="text-xs text-slate-400 cursor-pointer" onClick={() => {
-                                            if (selectedIds.size === similarMatches.length) setSelectedIds(new Set());
-                                            else setSelectedIds(new Set(similarMatches.map(m => m.transaction.id)));
-                                        }}>
-                                            {selectedIds.size === similarMatches.length ? "Deselect All" : "Select All"}
-                                        </Label>
-                                        <Checkbox
-                                            checked={selectedIds.size === similarMatches.length && similarMatches.length > 0}
-                                            onCheckedChange={(checked) => {
-                                                if (checked) setSelectedIds(new Set(similarMatches.map(m => m.transaction.id)));
-                                                else setSelectedIds(new Set());
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-
-                                {showSimilarPreview && (
-                                    <div className="mt-3 bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm animate-in slide-in-from-top-2 duration-200">
-                                        <div className="max-h-[250px] overflow-y-auto">
-                                            <table className="w-full text-xs">
-                                                <thead className="bg-slate-50 sticky top-0 border-b border-slate-100">
-                                                    <tr className="text-slate-500 text-[10px] uppercase font-bold">
-                                                        <th className="px-3 py-2 w-8 text-center">
-                                                        </th>
-                                                        <th className="px-3 py-2 text-left">Date</th>
-                                                        <th className="px-3 py-2 text-left">Original Name</th>
-                                                        <th className="px-3 py-2 text-right">Amount</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-50">
-                                                    {similarMatches.map(({ transaction: t, score }) => (
-                                                        <tr key={t.id} className={cn("hover:bg-blue-50/30 transition-colors cursor-pointer", selectedIds.has(t.id) && "bg-blue-50/20")} onClick={() => {
-                                                            const newSet = new Set(selectedIds);
-                                                            if (newSet.has(t.id)) newSet.delete(t.id);
-                                                            else newSet.add(t.id);
-                                                            setSelectedIds(newSet);
-                                                        }}>
-                                                            <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                                                                <Checkbox
-                                                                    checked={selectedIds.has(t.id)}
-                                                                    onCheckedChange={(checked) => {
-                                                                        const newSet = new Set(selectedIds);
-                                                                        if (checked) newSet.add(t.id);
-                                                                        else newSet.delete(t.id);
-                                                                        setSelectedIds(newSet);
-                                                                    }}
-                                                                />
-                                                            </td>
-                                                            <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{t.date}</td>
-                                                            <td className="px-3 py-2 text-slate-700 truncate max-w-[200px]" title={t.source}>
-                                                                {t.source}
-                                                                {score < 60 && <span className="ml-2 text-[9px] text-amber-600 bg-amber-50 px-1 rounded border border-amber-100">Partial</span>}
-                                                            </td>
-                                                            <td className={`px-3 py-2 text-right font-mono ${t.amount < 0 ? 'text-slate-700' : 'text-emerald-600'}`}>
-                                                                {formatCurrency(t.amount, settings.currency)}
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                <DialogFooter className="gap-3 sm:justify-between pt-4 border-t border-slate-100 mt-4">
-                    <Button variant="ghost" onClick={() => onOpenChange(false)} className="text-slate-500 hover:text-slate-700">Cancel</Button>
+                <DialogFooter className="p-8 pt-6 border-t border-slate-100 bg-slate-50/30 flex-col sm:flex-row gap-4 sm:justify-between items-center">
                     <Button
-                        className="bg-blue-600 hover:bg-blue-700 font-bold px-6 shadow-lg shadow-blue-100"
+                        variant="ghost"
+                        onClick={() => onOpenChange(false)}
+                        className="text-slate-400 hover:text-slate-600 font-black uppercase text-[10px] tracking-widest h-12 rounded-2xl px-6 order-2 sm:order-1"
+                    >
+                        Cancel Changes
+                    </Button>
+                    <Button
+                        className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest h-14 px-10 rounded-2xl shadow-2xl shadow-blue-200 transition-all active:scale-95 order-1 sm:order-2 shrink-0 group"
                         onClick={() => applyMutation.mutate()}
                         disabled={applyMutation.isPending || !rule}
                     >
-                        {applyMutation.isPending ? "Applying..." : <><Check className="w-4 h-4 mr-2" /> Confirm & Map Rule</>}
+                        {applyMutation.isPending ? "Applying Updates..." : <>
+                            <Check className="w-5 h-5 mr-3 group-hover:scale-125 transition-transform" />
+                            Confirm & Map Source
+                        </>}
                     </Button>
                 </DialogFooter>
             </DialogContent>

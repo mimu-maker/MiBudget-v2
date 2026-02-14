@@ -54,7 +54,7 @@ export const TransactionNote = ({ transaction, onSave }: TransactionNoteProps) =
                                     "h-6 w-6 p-0 transition-all ml-1",
                                     hasNote
                                         ? "text-yellow-500 hover:text-yellow-600 opacity-100"
-                                        : "text-muted-foreground/40 hover:text-muted-foreground opacity-0 group-hover/merchant:opacity-100"
+                                        : "text-muted-foreground/40 hover:text-muted-foreground opacity-50 group-hover/source:opacity-100"
                                 )}
                             >
                                 <StickyNote

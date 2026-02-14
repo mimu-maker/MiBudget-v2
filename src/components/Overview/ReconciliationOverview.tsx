@@ -1,38 +1,69 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
+import { useTransactionTable, Transaction } from '@/components/Transactions/hooks/useTransactionTable';
 import { usePeriod } from '@/contexts/PeriodContext';
 import { filterByPeriod } from '@/lib/dateUtils';
 import { formatCurrency } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
 import { EditableCell } from '@/components/Transactions/EditableCell';
+import { Checkbox } from '@/components/ui/checkbox';
+import { TransactionDetailDialog } from '@/components/Transactions/TransactionDetailDialog';
 
 export const ReconciliationOverview = () => {
   const { transactions, handleCellEdit, handleBulkCellEdit } = useTransactionTable();
-  const { selectedPeriod, customDateRange } = usePeriod();
+  const { selectedPeriod, customDateRange, includeSpecial, includeKlintemarken } = usePeriod();
   const { settings } = useSettings();
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [detailTx, setDetailTx] = useState<Transaction | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   // Filter for 'Pending' status transactions for the selected period
   const pendingTransactions = useMemo(() => {
     const periodFiltered = filterByPeriod(transactions, selectedPeriod, customDateRange);
-    return periodFiltered.filter(t =>
-      t.status &&
-      (t.status === 'Pending Reconciliation' || t.status.startsWith('Pending: ')) &&
-      !t.excluded &&
-      t.budget !== 'Exclude'
-    );
-  }, [transactions, selectedPeriod, customDateRange]);
+    return periodFiltered.filter(t => {
+      const isPending = t.status && (t.status === 'Pending' || t.status === 'Pending Reconciliation' || t.status.startsWith('Pending: ') || t.entity);
+      const isNotExcluded = !t.excluded && t.budget !== 'Exclude';
 
-  const groupedItems = useMemo(() => {
+      let isAllowed = true;
+      if (t.budget === 'Special' && !includeSpecial) isAllowed = false;
+      if (t.budget === 'Klintemarken' && !includeKlintemarken) isAllowed = false;
+
+      return isPending && isNotExcluded && isAllowed;
+    });
+  }, [transactions, selectedPeriod, customDateRange, includeSpecial, includeKlintemarken]);
+
+  // Default select all pending transactions when they change
+  useEffect(() => {
+    setSelectedIds(new Set(pendingTransactions.map(t => t.id)));
+  }, [pendingTransactions]);
+
+  const toggleSelection = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const groupedItems = useMemo<Record<string, Transaction[]>>(() => {
     return pendingTransactions.reduce((acc, item) => {
-      const group = item.status.startsWith('Pending: ') ? item.status.replace('Pending: ', '') : 'Unassigned';
+      let group = 'Unassigned';
+      if (item.entity) {
+        group = item.entity;
+      } else if (item.status && item.status.startsWith('Pending: ')) {
+        group = item.status.replace('Pending: ', '');
+      }
+
       if (!acc[group]) acc[group] = [];
       acc[group].push(item);
       return acc;
-    }, {} as Record<string, typeof pendingTransactions>);
+    }, {} as Record<string, Transaction[]>);
   }, [pendingTransactions]);
 
   const summaryStats = useMemo(() => {
@@ -92,48 +123,95 @@ export const ReconciliationOverview = () => {
       )}
 
       <div className="grid grid-cols-1 gap-8">
-        {Object.entries(groupedItems).map(([group, items]) => (
-          <div key={group} className="space-y-3">
-            <div className="flex items-center gap-3 px-2">
-              <div className="h-6 w-1 bg-primary rounded-full"></div>
-              <h3 className="font-bold text-lg text-foreground">{group}</h3>
-              <Badge variant="secondary" className="ml-auto">{items.length} items</Badge>
-            </div>
+        {Object.entries(groupedItems).map(([group, items]) => {
+          // Calculate stats based on checked items for this group
+          const selectedGroupItems = items.filter(i => selectedIds.has(i.id));
+          const selectedTotal = selectedGroupItems.reduce((sum, item) => sum + item.amount, 0);
+          const hasSelection = selectedGroupItems.length > 0;
+          const isBalanced = Math.abs(selectedTotal) < 0.01;
 
-            <div className="grid grid-cols-1 gap-2">
-              {items.map((item) => (
-                <div key={item.id} className="group flex items-center gap-4 p-3 bg-card hover:bg-accent/50 border border-border/40 rounded-xl transition-all shadow-sm">
-                  <div className="w-[100px] text-xs font-bold text-muted-foreground">{item.date}</div>
-                  <div className="flex-1 font-medium text-foreground/90 truncate">{item.merchant}</div>
+          return (
+            <div key={group} className="space-y-3">
+              <div className="flex items-center gap-3 px-2">
+                <div className="h-6 w-1 bg-primary rounded-full"></div>
+                <h3 className="font-bold text-lg text-foreground">{group}</h3>
+                <Badge variant="secondary" className="ml-auto">{items.length} items</Badge>
+              </div>
 
-                  {/* Inline Status Edit to quickly resolve items */}
-                  <div className="w-[200px]">
-                    <EditableCell
-                      transaction={item}
-                      field="status"
-                      isEditing={true} // Always usable here
-                      onEdit={handleCellEdit}
-                      onBulkEdit={handleBulkCellEdit}
-                      onStartEdit={() => { }}
-                      onStopEdit={() => { }}
-                    />
+              <div className="grid grid-cols-1 gap-2">
+                {items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="group flex items-center gap-4 p-3 bg-card hover:bg-accent/50 border border-border/40 rounded-xl transition-all shadow-sm cursor-pointer"
+                    onClick={() => {
+                      setDetailTx(item);
+                      setIsDetailOpen(true);
+                    }}
+                  >
+                    <div className="pl-2" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedIds.has(item.id)}
+                        onCheckedChange={() => toggleSelection(item.id)}
+                      />
+                    </div>
+                    <div className="w-[100px] text-xs font-bold text-muted-foreground">{item.date}</div>
+                    <div className="flex-1 font-medium text-foreground/90 truncate">{item.source}</div>
+
+                    {/* Inline Status Edit to quickly resolve items */}
+                    <div className="w-[200px]" onClick={(e) => e.stopPropagation()}>
+                      <EditableCell
+                        transaction={item}
+                        field="status"
+                        isEditing={true} // Always usable here
+                        onEdit={handleCellEdit}
+                        onBulkEdit={handleBulkCellEdit}
+                        onStartEdit={() => { }}
+                        onStopEdit={() => { }}
+                      />
+                    </div>
+
+                    <div className={`w-[120px] text-right font-black ${item.amount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {formatCurrency(item.amount, settings.currency)}
+                    </div>
                   </div>
+                ))}
+              </div>
 
-                  <div className={`w-[120px] text-right font-black ${item.amount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                    {formatCurrency(item.amount, settings.currency)}
-                  </div>
-                </div>
-              ))}
-            </div>
+              <div className="flex justify-end pt-2 px-4 border-t border-border/30 border-dashed items-center gap-4">
+                <span className="text-xs uppercase font-bold text-muted-foreground pt-1">
+                  {hasSelection ? `Selected Total (${selectedGroupItems.length})` : `Total ${group}`}
+                </span>
+                <span className={`font-black ${selectedTotal >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  {formatCurrency(selectedTotal, settings.currency)}
+                </span>
 
-            <div className="flex justify-end pt-2 px-4 border-t border-border/30 border-dashed">
-              <span className="text-xs uppercase font-bold text-muted-foreground mr-4 pt-1">Total {group}</span>
-              <span className={`font-black ${items.reduce((sum, item) => sum + item.amount, 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {formatCurrency(items.reduce((sum, item) => sum + item.amount, 0), settings.currency)}
-              </span>
+                <Button
+                  size="sm"
+                  variant={isBalanced && hasSelection ? "default" : "outline"}
+                  disabled={!isBalanced || !hasSelection}
+                  onClick={() => {
+                    const ids = selectedGroupItems.map(t => t.id);
+                    const xref = `Reconciled against ${ids.slice(0, 3).join(', ')}${ids.length > 3 ? '...' : ''}`;
+
+                    selectedGroupItems.forEach(item => {
+                      handleBulkCellEdit(item.id, {
+                        status: 'Complete',
+                        excluded: true,
+                        budget: 'Exclude',
+                        notes: item.notes ? `${item.notes} | ${xref}` : xref
+                      });
+                    });
+                  }}
+                  className={isBalanced && hasSelection
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm"
+                    : "opacity-50 cursor-not-allowed"}
+                >
+                  Reconcile Selected
+                </Button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {pendingTransactions.length === 0 && (
           <div className="text-center py-24 bg-muted/20 rounded-3xl border-2 border-dashed border-border/50">
@@ -144,6 +222,19 @@ export const ReconciliationOverview = () => {
           </div>
         )}
       </div>
+
+      <TransactionDetailDialog
+        open={isDetailOpen}
+        onOpenChange={setIsDetailOpen}
+        transaction={detailTx}
+        initialEditMode={true}
+        onSave={async (updates) => {
+          if (detailTx) {
+            await handleBulkCellEdit(detailTx.id, updates);
+            setIsDetailOpen(false);
+          }
+        }}
+      />
     </div>
   );
 };

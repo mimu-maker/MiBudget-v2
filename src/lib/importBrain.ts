@@ -2,7 +2,7 @@ import { Tables } from "@/integrations/supabase/types";
 
 export type SourceRule = Tables<"source_rules">;
 
-export const SKIP_PATTERNS = ['MC/VISA', 'VISA/DANKORT', 'DANKORT', 'MOBILEPAY', 'NETBANK', 'VISA', 'MASTERCARD', 'OVERFØRSEL', 'DEPOT', 'DK', 'K', 'CARD', 'KØB', 'AUT.', 'ONLINE', 'WWW.'];
+export const SKIP_PATTERNS = ['MC/VISA', 'VISA/DANKORT', 'DANKORT', 'NETBANK', 'VISA', 'MASTERCARD', 'OVERFØRSEL', 'DEPOT', 'DK', 'K', 'CARD', 'KØB', 'AUT.', 'ONLINE', 'WWW.', 'PAYPAL', 'SUMUP', 'IZATTLE', 'GOOGLE', 'APPLE.COM', 'BILL', 'PAY', 'FORRETNING:'];
 
 export const cleanSource = (source: string, noiseFilters: string[] = []): string => {
     if (!source) return "";
@@ -63,9 +63,10 @@ export const processTransaction = (
     const isFuture = dateObj > new Date();
 
     // Default budget month to the 1st of the transaction month
-    const budgetMonth = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1)
-        .toISOString()
-        .split('T')[0];
+    // We use string-based construction to avoid local/UTC timezone shifts
+    const year = dateObj.getFullYear();
+    const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+    const budgetMonth = `${year}-${month}-01`;
 
     const budgetYear = dateObj.getFullYear();
 
@@ -81,13 +82,20 @@ export const processTransaction = (
     // 2. Try Prefix/Substring Match if no exact match AND rule is fuzzy
     if (!match) {
         match = rules.find(rule => {
+            // Short names should not be fuzzy matched to avoid accidental broad matches
+            const sourceNameRaw = rule.source_name || "";
+            const cleanNameRaw = rule.clean_source_name || "";
+            const ruleName = (sourceNameRaw || cleanNameRaw).toLowerCase().trim();
+
+            // Critical: skip empty rules or pure noise rules
+            if (!ruleName || ruleName.length < 2) return false;
+
             // If match_mode is explicitly 'exact', skip fuzzy matching
             if (rule.match_mode === 'exact') return false;
 
-            const ruleName = (rule.source_name || rule.clean_source_name).toLowerCase();
             return rawSource.toLowerCase().startsWith(ruleName) ||
                 cleanLower.startsWith(ruleName) ||
-                ruleName.startsWith(cleanLower) ||
+                (cleanLower.length > 3 && ruleName.startsWith(cleanLower)) || // Changed cleanLower to ruleName here
                 rawSource.toLowerCase().includes(ruleName);
         });
         if (match) confidence = 0.8;
@@ -110,7 +118,7 @@ export const processTransaction = (
             budget_month: budgetMonth,
             budget_year: budgetYear,
             confidence: confidence,
-            planned: match.auto_planned ?? isFuture,
+            planned: match.auto_planned ?? true,
             recurring: match.auto_recurring || (confidence === 1.0 ? 'Monthly' : 'N/A'),
             excluded: excluded
         };
@@ -124,7 +132,7 @@ export const processTransaction = (
         budget_month: budgetMonth,
         budget_year: budgetYear,
         confidence: 0,
-        planned: isFuture,
+        planned: true, // Default to Planned (unplanned=N)
         recurring: 'N/A',
         excluded: false
     };

@@ -5,9 +5,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus } from 'lucide-react';
+import { format } from 'date-fns';
+import { SmartSelector } from '@/components/ui/smart-selector';
 import { useSettings } from '@/hooks/useSettings';
 import { useCategorySource } from '@/hooks/useBudgetCategories';
+import { CategorySelector } from '@/components/Budget/CategorySelector';
 
 interface ManualTransactionFormProps {
     onAdd: (transaction: any) => Promise<void>;
@@ -21,16 +23,16 @@ export const ManualTransactionForm = ({ onAdd, onCancel, setIsProcessing, setErr
     const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
 
     const [formData, setFormData] = useState({
-        date: new Date().toISOString().split('T')[0],
-        merchant: '',
+        date: format(new Date(), 'yy/MM/dd'),
+        source: '',
         amount: '',
         status: 'Complete',
         budget: 'Budgeted',
-        category: displayCategories[0] || 'Other',
+        category: displayCategories[0] || '',
         sub_category: '',
-        planned: false,
-        recurring: 'N/A',
-        description: ''
+        planned: true, // Default to Planned (unplanned=N)
+        excluded: false,
+        notes: ''
     });
 
     const handleManualSubmit = async (e: React.FormEvent) => {
@@ -39,20 +41,23 @@ export const ManualTransactionForm = ({ onAdd, onCancel, setIsProcessing, setErr
             setIsProcessing(true);
             await onAdd({
                 ...formData,
-                amount: parseFloat(formData.amount) || 0
+                amount: parseFloat(formData.amount) || 0,
+                // Ensure date is in a format Supabase likes if necessary, 
+                // but usually it accepts many formats. If it needs ISO:
+                date: formData.date.includes('/') ? `20${formData.date.split('/')[0]}-${formData.date.split('/')[1]}-${formData.date.split('/')[2]}` : formData.date
             });
             // Reset form
             setFormData({
-                date: new Date().toISOString().split('T')[0],
-                merchant: '',
+                date: format(new Date(), 'yy/MM/dd'),
+                source: '',
                 amount: '',
                 status: 'Complete',
                 budget: 'Budgeted',
-                category: displayCategories[0] || 'Other',
+                category: displayCategories[0] || '',
                 sub_category: '',
-                planned: false,
-                recurring: 'N/A',
-                description: ''
+                planned: true, // Default to Planned (unplanned=N)
+                excluded: false,
+                notes: ''
             });
         } catch (err: any) {
             setErrors([`Failed to add transaction: ${err.message}`]);
@@ -65,8 +70,15 @@ export const ManualTransactionForm = ({ onAdd, onCancel, setIsProcessing, setErr
         <form onSubmit={handleManualSubmit} className="space-y-5 animate-in fade-in duration-500">
             <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                    <Label htmlFor="date" className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Date</Label>
-                    <Input id="date" type="date" className="bg-white border-slate-200 focus:ring-blue-500" value={formData.date} onChange={(e) => setFormData(p => ({ ...p, date: e.target.value }))} required />
+                    <Label htmlFor="date" className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Date (YY/MM/DD)</Label>
+                    <Input
+                        id="date"
+                        className="bg-white border-slate-200 focus:ring-blue-500 font-mono"
+                        value={formData.date}
+                        onChange={(e) => setFormData(p => ({ ...p, date: e.target.value }))}
+                        placeholder="25/07/13"
+                        required
+                    />
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="amount" className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Amount (DKK)</Label>
@@ -75,81 +87,70 @@ export const ManualTransactionForm = ({ onAdd, onCancel, setIsProcessing, setErr
             </div>
 
             <div className="space-y-2">
-                <Label htmlFor="merchant" className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Merchant</Label>
-                <Input id="merchant" className="bg-white border-slate-200 focus:ring-blue-500 h-11 text-lg" placeholder="e.g. Amazon, Supermarket..." value={formData.merchant} onChange={(e) => setFormData(p => ({ ...p, merchant: e.target.value }))} required />
+                <Label htmlFor="source" className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Source</Label>
+                <Input id="source" className="bg-white border-slate-200 focus:ring-blue-500 h-11 text-lg" placeholder="e.g. Amazon, Supermarket..." value={formData.source} onChange={(e) => setFormData(p => ({ ...p, source: e.target.value }))} required />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Category</Label>
-                    <Select value={formData.category} onValueChange={(v) => setFormData(p => ({ ...p, category: v, sub_category: '' }))}>
-                        <SelectTrigger className="bg-white border-slate-200"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                            {displayCategories.map(cat => (
-                                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                    <CategorySelector
+                        value={formData.category}
+                        onValueChange={(v) => {
+                            if (v.includes(':')) {
+                                const [cat, sub] = v.split(':');
+                                setFormData(p => ({ ...p, category: cat, sub_category: sub }));
+                            } else {
+                                setFormData(p => ({ ...p, category: v, sub_category: '' }));
+                            }
+                        }}
+                        type="all"
+                        suggestionLimit={3}
+                    />
                 </div>
                 <div className="space-y-2">
                     <Label className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Sub-category</Label>
-                    <Select
+                    <SmartSelector
                         value={formData.sub_category}
                         onValueChange={(v) => setFormData(p => ({ ...p, sub_category: v }))}
                         disabled={!formData.category}
-                    >
-                        <SelectTrigger className="bg-white border-slate-200">
-                            <SelectValue placeholder={formData.category ? "Select sub-category" : "Select a category first"} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {(displaySubCategories[formData.category] || []).map(sub => (
-                                <SelectItem key={sub} value={sub}>{sub}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                        options={displaySubCategories[formData.category] || []}
+                        placeholder={formData.category ? "Select sub-category" : "Select category first"}
+                    />
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-8 py-2">
+            <div className="grid grid-cols-2 gap-4 py-2">
                 <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
                     <div className="space-y-0.5">
                         <Label className="text-sm font-bold text-slate-700">Unplanned</Label>
                         <p className="text-[10px] text-slate-400 font-medium">Is this a future expense?</p>
                     </div>
                     <Switch
-                        checked={formData.planned}
-                        onCheckedChange={(v) => setFormData(p => ({ ...p, planned: v }))}
+                        checked={!formData.planned}
+                        onCheckedChange={(v) => setFormData(p => ({ ...p, planned: !v }))}
                     />
                 </div>
                 <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
                     <div className="space-y-0.5">
-                        <Label className="text-sm font-bold text-slate-700">Recurring</Label>
-                        <p className="text-[10px] text-slate-400 font-medium">Frequency?</p>
+                        <Label className="text-sm font-bold text-slate-700">Exclude</Label>
+                        <p className="text-[10px] text-slate-400 font-medium">Hide from calculations</p>
                     </div>
-                    <Select value={formData.recurring} onValueChange={(v) => setFormData(p => ({ ...p, recurring: v }))}>
-                        <SelectTrigger className="w-32">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="Annually">Annually</SelectItem>
-                            <SelectItem value="Bi-annually">Bi-annually</SelectItem>
-                            <SelectItem value="Quarterly">Quarterly</SelectItem>
-                            <SelectItem value="Monthly">Monthly</SelectItem>
-                            <SelectItem value="Weekly">Weekly</SelectItem>
-                            <SelectItem value="One-off">One-off</SelectItem>
-                            <SelectItem value="N/A">N/A</SelectItem>
-                        </SelectContent>
-                    </Select>
+                    <Switch
+                        checked={formData.excluded}
+                        onCheckedChange={(v) => setFormData(p => ({ ...p, excluded: v, status: v ? 'Excluded' : 'Complete' }))}
+                        className="data-[state=checked]:bg-rose-500"
+                    />
                 </div>
             </div>
 
             <div className="space-y-2">
-                <Label htmlFor="description" className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Description (Optional)</Label>
+                <Label htmlFor="notes" className="text-slate-600 font-semibold text-xs uppercase tracking-wider">Notes (Optional)</Label>
                 <Textarea
-                    id="description"
+                    id="notes"
                     className="bg-white border-slate-200 focus:ring-blue-500"
-                    value={formData.description}
-                    onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))}
+                    value={formData.notes}
+                    onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))}
                     placeholder="Add any additional details or notes..."
                 />
             </div>

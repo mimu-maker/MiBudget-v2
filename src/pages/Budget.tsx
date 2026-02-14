@@ -12,17 +12,16 @@ import BudgetSankey from '@/components/Budget/BudgetSankey';
 import { useAnnualBudget, BudgetCategory, BudgetSubCategory } from '@/hooks/useAnnualBudget';
 import { useBudgetCategoryActionsForBudget } from '@/hooks/useBudgetCategories';
 
-// Import extracted components
 import { BudgetTable } from '@/components/Budget/BudgetTable';
 import { BudgetSummaryCards } from '@/components/Budget/BudgetSummaryCards';
-import { BudgetYearNavigation } from '@/components/Budget/BudgetYearNavigation';
+import { BudgetYearTabs } from '@/components/Budget/BudgetYearTabs';
+// import { BudgetHealthHeader } from '@/components/Budget/BudgetHealthHeader'; // Removed as per request
 
 const Budget = () => {
   const { transactions } = useTransactionTable();
   const { settings } = useSettings();
   const [editingBudget, setEditingBudget] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<'table' | 'sankey'>('table');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
   const { budget, loading, error, refreshBudget } = useAnnualBudget(selectedYear);
@@ -98,9 +97,11 @@ const Budget = () => {
 
       if (updateSubCategoryBudgetMutation) {
         await updateSubCategoryBudgetMutation.mutateAsync({
-          subCategoryId: subCategory.id,
+          subCategoryId: subCategory.id || null,
           categoryId: parentCategory.id,
-          amount: Number(newMonthlyAmount.toFixed(2))
+          amount: Number(newMonthlyAmount.toFixed(2)),
+          targetBudgetId: budget?.id,
+          year: selectedYear
         });
         // refreshBudget now returns a promise, so we can properly await it
         await refreshBudget();
@@ -151,6 +152,14 @@ const Budget = () => {
   const expenditureData = budget?.category_groups?.expenditure || [];
   const klintemarkenData = budget?.category_groups?.klintemarken || [];
   const specialData = budget?.category_groups?.special || [];
+
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth() + 1; // 1-12
+
+  const elapsedMonths = selectedYear < currentYear ? 12 :
+    selectedYear > currentYear ? 0 :
+      currentMonth;
   // Use a minimum of 0.01 for totalIncome to prevent division by zero in UI calculations
   const totalBudgetedIncome = Math.max(incomeData.reduce((sum, item) => sum + item.budget_amount, 0), 0.01);
 
@@ -162,75 +171,47 @@ const Budget = () => {
     actualUniqueIncome,
     percentageDenominator,
     incomeCategoriesCount: incomeData.length,
-    incomeTotalFromData: incomeData.reduce((s, i) => s + i.budget_amount, 0),
     firstIncomeCategory: incomeData[0] ? { name: incomeData[0].name, budget: incomeData[0].budget_amount } : 'none'
   });
+
+  // Calculate annual totals for the simplified summary header (5 tiles)
+  const incomeTotalAnnual = incomeData.reduce((sum, item) => sum + item.budget_amount, 0) * 12;
+  const expenseTotalAnnual = expenditureData.reduce((sum, item) => sum + item.budget_amount, 0) * 12;
+  const slushTotalAnnual = specialData.reduce((sum, item) => sum + item.budget_amount, 0) * 12;
+  const feederTotalAnnual = klintemarkenData.reduce((sum, item) => sum + item.budget_amount, 0) * 12;
 
   const expandAll = (categories: string[]) => setExpandedCategories(new Set(categories));
   const collapseAll = () => setExpandedCategories(new Set());
 
   return (
-    <div className="space-y-6 pt-4">
-      <BudgetSummaryCards
+    <div className="space-y-0">
+      <BudgetYearTabs
         selectedYear={selectedYear}
-        totalBudget={totalBudgetForSummary}
-        totalSpent={primaryExpensesSpent}
-        totalRemaining={totalBudgetForSummary - primaryExpensesSpent}
-        monthlyContribution={monthlyContribution}
-        projectedIncome={actualUniqueIncome}
+        availableYears={availableYears}
+        onYearChange={setSelectedYear}
+        isFallback={budget?.isFallback}
       />
 
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8">
-        <div className="flex items-center gap-4">
-          <BudgetYearNavigation
-            selectedYear={selectedYear}
-            minYear={minYear}
-            maxYear={maxYear}
-            availableYears={availableYears}
-            onYearChange={setSelectedYear}
-            navigateYear={navigateYear}
-            monthlyContribution={monthlyContribution}
-            totalAnnualBudget={budget.total_budget || 0}
-          />
-        </div>
+      <div className="p-6 space-y-6">
+        <BudgetSummaryCards
+          currency={settings.currency}
+          income={incomeTotalAnnual}
+          expenses={expenseTotalAnnual}
+          slush={slushTotalAnnual}
+          feeder={feederTotalAnnual}
+        />
 
-        <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)} className="w-[240px]">
-          <TabsList className="grid w-full grid-cols-2 p-1 bg-muted/50 rounded-2xl border border-border/50 shadow-sm">
-            <TabsTrigger value="table" className="rounded-xl flex items-center gap-2 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all">
-              <Table className="w-4 h-4" />
-              <span className="text-xs font-bold">Table</span>
-            </TabsTrigger>
-            <TabsTrigger value="sankey" className="rounded-xl flex items-center gap-2 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all">
-              <Network className="w-4 h-4" />
-              <span className="text-xs font-bold">Sankey</span>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
-      <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)} className="w-full">
-
-        <TabsContent value="table" className="space-y-6 mt-0 animate-in fade-in duration-500">
-          {[
-            { data: incomeData, type: 'income', title: 'Income Sources', color: 'emerald' },
-            { data: expenditureData, type: 'expense', title: 'Primary Expenses', color: 'rose' },
-            { data: klintemarkenData, type: 'klintemarken', title: 'Klintemarken Property', color: 'blue' },
-            { data: specialData, type: 'special', title: 'Special Items', color: 'purple' }
-          ].map(({ data, type, title, color }) => data.length > 0 && (
-            <Card key={type} className={`shadow-sm border-${color}-100 bg-${color}-50/10 overflow-hidden rounded-3xl`}>
-              <div className={`bg-${color}-50/50 border-b border-${color}-100 py-4 px-6 flex justify-between items-center`}>
-                <CardTitle className={`text-xl text-${color}-800 flex items-center gap-2 font-bold`}>{title}</CardTitle>
-                {type !== 'income' && (
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => expandAll(data.map(d => d.name))} className="h-8 text-[10px] uppercase tracking-wider font-bold">Expand All</Button>
-                    <Button variant="outline" size="sm" onClick={collapseAll} className="h-8 text-[10px] uppercase tracking-wider font-bold">Collapse All</Button>
-                  </div>
-                )}
+        <div className="space-y-6 mt-0 animate-in fade-in duration-500">
+          {/* Income Sources Card */}
+          {incomeData.length > 0 && (
+            <Card key="income" className="shadow-sm border-emerald-100 bg-emerald-50/10 overflow-hidden rounded-3xl">
+              <div className="bg-emerald-50/50 border-b border-emerald-100 py-4 px-6 flex justify-between items-center">
+                <CardTitle className="text-xl text-emerald-800 flex items-center gap-2 font-bold">Income Sources</CardTitle>
               </div>
               <CardContent className="p-0">
                 <BudgetTable
-                  data={data as any}
-                  type={type as any}
+                  data={incomeData as any}
+                  type="income"
                   expandedCategories={expandedCategories}
                   toggleCategory={toggleCategory}
                   editingBudget={editingBudget}
@@ -242,20 +223,73 @@ const Budget = () => {
                 />
               </CardContent>
             </Card>
-          ))}
-        </TabsContent>
+          )}
 
-        <TabsContent value="sankey" className="mt-0 animate-in zoom-in-95 fade-in duration-500">
-          <div className="space-y-4">
-            <div className="flex flex-col items-center text-center px-4">
-              <h2 className="text-xl font-bold text-foreground mb-1">Financial Cash Flow</h2>
-              <p className="text-sm text-muted-foreground max-w-md">Visualizing the flow of money from income sources through total funds and into expense categories.</p>
-            </div>
-            <BudgetSankey budgetData={budget.categories} />
-          </div>
-        </TabsContent>
-      </Tabs >
-    </div >
+
+          {/* Feeder Budgets (Formerly Klintemarken Property) */}
+          {klintemarkenData.length > 0 && (
+            <Card key="klintemarken" className="shadow-sm border-blue-100 bg-blue-50/10 overflow-hidden rounded-3xl">
+              <div className="bg-blue-50/50 border-b border-blue-100 py-4 px-6 flex justify-between items-center">
+                <CardTitle className="text-xl text-blue-800 flex items-center gap-2 font-bold">Feeder Budgets</CardTitle>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => expandAll(klintemarkenData.map(d => d.name))} className="h-8 text-[10px] uppercase tracking-wider font-bold">Expand All</Button>
+                  <Button variant="outline" size="sm" onClick={collapseAll} className="h-8 text-[10px] uppercase tracking-wider font-bold">Collapse All</Button>
+                </div>
+              </div>
+              <CardContent className="p-0">
+                <BudgetTable
+                  data={klintemarkenData as any}
+                  type="klintemarken"
+                  hideHeader={true}
+                  expandedCategories={expandedCategories}
+                  toggleCategory={toggleCategory}
+                  editingBudget={editingBudget}
+                  setEditingBudget={setEditingBudget}
+                  handleUpdateBudget={handleUpdateBudget}
+                  totalIncome={percentageDenominator}
+                  currency={settings.currency}
+                  selectedYear={selectedYear}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Primary Expenses Card - Now includes Unplanned Expenses as tail section */}
+          {(expenditureData.length > 0 || specialData.length > 0) && (
+            <Card key="expense" className="shadow-sm border-rose-100 bg-rose-50/10 overflow-hidden rounded-3xl">
+              <div className="bg-rose-50/50 border-b border-rose-100 py-4 px-6 flex justify-between items-center">
+                <CardTitle className="text-xl text-rose-800 flex items-center gap-2 font-bold">Primary Expenses</CardTitle>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => expandAll([...expenditureData.map(d => d.name), ...specialData.map(d => d.name)])} className="h-8 text-[10px] uppercase tracking-wider font-bold">Expand All</Button>
+                  <Button variant="outline" size="sm" onClick={collapseAll} className="h-8 text-[10px] uppercase tracking-wider font-bold">Collapse All</Button>
+                </div>
+              </div>
+              <CardContent className="p-0">
+                <BudgetTable
+                  data={[
+                    ...expenditureData,
+                    ...specialData.filter(c => c.name === 'Special').map(c => ({
+                      ...c,
+                      name: 'Slush Fund',
+                      sub_categories: []
+                    }))
+                  ] as any}
+                  type="expense"
+                  expandedCategories={expandedCategories}
+                  toggleCategory={toggleCategory}
+                  editingBudget={editingBudget}
+                  setEditingBudget={setEditingBudget}
+                  handleUpdateBudget={handleUpdateBudget}
+                  totalIncome={percentageDenominator}
+                  currency={settings.currency}
+                  selectedYear={selectedYear}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
 

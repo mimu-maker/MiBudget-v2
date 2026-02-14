@@ -1,3 +1,4 @@
+import { useState, useMemo, useEffect } from 'react';
 import { Loader2, FileText, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -7,11 +8,23 @@ interface ProcessingStatusProps {
         current: number;
         total: number;
         stage: 'idle' | 'parsing' | 'processing' | 'validating' | 'saving' | 'complete' | 'error';
+        dateSummary?: string;
     };
     setIsProcessing: (isProcessing: boolean) => void;
+    onClose?: () => void;
 }
 
-export const ProcessingStatus = ({ processingProgress, setIsProcessing }: ProcessingStatusProps) => {
+export const ProcessingStatus = ({ processingProgress, setIsProcessing, onClose }: ProcessingStatusProps) => {
+    // Auto-close on complete
+    useEffect(() => {
+        if (processingProgress.stage === 'complete') {
+            const timer = setTimeout(() => {
+                setIsProcessing(false);
+                if (onClose) onClose();
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [processingProgress.stage, setIsProcessing, onClose]);
     return (
         <div className="absolute inset-0 z-[100] bg-white/70 flex flex-col items-center justify-center backdrop-blur-md animate-in fade-in duration-300 rounded-3xl">
             <div className="relative h-20 w-20 flex items-center justify-center">
@@ -48,6 +61,12 @@ export const ProcessingStatus = ({ processingProgress, setIsProcessing }: Proces
                                 ✅ Successfully imported {processingProgress.total} transactions!
                             </p>
                             <p className="text-xs text-slate-500">
+                                Periods found: <span className="font-bold text-slate-700">{processingProgress.dateSummary}</span>
+                            </p>
+                            <p className="text-[10px] text-blue-500 font-medium">
+                                💡 Tip: Change your period filter to see these items
+                            </p>
+                            <p className="text-[10px] text-slate-400 pt-2">
                                 Dialog will close automatically in 3 seconds...
                             </p>
                         </div>

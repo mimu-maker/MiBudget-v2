@@ -164,7 +164,7 @@ const IncomeTransactionsTable = ({
                                                             </td>
                                                             <td className="py-3 px-4">
                                                                 <div className="font-medium flex items-center gap-2">
-                                                                    {transaction.merchant || transaction.stream || 'Unknown'}
+                                                                    {transaction.source || transaction.stream || 'Unknown'}
                                                                     {transaction.is_matched && (
                                                                         <Sparkles className="w-3 h-3 text-amber-500" />
                                                                     )}

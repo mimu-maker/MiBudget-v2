@@ -17,7 +17,7 @@ export type Database = {
           category: string
           created_at: string
           date: string
-          merchant: string
+          source: string
           fingerprint: string
           id: string
           description: string | null
@@ -26,11 +26,11 @@ export type Database = {
           status: string
           sub_category: string | null
           updated_at: string
-          clean_merchant: string | null
+          clean_source: string | null
           budget_month: string | null
           suggested_category: string | null
           suggested_sub_category: string | null
-          merchant_description: string | null
+          source_description: string | null
           excluded: boolean | null
           confidence: number | null
           projection_id: string | null
@@ -42,7 +42,7 @@ export type Database = {
           category: string
           created_at?: string
           date: string
-          merchant: string
+          source: string
           fingerprint: string
           id?: string
           description?: string | null
@@ -51,11 +51,11 @@ export type Database = {
           status: string
           sub_category?: string | null
           updated_at?: string
-          clean_merchant?: string
+          clean_source?: string
           budget_month?: string
           suggested_category?: string
           suggested_sub_category?: string
-          merchant_description?: string
+          source_description?: string
           excluded?: boolean | null
           confidence?: number | null
           projection_id?: string | null
@@ -67,7 +67,7 @@ export type Database = {
           category?: string
           created_at?: string
           date?: string
-          merchant?: string
+          source?: string
           fingerprint?: string
           id?: string
           description?: string | null
@@ -76,22 +76,22 @@ export type Database = {
           status?: string
           sub_category?: string | null
           updated_at?: string
-          clean_merchant?: string
+          clean_source?: string
           budget_month?: string
           suggested_category?: string
           suggested_sub_category?: string
-          merchant_description?: string
+          source_description?: string
           excluded?: boolean | null
           confidence?: number | null
           projection_id?: string | null
         }
         Relationships: []
       }
-      merchant_rules: {
+      source_rules: {
         Row: {
           id: string
-          merchant_name: string | null
-          clean_merchant_name: string
+          source_name: string | null
+          clean_source_name: string
           auto_category: string | null
           auto_sub_category: string | null
           auto_recurring: string | null
@@ -103,8 +103,8 @@ export type Database = {
         }
         Insert: {
           id?: string
-          merchant_name?: string | null
-          clean_merchant_name: string
+          source_name?: string | null
+          clean_source_name: string
           auto_category?: string | null
           auto_sub_category?: string | null
           auto_recurring?: string | null
@@ -116,8 +116,8 @@ export type Database = {
         }
         Update: {
           id?: string
-          merchant_name?: string | null
-          clean_merchant_name?: string
+          source_name?: string | null
+          clean_source_name?: string
           auto_category?: string | null
           auto_sub_category?: string | null
           auto_recurring?: string | null
@@ -133,7 +133,7 @@ export type Database = {
         Row: {
           id: string
           date: string
-          merchant: string | null
+          source: string | null
           amount: number
           category: string | null
           stream: string | null
@@ -149,7 +149,7 @@ export type Database = {
         Insert: {
           id?: string
           date: string
-          merchant?: string | null
+          source?: string | null
           amount: number
           category?: string | null
           stream?: string | null
@@ -165,7 +165,7 @@ export type Database = {
         Update: {
           id?: string
           date?: string
-          merchant?: string | null
+          source?: string | null
           amount?: number
           category?: string | null
           stream?: string | null

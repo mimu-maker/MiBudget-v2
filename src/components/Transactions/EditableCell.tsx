@@ -1,13 +1,18 @@
+import { useState, useEffect } from 'react';
 import { Trash2, Store, Sparkles } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CategorySelectContent } from '@/components/Budget/CategorySelectContent';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Transaction, useTransactionTable } from './hooks/useTransactionTable';
 import { getStatusBadgeVariant, getBudgetBadgeVariant } from './utils/transactionUtils';
 import { APP_STATUSES, useSettings } from '@/hooks/useSettings';
-import { useCategorySource } from '@/hooks/useBudgetCategories';
-import { formatCurrency } from '@/lib/formatUtils';
+import { useCategorySource, useUnifiedCategoryActions } from '@/hooks/useBudgetCategories';
+import { CategorySelector } from '@/components/Budget/CategorySelector';
+import { SmartSelector } from '@/components/ui/smart-selector';
+import { formatCurrency, formatDate, formatBudgetMonth } from '@/lib/formatUtils';
+import { addMonths, startOfMonth, format, parseISO } from 'date-fns';
 
 interface EditableCellProps {
   transaction: Transaction;
@@ -32,12 +37,21 @@ export const EditableCell = ({
   customDisplay,
   projections
 }: EditableCellProps) => {
-  const { settings, addSubCategory } = useSettings();
+  const { settings } = useSettings();
+  const { addCategory, addSubCategory } = useUnifiedCategoryActions();
   const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
   const { transactions } = useTransactionTable();
   const value = transaction[field];
 
+  const [localValue, setLocalValue] = useState(String(value || ''));
+
+  // Sync local value when external value changes
+  useEffect(() => {
+    setLocalValue(String(value || ''));
+  }, [value]);
+
   if (isEditing) {
+    // ... (no changes in editing block)
     if (field === 'account' || field === 'status' || field === 'category' || field === 'sub_category') {
       const options = {
         account: settings.accounts,
@@ -46,61 +60,68 @@ export const EditableCell = ({
         sub_category: displaySubCategories?.[transaction.category] || []
       };
 
-      // Get unique pending names from existing transactions
-      const existingPendingNames = Array.from(new Set(
+
+      // Get unique entity names from existing transactions
+      const existingEntities = Array.from(new Set(
         transactions
-          .filter(t => t.status && t.status.startsWith('Pending: '))
-          .map(t => t.status.replace('Pending: ', ''))
+          .filter(t => t.entity)
+          .map(t => t.entity!)
       )).sort();
 
+      // Handle specific entity assignment
       const handleStatusChange = (newStatus: string) => {
         if (newStatus === 'Pending Reconciliation') {
           // If simply selecting the base status, we don't change it immediately
           // The UI will show the secondary dropdown because the select value matches 'Pending Reconciliation'
-          onEdit(transaction.id, field, 'Pending Reconciliation');
-        } else if (newStatus.startsWith('Pending: ')) {
-          onEdit(transaction.id, field, newStatus);
-        } else {
-          onEdit(transaction.id, field, newStatus);
-        }
-      };
 
-      // Handle specific pending assignment
-      const handlePendingAssignment = (name: string) => {
-        if (name === 'new') {
-          const person = prompt("Enter Person or Event name:");
-          if (person) {
-            onEdit(transaction.id, field, `Pending: ${person}`);
+          if (!transaction.entity) {
+            onEdit(transaction.id, field, 'Pending Reconciliation');
+          } else {
+            onEdit(transaction.id, field, 'Pending Reconciliation');
           }
         } else {
-          onEdit(transaction.id, field, `Pending: ${name}`);
+          onEdit(transaction.id, field, newStatus);
         }
       };
 
-      // Handle category change - preserve sub-category if it exists under new category
-      const handleCategoryChange = (newCategory: string) => {
-        // Check if current sub-category exists under the new category
+      const handleEntityAssignment = (name: string) => {
+        if (name === 'new') {
+          // Set temporary 'new' state to show input
+          onEdit(transaction.id, 'entity', 'new');
+        } else {
+          onBulkEdit(transaction.id, { status: 'Pending Reconciliation', entity: name });
+        }
+      };
+
+      // ... existing category/sub-category handles ...
+      const handleCategoryChange = async (newCategory: string) => {
+        if (newCategory === 'add-new') {
+          const name = prompt("Enter new category name:");
+          if (name) {
+            await addCategory(name);
+            onEdit(transaction.id, 'category', name);
+            onEdit(transaction.id, 'sub_category', null);
+          }
+          return;
+        }
+
         const currentSubCategory = transaction.sub_category;
         const newCategorySubCategories = displaySubCategories?.[newCategory] || [];
         const shouldKeepSubCategory = currentSubCategory && newCategorySubCategories.includes(currentSubCategory);
 
-        // Create updates object for atomic change
         const updates: Partial<Transaction> = { category: newCategory };
         if (!shouldKeepSubCategory) {
           updates.sub_category = null;
         }
 
-        // Use bulk edit for atomic update
         onBulkEdit(transaction.id, updates);
       };
 
-      // Handle sub-category change with "+ New" option
-      const handleSubCategoryChange = (newValue: string) => {
+      const handleSubCategoryChange = async (newValue: string) => {
         if (newValue === 'add-new') {
           const newSubCategory = prompt('Enter new sub-category:');
           if (newSubCategory && transaction.category) {
-            // Add the new sub-category to settings
-            addSubCategory(transaction.category, newSubCategory);
+            await addSubCategory(transaction.category, newSubCategory);
             onEdit(transaction.id, 'sub_category', newSubCategory);
           }
         } else {
@@ -108,62 +129,120 @@ export const EditableCell = ({
         }
       };
 
+
       // Ensure that 'Pending: John' matches 'Pending Reconciliation' in the main Select value
-      const isPending = String(value).startsWith('Pending: ') || String(value) === 'Pending Reconciliation';
+      const isPending = String(value).startsWith('Pending: ') || String(value) === 'Pending Reconciliation' || !!transaction.entity;
       const displayValue = field === 'status' && isPending
         ? 'Pending Reconciliation'
         : String(value);
 
-      return (
-        <div className="flex gap-1 items-center">
-          <Select
+      if (field === 'category') {
+        return (
+          <CategorySelector
             value={displayValue}
             onValueChange={(newValue) => {
-              if (field === 'status') {
-                handleStatusChange(newValue);
-              } else if (field === 'category') {
-                handleCategoryChange(newValue);
-              } else if (field === 'sub_category') {
-                handleSubCategoryChange(newValue);
+              if (newValue.includes(':')) {
+                const [cat, sub] = newValue.split(':');
+                onBulkEdit(transaction.id, { category: cat, sub_category: sub });
               } else {
-                onEdit(transaction.id, field, newValue);
+                handleCategoryChange(newValue);
               }
+              onStopEdit();
             }}
-            onOpenChange={(open) => !open && !isPending && onStopEdit()}
-            disabled={field === 'sub_category' && !transaction.category}
-            defaultOpen={true}
-          >
-            <SelectTrigger className="h-8 min-w-[140px]">
-              <SelectValue placeholder={field === 'sub_category' && !transaction.category ? "Select a category first" : "Select..."} />
-            </SelectTrigger>
-            <SelectContent>
-              {options[field].map(option => (
-                <SelectItem key={option} value={option}>{option}</SelectItem>
-              ))}
-              {field === 'sub_category' && transaction.category && (
-                <SelectItem value="add-new" className="text-blue-600 font-medium">
-                  + Add New Sub-category
-                </SelectItem>
-              )}
-            </SelectContent>
-          </Select>
+            type={transaction.amount > 0 ? 'income' : 'expense'}
+            onAddCategory={() => { }}
+            suggestionLimit={3}
+            className="min-w-[180px]"
+          />
+        );
+      }
 
-          {/* Secondary Dropdown for Pending Assignment */}
-          {field === 'status' && isPending && (
+      return (
+        <div className="flex gap-1 items-center">
+          {field === 'status' || field === 'account' ? (
             <Select
-              value={String(value).startsWith('Pending: ') ? String(value).replace('Pending: ', '') : ''}
-              onValueChange={handlePendingAssignment}
+              value={displayValue}
+              onValueChange={(newValue) => {
+                if (field === 'status') {
+                  handleStatusChange(newValue);
+                } else {
+                  onEdit(transaction.id, field, newValue);
+                }
+              }}
+              onOpenChange={(open) => {
+                if (!open && !isPending) {
+                  onStopEdit();
+                }
+              }}
+              defaultOpen={true}
             >
-              <SelectTrigger className="h-8 w-[120px] bg-amber-50 border-amber-200 text-amber-900">
-                <SelectValue placeholder="Assign to..." />
+              <SelectTrigger className="h-8 min-w-[140px]" autoFocus>
+                <SelectValue placeholder="Select..." />
               </SelectTrigger>
               <SelectContent>
-                {existingPendingNames.map(name => (
-                  <SelectItem key={name} value={name}>{name}</SelectItem>
+                {options[field].map(option => (
+                  <SelectItem key={option} value={option}>{option}</SelectItem>
                 ))}
-                <SelectItem value="new" className="text-blue-600 font-medium">+ New Person/Event</SelectItem>
               </SelectContent>
             </Select>
+          ) : (
+            <SmartSelector
+              value={displayValue}
+              onValueChange={(newValue) => {
+                if (newValue === 'add-new') {
+                  handleSubCategoryChange(newValue);
+                } else {
+                  onEdit(transaction.id, field, newValue);
+                }
+              }}
+              onOpenChange={(open) => !open && onStopEdit()}
+              disabled={field === 'sub_category' && !transaction.category}
+              options={[
+                ...options[field].map(o => ({ label: o, value: o })),
+                ...(field === 'sub_category' ? [{ label: '+ Add New Sub-category', value: 'add-new' }] : [])
+              ]}
+              placeholder={field === 'sub_category' && !transaction.category ? "Select a category first" : "Select..."}
+              className="h-8 min-w-[140px]"
+            />
+          )}
+
+          {/* Secondary Dropdown for Entity Assignment */}
+          {field === 'status' && isPending && (
+            transaction.entity === 'new' ? (
+              <Input
+                autoFocus
+                className="h-8 w-[140px] bg-amber-50 border-amber-200 text-amber-900 placeholder:text-amber-900/50"
+                placeholder="Type Name..."
+                onBlur={(e) => {
+                  if (e.target.value) {
+                    onBulkEdit(transaction.id, { status: 'Pending Reconciliation', entity: e.target.value });
+                  } else {
+                    // Reset if empty
+                    onEdit(transaction.id, 'entity', null);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    onBulkEdit(transaction.id, { status: 'Pending Reconciliation', entity: e.currentTarget.value });
+                  }
+                }}
+              />
+            ) : (
+              <Select
+                value={transaction.entity || (String(value).startsWith('Pending: ') ? String(value).replace('Pending: ', '') : '')}
+                onValueChange={handleEntityAssignment}
+              >
+                <SelectTrigger className="h-8 min-w-[120px] bg-amber-50 border-amber-200 text-amber-900">
+                  <SelectValue placeholder="Assign Entity..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {existingEntities.map(name => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                  <SelectItem value="new" className="text-blue-600 font-medium">+ New Entity</SelectItem>
+                </SelectContent>
+              </Select>
+            )
           )}
         </div>
       );
@@ -193,6 +272,64 @@ export const EditableCell = ({
           </SelectContent>
         </Select>
       );
+    } else if (field === 'budget_month') {
+      // Generate options for the next 24 months
+      const options = Array.from({ length: 36 }, (_, i) => {
+        const date = addMonths(startOfMonth(new Date()), i - 12); // From 12 months ago to 24 months future
+        return {
+          value: format(date, 'yyyy-MM-01'),
+          label: format(date, 'MMM yy')
+        };
+      });
+
+      return (
+        <Select
+          value={String(value || '')}
+          onValueChange={(newValue) => {
+            const date = parseISO(newValue);
+            onBulkEdit(transaction.id, {
+              budget_month: newValue,
+              budget_year: date.getFullYear()
+            });
+            onStopEdit();
+          }}
+          onOpenChange={(open) => !open && onStopEdit()}
+          defaultOpen={true}
+        >
+          <SelectTrigger className="h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map(opt => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    } else if (field === 'budget_year') {
+      const currentYear = new Date().getFullYear();
+      const options = [currentYear - 1, currentYear, currentYear + 1, currentYear + 2];
+
+      return (
+        <Select
+          value={String(value || currentYear)}
+          onValueChange={(newValue) => {
+            onEdit(transaction.id, field, parseInt(newValue));
+            onStopEdit();
+          }}
+          onOpenChange={(open) => !open && onStopEdit()}
+          defaultOpen={true}
+        >
+          <SelectTrigger className="h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map(year => (
+              <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
     } else if (field === 'projection_id') {
       return (
         <Select
@@ -207,7 +344,7 @@ export const EditableCell = ({
             <SelectItem value="none">No Projection</SelectItem>
             {projections?.map(p => (
               <SelectItem key={p.id} value={p.id}>
-                {p.date.slice(5)} - {p.merchant} ({p.amount > 0 ? '+' : ''}{p.amount})
+                {p.date.slice(5)} - {p.source} ({p.amount > 0 ? '+' : ''}{p.amount})
               </SelectItem>
             ))}
           </SelectContent>
@@ -216,19 +353,28 @@ export const EditableCell = ({
     } else {
       return (
         <Input
-          value={String(value || '')}
-          onChange={(e) => {
-            const newValue = field === 'amount' ? parseFloat(e.target.value) || 0 : e.target.value;
+          value={localValue}
+          onChange={(e) => setLocalValue(e.target.value)}
+          onBlur={() => {
+            const newValue = field === 'amount' ? parseFloat(localValue) || 0 : localValue;
             onEdit(transaction.id, field, newValue);
+            onStopEdit();
           }}
-          onBlur={onStopEdit}
-          onKeyDown={(e) => e.key === 'Enter' && onStopEdit()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              const newValue = field === 'amount' ? parseFloat(localValue) || 0 : localValue;
+              onEdit(transaction.id, field, newValue);
+              onStopEdit();
+            }
+          }}
           className="h-8"
           autoFocus
         />
       );
     }
   }
+
+  const isDynamicField = field === 'date' || field === 'amount';
 
   return (
     <div
@@ -237,16 +383,26 @@ export const EditableCell = ({
         e.stopPropagation();
         onStartEdit(transaction.id, field);
       }}
-      className="cursor-pointer hover:bg-accent p-1 rounded transition-colors"
+      className={`cursor-pointer hover:bg-accent p-1 rounded transition-colors ${isDynamicField ? 'dynamic-text-container' : ''}`}
     >
       {customDisplay ? (
         customDisplay
       ) : field === 'amount' ? (
-        <span className={`font-bold ${transaction.amount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+        <span className={`font-bold ${transaction.amount >= 0 ? 'text-emerald-500' : 'text-rose-500'} dynamic-text text-right`}>
           {formatCurrency(transaction.amount, settings.currency)}
         </span>
+      ) : field === 'date' ? (
+        <span className="dynamic-text">
+          {formatDate(String(value))}
+        </span>
       ) : field === 'status' ? (
-        <Badge variant={getStatusBadgeVariant(String(value))}>{String(value)}</Badge>
+        <Badge variant={getStatusBadgeVariant(String(value))} className="whitespace-normal h-auto text-center px-1.5 py-0.5 text-[10px] leading-tight justify-center">
+          {String(value) === 'Reconciled'
+            ? (transaction.entity ? `Reconciled: ${transaction.entity}` : 'Reconciled')
+            : (transaction.entity || String(value).startsWith('Pending: ')
+              ? `Pending ${transaction.entity || String(value).replace('Pending: ', '')}`
+              : String(value))}
+        </Badge>
       ) : (field === 'planned' || field === 'excluded') ? (
         <Badge variant={Boolean(value) ? 'default' : 'outline'}>
           {Boolean(value) ? 'Yes' : 'No'}
@@ -259,7 +415,7 @@ export const EditableCell = ({
         value ? (
           <Badge variant="outline" className="border-amber-200 text-amber-700 bg-amber-50 gap-1">
             <Sparkles className="w-3 h-3" />
-            {projections?.find(p => p.id === value)?.merchant || 'Linked'}
+            {projections?.find(p => p.id === value)?.source || 'Linked'}
           </Badge>
         ) : (
           <span className="text-muted-foreground/30 text-[10px] italic">No link</span>

@@ -1,10 +1,9 @@
-
 export type RecurringInterval = 'Annually' | 'Bi-annually' | 'Quarterly' | 'Monthly' | 'N/A';
 
 export interface FutureTransaction {
   id: string | number;
   date: string;
-  merchant: string;
+  source: string;
   amount: number;
   // account: string; // Removed as per request
   // budget: string; // Removed as per request
@@ -27,7 +26,7 @@ export interface ProjectionData {
 
 export interface NewTransactionForm {
   date: string;
-  merchant: string;
+  source: string;
   amount: string;
   // account: string; // Removed as per request
   // budget: string; // Removed as per request
