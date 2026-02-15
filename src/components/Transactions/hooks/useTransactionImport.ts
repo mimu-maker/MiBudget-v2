@@ -540,6 +540,7 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                     .from('transactions')
                     .select('fingerprint')
                     .eq('user_id', userId)
+                    .neq('excluded', true) // Ignore soft-deleted/excluded transactions
                     .in('fingerprint', batch);
 
                 if (batchError) throw batchError;

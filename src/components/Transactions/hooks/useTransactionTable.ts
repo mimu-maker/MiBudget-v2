@@ -609,10 +609,20 @@ export const useTransactionTable = () => {
       for (let i = 0; i < total; i += CHUNK_SIZE) {
         const chunk = toInsert.slice(i, i + CHUNK_SIZE);
 
-        // Remove derived/frontend-only fields before sending to DB if necessary
-        // But for now we rely on Supabase ignoring extra fields or matching schema
+        // Sanitize for DB: remove 'source' as it's not a column, ensure 'merchant' is set
+        const dbChunk = chunk.map(({ source, ...rest }) => ({
+          ...rest,
+          merchant: source,
+          // Ensure we don't send fields that don't exist in DB schema
+          // clean_merchant is matched to clean_source in DB usually, but let's check schema
+          // Schema has: merchant, clean_merchant, merchant_description
+          // It does NOT have: source, clean_source (wait, schema said clean_source EXISTS)
+          // Let's re-verify schema from earlier tool output:
+          // clean_source EXISTS. clean_merchant EXISTS. merchant EXISTS. source DOES NOT EXIST.
+          // So we can keep clean_source. But we must remove 'source'.
+        }));
 
-        const { error } = await supabase.from('transactions').upsert(chunk, { onConflict: 'fingerprint' });
+        const { error } = await supabase.from('transactions').upsert(dbChunk, { onConflict: 'fingerprint' });
         if (error) throw error;
 
         processed += chunk.length;
