@@ -8,7 +8,7 @@ import { Trash2, AlertTriangle, RefreshCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export const EmergencyDataManagement = () => {
-    const { clearAllTransactions, factoryReset, fixUnplannedStatus } = useTransactionTable();
+    const { clearAllTransactions, factoryReset, fixUnplannedStatus, purgeSoftDeletedTransactions } = useTransactionTable();
     const [confirmText, setConfirmText] = useState('');
     const [isResetting, setIsResetting] = useState(false);
     const { toast } = useToast();
@@ -21,6 +21,20 @@ export const EmergencyDataManagement = () => {
                 toast({ title: "Transactions Cleared", description: "All transaction data has been removed from the server." });
             } catch (e) {
                 toast({ title: "Error", description: "Failed to clear transactions.", variant: "destructive" });
+            } finally {
+                setIsResetting(false);
+            }
+        }
+    };
+
+    const handlePurgeSoftDeleted = async () => {
+        if (confirm("Are you sure you want to PERMANENTLY delete all soft-deleted (excluded) transactions? This action cannot be undone.")) {
+            setIsResetting(true);
+            try {
+                await purgeSoftDeletedTransactions();
+                toast({ title: "Trashed Items Purged", description: "All soft-deleted transactions have been permanently removed." });
+            } catch (e) {
+                toast({ title: "Error", description: "Failed to purge soft-deleted transactions.", variant: "destructive" });
             } finally {
                 setIsResetting(false);
             }
@@ -69,6 +83,25 @@ export const EmergencyDataManagement = () => {
                         >
                             <Trash2 className="mr-2 h-4 w-4" />
                             Clear Transactions
+                        </Button>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-4 justify-between items-center border-t pt-6 mt-4">
+                        <div className="space-y-1">
+                            <h4 className="font-medium text-amber-900">Purge Soft-Deleted Items</h4>
+                            <p className="text-sm text-slate-500">
+                                Permanently deletes transactions that have been marked as "Excluded" or "Soft-Deleted".
+                                These items currently contribute to duplicate checks but are hidden from your main views.
+                            </p>
+                        </div>
+                        <Button
+                            onClick={handlePurgeSoftDeleted}
+                            disabled={isResetting}
+                            variant="destructive"
+                            className="bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shrink-0"
+                        >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Purge Trash
                         </Button>
                     </div>
 

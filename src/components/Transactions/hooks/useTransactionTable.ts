@@ -881,6 +881,20 @@ export const useTransactionTable = () => {
 
       await queryClient.invalidateQueries({ queryKey: ['transactions'] });
       await queryClient.invalidateQueries({ queryKey: ['source-rules-simple'] });
+    },
+    purgeSoftDeletedTransactions: async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData.user?.id;
+      if (!userId) throw new Error('User not authenticated');
+
+      const { error } = await (supabase as any)
+        .from('transactions')
+        .delete()
+        .eq('user_id', userId)
+        .eq('excluded', true);
+
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
   };
 };
