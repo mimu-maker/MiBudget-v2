@@ -107,7 +107,8 @@ export const processTransaction = (
         const excluded = match.auto_budget === 'Exclude';
 
         // Use source-level skip_triage (auto-complete) if available, otherwise fallback to rule
-        const isAutoComplete = sourcePref ? sourcePref.is_auto_complete : match.skip_triage;
+        // FORCE DISABLE: Auto-complete system-wide disable
+        const isAutoComplete = false; // sourcePref ? sourcePref.is_auto_complete : match.skip_triage;
 
         // Status is only Complete if auto-complete is true AND we have both category and sub-category
         // UNLESS the transaction is excluded, in which case it can be Complete

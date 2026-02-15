@@ -1151,10 +1151,12 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                                 <div className="flex items-center space-x-2 h-9">
                                                                     <Switch
                                                                         id={`scan-skip-${i}`}
-                                                                        checked={scanRule.skip_triage}
-                                                                        onCheckedChange={(v) => setScanRule({ ...scanRule, skip_triage: v })}
+                                                                        checked={false} // Force unchecked
+                                                                        onCheckedChange={(v) => { /* Disabled */ }}
+                                                                        disabled={true}
+                                                                        title="Auto-complete is globally disabled"
                                                                     />
-                                                                    <Label htmlFor={`scan-skip-${i}`} className="text-xs font-bold text-emerald-600">Auto-Complete</Label>
+                                                                    <Label htmlFor={`scan-skip-${i}`} className="text-xs font-bold text-emerald-600/50 cursor-not-allowed">Auto-Complete (Disabled)</Label>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1391,8 +1393,10 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                     <Zap className={cn("w-3 h-3 transition-colors", group.is_auto_complete ? "fill-emerald-500 text-emerald-500" : "text-slate-300")} />
                                                     <span className={cn("text-[9px] font-black uppercase tracking-tight", group.is_auto_complete ? "text-emerald-700" : "text-slate-400")}>Auto</span>
                                                     <Switch
-                                                        checked={group.is_auto_complete}
-                                                        className="h-3 w-6 scale-75"
+                                                        checked={false}
+                                                        disabled={true}
+                                                        className="h-3 w-6 scale-75 cursor-not-allowed opacity-50"
+                                                        title="Auto-complete is globally disabled"
                                                     />
                                                 </div>
                                                 <div
