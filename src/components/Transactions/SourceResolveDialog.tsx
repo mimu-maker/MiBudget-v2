@@ -61,7 +61,7 @@ export const SourceResolveDialog = ({
     // Separate source-level settings
     const [sourceSettings, setSourceSettings] = useState({
         recurring: transaction.recurring || 'N/A',
-        is_auto_complete: true // Default to auto-complete (skip triage) for resolved sources
+        is_auto_complete: false // FORCE DISABLE: Auto-complete system-wide disable
     });
 
     useEffect(() => {
@@ -77,7 +77,7 @@ export const SourceResolveDialog = ({
             });
             setSourceSettings({
                 recurring: transaction.recurring || 'N/A',
-                is_auto_complete: true
+                is_auto_complete: false // FORCE DISABLE
             });
         }
     }, [open, transaction.id, initialName, noiseFilters]);
@@ -263,8 +263,10 @@ export const SourceResolveDialog = ({
                             <div className="flex items-center justify-between p-3 border rounded-lg bg-slate-50">
                                 <span className="text-sm font-medium text-slate-700">Skip Triage</span>
                                 <Switch
-                                    checked={sourceSettings.is_auto_complete}
-                                    onCheckedChange={(v) => setSourceSettings(prev => ({ ...prev, is_auto_complete: v }))}
+                                    checked={false}
+                                    disabled={true}
+                                    onCheckedChange={(v) => { /* Disabled */ }}
+                                    title="Auto-complete is globally disabled"
                                 />
                             </div>
                         </div>

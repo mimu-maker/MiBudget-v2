@@ -166,7 +166,7 @@ export const SourceApplyDialog = ({
                     user_id: user.id,
                     name: combinedData?.rule?.clean_source_name || targetSourceName,
                     recurring: activeRecurring,
-                    is_auto_complete: true // Implicitly true when applying rules via this dialog
+                    is_auto_complete: false // FORCE DISABLE: Auto-complete system-wide disable
                 }, { onConflict: 'user_id, name' });
 
             if (sourceError) throw sourceError;

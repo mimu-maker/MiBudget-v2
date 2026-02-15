@@ -380,7 +380,7 @@ export const ValidationDashboard = () => {
                     user_id: user?.id,
                     name: clean_source || name, // Use clean name as the identifier for source settings
                     recurring: auto_recurring,
-                    is_auto_complete: skip_triage
+                    is_auto_complete: false // FORCE DISABLE: Auto-complete system-wide disable
                 }, { onConflict: 'user_id, name' });
 
             if (sourceSettingsError) {
@@ -471,7 +471,7 @@ export const ValidationDashboard = () => {
                     auto_recurring: selectedSourceRule.auto_recurring,
                     auto_planned: selectedSourceRule.auto_planned,
                     auto_budget: selectedSourceRule.auto_exclude ? 'Exclude' : null,
-                    skip_triage: selectedSourceRule.skip_triage
+                    skip_triage: false // FORCE DISABLE
                 });
             } catch (error) {
                 console.warn("Failed to update source rule, proceeding with transaction updates...", error);

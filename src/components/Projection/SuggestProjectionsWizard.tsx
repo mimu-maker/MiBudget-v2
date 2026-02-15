@@ -197,7 +197,7 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
                 user_id: userData.user?.id,
                 name: s.source || s.rawSource, // Use the clean name
                 recurring: s.interval,
-                is_auto_complete: true // Auto-suggested rules imply confidence, so we skip triage
+                is_auto_complete: false // FORCE DISABLE: Auto-complete system-wide disable
             }));
 
             const { error: settingsError } = await supabase
