@@ -27,6 +27,7 @@ interface CategorySelectorProps {
     suggestionLimit?: number;
     disabled?: boolean;
     showAlwaysAsk?: boolean;
+    hideSuggestions?: boolean;
 }
 
 export const CategorySelector = ({
@@ -38,7 +39,8 @@ export const CategorySelector = ({
     onAddCategory,
     suggestionLimit = 3,
     disabled = false,
-    showAlwaysAsk = true
+    showAlwaysAsk = false,
+    hideSuggestions = false
 }: CategorySelectorProps) => {
     const [open, setOpen] = React.useState(false);
 
@@ -80,6 +82,7 @@ export const CategorySelector = ({
                             onAddCategory={onAddCategory}
                             suggestionLimit={suggestionLimit}
                             showAlwaysAsk={showAlwaysAsk}
+                            hideSuggestions={hideSuggestions}
                         />
                     </CommandList>
                 </Command>

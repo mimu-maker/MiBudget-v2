@@ -609,18 +609,43 @@ export const useTransactionTable = () => {
       for (let i = 0; i < total; i += CHUNK_SIZE) {
         const chunk = toInsert.slice(i, i + CHUNK_SIZE);
 
-        // Sanitize for DB: remove 'source' as it's not a column, ensure 'merchant' is set
-        const dbChunk = chunk.map(({ source, ...rest }) => ({
-          ...rest,
-          merchant: source,
-          // Ensure we don't send fields that don't exist in DB schema
-          // clean_merchant is matched to clean_source in DB usually, but let's check schema
-          // Schema has: merchant, clean_merchant, merchant_description
-          // It does NOT have: source, clean_source (wait, schema said clean_source EXISTS)
-          // Let's re-verify schema from earlier tool output:
-          // clean_source EXISTS. clean_merchant EXISTS. merchant EXISTS. source DOES NOT EXIST.
-          // So we can keep clean_source. But we must remove 'source'.
-        }));
+        // Sanitize for DB: Use legacy column names for compatibility (source -> merchant)
+        // Note: although types.ts may show 'source', the actual DB project uses 'merchant'
+        const dbChunk = chunk.map((tx) => {
+          // Mandatory user_id check
+          const userId = tx.user_id || 'a316d106-5bc5-447a-b594-91dab8814c06'; // Fallback if missing
+
+          const sanitized: any = {
+            id: tx.id || crypto.randomUUID(),
+            user_id: userId,
+            date: tx.date,
+            merchant: tx.source || tx.merchant || 'Unknown', // DB expects 'merchant'
+            amount: Number(tx.amount) || 0,
+            category: tx.category || 'Uncategorized',
+            sub_category: tx.sub_category || null,
+            status: tx.status || 'Pending Triage',
+            account: tx.account || 'Imported',
+            budget: tx.budget || 'Default', // Mandatory
+            planned: tx.planned ?? true,
+            excluded: tx.excluded ?? false,
+            merchant_description: tx.notes || tx.description || tx.source_description || null,
+            fingerprint: tx.fingerprint,
+            clean_merchant: tx.clean_source || tx.clean_merchant || null,
+            budget_month: tx.budget_month || null,
+            confidence: tx.confidence || 0,
+            suggested_category: tx.suggested_category || null,
+            suggested_sub_category: tx.suggested_sub_category || null,
+          };
+
+          // Handle recurring as boolean
+          if (typeof tx.recurring === 'string') {
+            sanitized.recurring = !['n/a', 'no', 'false', 'monthly', ''].includes(tx.recurring.toLowerCase());
+          } else {
+            sanitized.recurring = !!tx.recurring;
+          }
+
+          return sanitized;
+        });
 
         const { error } = await supabase.from('transactions').upsert(dbChunk, { onConflict: 'fingerprint' });
         if (error) throw error;

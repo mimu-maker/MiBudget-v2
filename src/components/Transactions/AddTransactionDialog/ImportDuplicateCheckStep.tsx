@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, CheckCircle2, ChevronLeft } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, ChevronLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -107,7 +107,7 @@ export const ImportDuplicateCheckStep = ({
                         className="bg-emerald-600 hover:bg-emerald-700 text-white px-12 font-bold shadow-lg shadow-emerald-100 min-w-[200px]"
                     >
                         {isProcessing ? (
-                            "Processing..."
+                            <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Processing...</>
                         ) : (
                             <><CheckCircle2 className="w-5 h-5 mr-2" /> Complete Import</>
                         )}

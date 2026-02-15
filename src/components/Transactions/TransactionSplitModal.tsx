@@ -178,7 +178,7 @@ export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplit
                                         }
                                     }}
                                     type={transaction.amount > 0 ? 'income' : 'expense'}
-                                    suggestionLimit={0} // Disable suggestions for a clean list
+                                    hideSuggestions={true} // Hide suggestions for a clean list
                                     showAlwaysAsk={false} // Hide always ask
                                     className="h-8 shadow-sm"
                                 />

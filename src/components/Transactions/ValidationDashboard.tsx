@@ -60,6 +60,7 @@ export const ValidationDashboard = () => {
     const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
     const [confirmingKeepGroupId, setConfirmingKeepGroupId] = useState<string | null>(null);
     const [confirmingDeleteAllDuplicates, setConfirmingDeleteAllDuplicates] = useState(false);
+    const [manuallyDifferentiatedIds, setManuallyDifferentiatedIds] = useState<Set<string>>(new Set());
 
     const {
         transactions,
@@ -78,6 +79,7 @@ export const ValidationDashboard = () => {
     const duplicateGroups = useMemo(() => {
         const groups: Record<string, any[]> = {};
         transactions.forEach(tx => {
+            if (manuallyDifferentiatedIds.has(tx.id)) return;
             const key = `${tx.date}_${tx.amount}_${(tx.source || '').toLowerCase()}`;
             if (!groups[key]) groups[key] = [];
             groups[key].push(tx);
@@ -85,7 +87,7 @@ export const ValidationDashboard = () => {
         return Object.values(groups)
             .filter(g => g.length > 1)
             .sort((a, b) => new Date(b[0].date).getTime() - new Date(a[0].date).getTime());
-    }, [transactions]);
+    }, [transactions, manuallyDifferentiatedIds]);
 
     const duplicateIds = useMemo(() => {
         const ids = new Set<string>();
@@ -804,11 +806,12 @@ export const ValidationDashboard = () => {
                                     setRule((p: any) => p ? { ...p, category: v, sub_category: '' } : null);
                                 }
                             }}
+                            hideSuggestions={true}
+                            className="h-10 shadow-sm border-slate-200 rounded-xl bg-white"
                             disabled={rule.auto_exclude}
                             type="all"
                             suggestionLimit={3}
                             placeholder={rule.auto_exclude ? "N/A" : "Select category"}
-                            className={cn("bg-white h-10 text-xs shadow-sm", showErrors && !rule.category && !rule.auto_exclude && "border-red-500 ring-1 ring-red-500")}
                         />
                     </div>
                     <div className="md:col-span-3 space-y-1.5">
@@ -1045,8 +1048,12 @@ export const ValidationDashboard = () => {
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 if (confirmingKeepGroupId === `group-${idx}`) {
-                                                    const toKeep = group.find(t => t.status !== 'Complete') || group[1] || group[0];
-                                                    if (toKeep) differentiateTransaction(toKeep.id);
+                                                    // Mark all transactions in this group as manually differentiated
+                                                    setManuallyDifferentiatedIds(prev => {
+                                                        const next = new Set(prev);
+                                                        group.forEach(tx => next.add(tx.id));
+                                                        return next;
+                                                    });
                                                     setConfirmingKeepGroupId(null);
                                                 } else {
                                                     setConfirmingKeepGroupId(`group-${idx}`);

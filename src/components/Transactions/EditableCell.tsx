@@ -152,6 +152,7 @@ export const EditableCell = ({
             type={transaction.amount > 0 ? 'income' : 'expense'}
             onAddCategory={() => { }}
             suggestionLimit={3}
+            hideSuggestions={true}
             className="min-w-[180px]"
           />
         );

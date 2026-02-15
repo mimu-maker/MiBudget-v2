@@ -57,6 +57,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
     const [renameValue, setRenameValue] = useState('');
 
     const [historySelectedIds, setHistorySelectedIds] = useState<Set<string>>(new Set());
+    const [showExcluded, setShowExcluded] = useState(false);
     const [isBulkUpdating, setIsBulkUpdating] = useState(false);
     const [confirmingUnlinkId, setConfirmingUnlinkId] = useState<string | null>(null);
 
@@ -1094,6 +1095,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                                         }}
                                                                         type="all"
                                                                         suggestionLimit={3}
+                                                                        showAlwaysAsk={true}
                                                                         className="h-10 shadow-sm"
                                                                     />
                                                                 </div>
@@ -1477,18 +1479,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                             >
                                                 <Clock className="w-4 h-4" />
                                             </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                title="Discover Potential Matches"
-                                                className={cn("h-8 w-8 p-0 transition-colors", refiningSource === group.name ? "text-blue-600 bg-blue-50" : "text-slate-400 hover:text-blue-600 hover:bg-slate-100")}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setRefiningSource(refiningSource === group.name ? null : group.name);
-                                                }}
-                                            >
-                                                <Search className="w-4 h-4" />
-                                            </Button>
+
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
@@ -1504,31 +1495,14 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                         auto_recurring: group.hasRecurring ? 'Monthly' : '',
                                                         skip_triage: group.hasAuto,
                                                         auto_budget: group.hasExcluded ? 'Exclude' : 'Budgeted',
-                                                        isGroupDefault: true
+                                                        isGroupDefault: true,
+                                                        mode: 'source'
                                                     });
                                                 }}
                                             >
                                                 <SettingsIcon className="w-4 h-4" />
                                             </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                title="Add New Pattern Match"
-                                                className="h-8 w-8 p-0 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setEditingRule({
-                                                        clean_source_name: group.name,
-                                                        auto_category: group.category || '',
-                                                        auto_sub_category: group.sub_category || '',
-                                                        auto_recurring: group.hasRecurring ? 'Monthly' : '',
-                                                        skip_triage: group.hasAuto,
-                                                        match_mode: 'fuzzy'
-                                                    });
-                                                }}
-                                            >
-                                                <Plus className="w-4 h-4" />
-                                            </Button>
+
                                             {group.transactionCount === 0 && (
                                                 <Button
                                                     variant="ghost"
@@ -1580,9 +1554,17 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                     <div className="min-w-0">
                                                         <div className="flex items-center gap-2">
                                                             <span className="font-mono text-sm text-slate-700 truncate">{rule.source_name || 'Missing Pattern'}</span>
-                                                            {rule.match_mode === 'exact' && (
-                                                                <Badge variant="outline" className="text-[8px] h-3.5 px-1 py-0 border-indigo-200 text-indigo-600 bg-indigo-50 font-black">EXACT</Badge>
-                                                            )}
+                                                            <Badge
+                                                                variant="outline"
+                                                                className={cn(
+                                                                    "text-[9px] h-4 px-1.5 py-0 font-black border tracking-wide",
+                                                                    rule.match_mode === 'exact'
+                                                                        ? "border-indigo-200 text-indigo-700 bg-indigo-50"
+                                                                        : "border-blue-200 text-blue-700 bg-blue-50"
+                                                                )}
+                                                            >
+                                                                {rule.match_mode === 'exact' ? 'EXACT' : 'FUZZY'}
+                                                            </Badge>
                                                         </div>
                                                         <div className="flex items-center gap-2 mt-0.5">
                                                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Pattern Match</span>
@@ -1609,7 +1591,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                         size="sm"
                                                         title="Edit Pattern"
                                                         className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600 hover:bg-slate-100"
-                                                        onClick={() => setEditingRule({ ...rule })}
+                                                        onClick={() => setEditingRule({ ...rule, mode: 'pattern' })}
                                                     >
                                                         <Pencil className="w-3.5 h-3.5" />
                                                     </Button>
@@ -1635,9 +1617,9 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
             {/* Editing Dialog */}
             <Dialog open={!!editingRule} onOpenChange={(o) => !o && setEditingRule(null)}>
-                <DialogContent className="max-w-xl">
+                <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle>Edit Source Rule Configuration</DialogTitle>
+                        <DialogTitle>{editingRule?.mode === 'source' ? 'Edit Source Configuration' : 'Edit Match Pattern'}</DialogTitle>
                         <DialogDescription>
                             Configure how "{editingRule?.clean_source_name || editingRule?.source_name || 'this source'}" should be handled during import and validation.
                         </DialogDescription>
@@ -1654,6 +1636,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                 match_mode: editingRule.match_mode || 'fuzzy'
                             }}
                             transactions={transactions}
+                            mode={editingRule.mode}
                             isSaving={editMutation.isPending}
                             onCancel={() => setEditingRule(null)}
                             onSave={(ruleData) => {
@@ -1693,6 +1676,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 if (!o) {
                     setHistoryRule(null);
                     setHistorySelectedIds(new Set());
+                    setShowExcluded(false);
                 }
             }}>
                 <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
@@ -1756,6 +1740,16 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                             />
                                         </div>
                                     )}
+                                    <div className="h-4 w-px bg-slate-200 mx-2" />
+                                    <div className="flex items-center gap-2">
+                                        <Label htmlFor="show-excluded" className="text-xs text-slate-500 font-medium">Show Excluded</Label>
+                                        <Switch
+                                            id="show-excluded"
+                                            checked={showExcluded}
+                                            onCheckedChange={setShowExcluded}
+                                            className="scale-75"
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </DialogHeader>
@@ -1778,7 +1772,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                             patterns.some(p => (t.source || '').toLowerCase().includes(p.toLowerCase()));
                                                     }
                                                     const raw = historyRule?.source_name?.toLowerCase();
-                                                    return clean === target || t.clean_source?.toLowerCase() === target || t.source?.toLowerCase().includes(raw);
+                                                    const matchesPattern = clean === target || t.clean_source?.toLowerCase() === target || t.source?.toLowerCase().includes(raw);
+                                                    return matchesPattern && (showExcluded || !t.excluded);
                                                 });
                                                 return matches.length > 0 && matches.every(t => historySelectedIds.has(t.id));
                                             })()}
@@ -1793,7 +1788,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                             patterns.some(p => (t.source || '').toLowerCase().includes(p.toLowerCase()));
                                                     }
                                                     const raw = historyRule?.source_name?.toLowerCase();
-                                                    return clean === target || t.clean_source?.toLowerCase() === target || t.source?.toLowerCase().includes(raw);
+                                                    const matchesPattern = clean === target || t.clean_source?.toLowerCase() === target || t.source?.toLowerCase().includes(raw);
+                                                    return matchesPattern && (showExcluded || !t.excluded);
                                                 });
                                                 if (checked) {
                                                     setHistorySelectedIds(new Set([...Array.from(historySelectedIds), ...matches.map(m => m.id)]));
@@ -1827,7 +1823,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                         }
 
                                         const raw = historyRule?.source_name?.toLowerCase();
-                                        return clean === target || t.clean_source?.toLowerCase() === target || t.source?.toLowerCase().includes(raw);
+                                        const matchesPattern = clean === target || t.clean_source?.toLowerCase() === target || t.source?.toLowerCase().includes(raw);
+                                        return matchesPattern && (showExcluded || !t.excluded);
                                     })
                                     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                                     .map((tx) => (
@@ -1954,7 +1951,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                             <Button
                                 className="bg-blue-600 hover:bg-blue-700 font-black px-6"
                                 onClick={() => {
-                                    setEditingRule({ ...historyRule });
+                                    setEditingRule({ ...historyRule, mode: 'pattern' });
                                     setHistoryRule(null);
                                 }}
                             >

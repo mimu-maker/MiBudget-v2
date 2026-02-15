@@ -24,6 +24,7 @@ interface CategorySelectContentProps {
     selectedValues?: string[];
     onSelect?: (value: string) => void;
     showAlwaysAsk?: boolean;
+    hideSuggestions?: boolean;
 }
 
 export const CategorySelectContent = ({
@@ -35,7 +36,8 @@ export const CategorySelectContent = ({
     selectedValue,
     selectedValues,
     onSelect,
-    showAlwaysAsk = false
+    showAlwaysAsk = false,
+    hideSuggestions = false
 }: CategorySelectContentProps) => {
     const { income, feeders, expenses, slush, isLoading } = useGroupedCategories();
     const { data: popular = [] } = usePopularCategories(suggestionLimit);
@@ -173,11 +175,11 @@ export const CategorySelectContent = ({
                     {mode === 'select' ? <SelectSeparator /> : <CommandSeparator />}
                 </>
             )}
-            {popular.length > 0 && renderSuggestedGroup('Suggested Categories', popularObjects, false)}
+            {!hideSuggestions && popular.length > 0 && renderSuggestedGroup('Suggested Categories', popularObjects, false)}
 
             {!suggestedOnly && (
                 <>
-                    {(type === 'all' || type === 'income') && renderGroup('Income', income, popular.length > 0)}
+                    {(type === 'all' || type === 'income') && renderGroup('Income', income, !hideSuggestions && popular.length > 0)}
 
                     {(type === 'all' || type === 'expense') && (
                         <>

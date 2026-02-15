@@ -199,6 +199,7 @@ const FilterableHeader = ({ field, onFilter, onClearFilter, currentFilter, optio
                     mode="command"
                     onSelect={(val) => toggleOption(val)}
                     selectedValues={Array.isArray(currentFilter) ? currentFilter : []}
+                    hideSuggestions={true}
                   />
                 ) : (
                   <CommandGroup>

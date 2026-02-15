@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Check, HelpCircle, Zap, Store, History, ChevronRight, ChevronDown, ChevronUp, Edit2, Search, Split, RefreshCw, AlertTriangle, Trash2, PlusCircle, PartyPopper, Sparkles, LayoutGrid, ListFilter, Tag } from 'lucide-react';
+import { Check, HelpCircle, Zap, Store, History, ChevronRight, ChevronDown, ChevronUp, Edit2, Search, Split, RefreshCw, AlertTriangle, Trash2, PlusCircle, PartyPopper, Sparkles, LayoutGrid, ListFilter, Tag, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
@@ -149,6 +149,8 @@ export const TriageAccordion = ({
     const [confirmingDeleteAllDuplicates, setConfirmingDeleteAllDuplicates] = useState(false);
     const [currentBucket, setCurrentBucket] = useState<string | undefined>(undefined);
     const [expandedValidationSource, setExpandedValidationSource] = useState<string | null>(null);
+    const [editingRowId, setEditingRowId] = useState<string | null>(null);
+    const [editingState, setEditingState] = useState<{ category: string, sub_category: string }>({ category: '', sub_category: '' });
 
     const [mappingSort, setMappingSort] = useState({ field: 'total', order: 'desc' });
     const [catSort, setCatSort] = useState({ field: 'total', order: 'desc' });
@@ -555,76 +557,128 @@ export const TriageAccordion = ({
                                                     {Object.values(cat.subCategories).map((sub: any) => (
                                                         <div key={sub.subCatName} className="space-y-2">
                                                             {sub.txs.map((tx: any) => (
-                                                                <div key={tx.id} className="relative">
-                                                                    <Card className={cn("p-0 hover:shadow-lg transition-all bg-white border-slate-200 overflow-hidden group/card shadow-sm border-slate-200/80 rounded-xl", expandedSource === tx.id && "ring-2 ring-indigo-500 shadow-indigo-100 z-10")}>
-                                                                        <div className="flex items-center h-14">
-                                                                            <div
-                                                                                className="w-[28%] min-w-0 px-5 h-full flex flex-col justify-center border-r border-slate-50 group-hover/card:bg-indigo-50/40 transition-colors cursor-pointer"
-                                                                                onClick={() => openRuleDialog(tx.source, [tx], true)}
-                                                                                title="Click to Map Source"
-                                                                            >
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <div className="font-black text-[14px] text-slate-900 leading-tight truncate hover:text-indigo-600 transition-colors" title={tx.clean_source || tx.source}>
-                                                                                        {tx.clean_source || tx.source}
-                                                                                    </div>
-                                                                                    {onUpdateRow && (
-                                                                                        <TransactionNote
-                                                                                            transaction={tx}
-                                                                                            onSave={(id, note) => onUpdateRow(id, { notes: note })}
-                                                                                        />
-                                                                                    )}
+                                                                <Card key={tx.id} className="p-0 hover:shadow-lg transition-all bg-white border-slate-200 overflow-hidden group/card shadow-sm border-slate-200/80 rounded-xl">
+                                                                    <div className="flex items-center h-14">
+                                                                        <div
+                                                                            className="w-[28%] min-w-0 px-5 h-full flex flex-col justify-center border-r border-slate-50 group-hover/card:bg-indigo-50/40 transition-colors cursor-pointer"
+                                                                            onClick={() => openRuleDialog(tx.source, [tx], true)}
+                                                                            title="Click to Map Source"
+                                                                        >
+                                                                            <div className="flex items-center gap-2">
+                                                                                <div className="font-black text-[14px] text-slate-900 leading-tight truncate hover:text-indigo-600 transition-colors" title={tx.clean_source || tx.source}>
+                                                                                    {tx.clean_source || tx.source}
                                                                                 </div>
-                                                                                {tx.clean_source && tx.clean_source !== tx.source && (
-                                                                                    <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter truncate mt-0.5">
-                                                                                        {tx.source}
+                                                                                {onUpdateRow && (
+                                                                                    <TransactionNote
+                                                                                        transaction={tx}
+                                                                                        onSave={(id, note) => onUpdateRow(id, { notes: note })}
+                                                                                    />
+                                                                                )}
+                                                                            </div>
+                                                                            {tx.clean_source && tx.clean_source !== tx.source && (
+                                                                                <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter truncate mt-0.5">
+                                                                                    {tx.source}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+
+                                                                        <div className="flex-1 flex items-center px-6 h-full gap-8 bg-slate-50/5">
+                                                                            <div className="flex items-center gap-4 shrink-0">
+                                                                                <span className={cn(
+                                                                                    "text-[10px] font-black uppercase tracking-wider tabular-nums leading-none",
+                                                                                    tx.needs_date_verification ? "text-amber-600 flex items-center gap-1" : "text-slate-400"
+                                                                                )}>
+                                                                                    {tx.needs_date_verification && <AlertTriangle className="w-3 h-3" />}
+                                                                                    {tx.date}
+                                                                                </span>
+                                                                                {editingRowId === tx.id ? (
+                                                                                    <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
+                                                                                        <CategorySelector
+                                                                                            value={editingState.category}
+                                                                                            onValueChange={(v) => {
+                                                                                                if (v.includes(':')) {
+                                                                                                    const [cat, sub] = v.split(':');
+                                                                                                    setEditingState({ category: cat, sub_category: sub });
+                                                                                                } else {
+                                                                                                    setEditingState(p => ({ ...p, category: v }));
+                                                                                                }
+                                                                                            }}
+                                                                                            type="all"
+                                                                                            className="h-7 text-xs w-32"
+                                                                                            placeholder="Category"
+                                                                                        />
+                                                                                        <SmartSelector
+                                                                                            value={editingState.sub_category}
+                                                                                            onValueChange={(v) => setEditingState(p => ({ ...p, sub_category: v }))}
+                                                                                            options={getSubCategoryList(editingState.category).map((s: string) => ({ label: s, value: s }))}
+                                                                                            disabled={!editingState.category}
+                                                                                            placeholder="Sub"
+                                                                                            className="h-7 text-xs w-32"
+                                                                                        />
+                                                                                        <Button
+                                                                                            size="sm"
+                                                                                            className="h-7 w-7 p-0 bg-emerald-600 hover:bg-emerald-700"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                if (onUpdateRow) {
+                                                                                                    onUpdateRow(tx.id, {
+                                                                                                        category: editingState.category,
+                                                                                                        sub_category: editingState.sub_category,
+                                                                                                        // If manually edited, we treat it as Explicit/verified
+                                                                                                        status: (editingState.category && editingState.sub_category) ? 'Complete' : 'Pending Triage'
+                                                                                                    });
+                                                                                                }
+                                                                                                setEditingRowId(null);
+                                                                                            }}
+                                                                                        >
+                                                                                            <Check className="w-3.5 h-3.5" />
+                                                                                        </Button>
+                                                                                        <Button
+                                                                                            size="sm"
+                                                                                            variant="ghost"
+                                                                                            className="h-7 w-7 p-0 text-slate-400 hover:text-slate-600"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                setEditingRowId(null);
+                                                                                            }}
+                                                                                        >
+                                                                                            <X className="w-3.5 h-3.5" />
+                                                                                        </Button>
                                                                                     </div>
+                                                                                ) : (
+                                                                                    <Badge
+                                                                                        variant="secondary"
+                                                                                        className="text-[10px] h-6 px-3 bg-white text-slate-600 border border-slate-200/80 font-black tracking-tight shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all group/badge"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            setEditingRowId(tx.id);
+                                                                                            setEditingState({ category: tx.category, sub_category: tx.sub_category || '' });
+                                                                                        }}
+                                                                                    >
+                                                                                        <Tag className="w-3 h-3 opacity-40 group-hover/badge:text-blue-500" />
+                                                                                        {tx.category} <ChevronRight className="w-2.5 h-2.5 opacity-30" /> {tx.sub_category}
+                                                                                        <Edit2 className="w-3 h-3 ml-1 opacity-0 group-hover/badge:opacity-100 transition-opacity" />
+                                                                                    </Badge>
                                                                                 )}
                                                                             </div>
 
-                                                                            <div className="flex-1 flex items-center px-6 h-full gap-8 bg-slate-50/5">
-                                                                                <div className="flex items-center gap-4 shrink-0">
-                                                                                    <span className={cn(
-                                                                                        "text-[10px] font-black uppercase tracking-wider tabular-nums leading-none",
-                                                                                        tx.needs_date_verification ? "text-amber-600 flex items-center gap-1" : "text-slate-400"
-                                                                                    )}>
-                                                                                        {tx.needs_date_verification && <AlertTriangle className="w-3 h-3" />}
-                                                                                        {tx.date}
-                                                                                    </span>
-                                                                                    <Badge variant="secondary" className="text-[10px] h-6 px-3 bg-white text-slate-600 border border-slate-200/80 font-black tracking-tight shadow-sm flex items-center gap-1.5 shrink-0">
-                                                                                        <Tag className="w-3 h-3 opacity-40" />
-                                                                                        {tx.category} <ChevronRight className="w-2.5 h-2.5 opacity-30" /> {tx.sub_category}
-                                                                                    </Badge>
-                                                                                </div>
-
-                                                                                <div className="flex-1 text-right border-l border-slate-100 pl-6">
-                                                                                    <span className={cn(
-                                                                                        "font-mono tabular-nums text-[16px] font-black tracking-tighter",
-                                                                                        tx.amount < 0 ? "text-slate-900" : "text-emerald-600"
-                                                                                    )}>
-                                                                                        {formatCurrency(tx.amount, settings.currency)}
-                                                                                    </span>
-                                                                                </div>
-                                                                            </div>
-
-                                                                            <div className="w-fit flex items-center gap-2 shrink-0 px-4 h-full border-l border-slate-50 bg-white">
-                                                                                <Button size="sm" variant="ghost" onClick={() => onSplit(tx)} className="h-9 w-9 p-0 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all rounded-lg" title="Split Transaction"><Split className="w-4 h-4" /></Button>
-                                                                                <Button size="sm" variant="ghost" onClick={() => onVerifySingle(tx)} className="h-9 w-9 p-0 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-100/50 transition-all rounded-lg" title="Verify Transaction"><Check className="w-5 h-5" /></Button>
+                                                                            <div className="flex-1 text-right border-l border-slate-100 pl-6">
+                                                                                <span className={cn(
+                                                                                    "font-mono tabular-nums text-[16px] font-black tracking-tighter",
+                                                                                    tx.amount < 0 ? "text-slate-900" : "text-emerald-600"
+                                                                                )}>
+                                                                                    {formatCurrency(tx.amount, settings.currency)}
+                                                                                </span>
                                                                             </div>
                                                                         </div>
-                                                                    </Card>
-                                                                    {expandedSource === tx.id && (
-                                                                        <div className="mt-2 mb-4 p-4 bg-indigo-50/30 rounded-xl border border-indigo-100 animate-in slide-in-from-top-2">
-                                                                            <RuleForm
-                                                                                rule={selectedSourceRule}
-                                                                                setRule={setSelectedSourceRule}
-                                                                                onSave={handleSaveRuleInternal}
-                                                                                onCancel={() => setExpandedSource(null)}
-                                                                                getSubCategoryList={getSubCategoryList}
-                                                                            />
+
+                                                                        <div className="w-fit flex items-center gap-2 shrink-0 px-4 h-full border-l border-slate-50 bg-white">
+                                                                            <Button size="sm" variant="ghost" onClick={() => onSplit(tx)} className="h-9 w-9 p-0 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all rounded-lg" title="Split Transaction"><Split className="w-4 h-4" /></Button>
+                                                                            <Button size="sm" variant="ghost" onClick={() => onVerifySingle(tx)} className="h-9 w-9 p-0 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-100/50 transition-all rounded-lg" title="Verify Transaction"><Check className="w-5 h-5" /></Button>
                                                                         </div>
-                                                                    )}
-                                                                </div>
-                                                            ))}<div className="hidden"></div>
+                                                                    </div>
+                                                                </Card>
+                                                            ))}
                                                         </div>
                                                     ))}
                                                 </div>

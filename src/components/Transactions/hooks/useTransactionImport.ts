@@ -10,20 +10,22 @@ import { useSettings } from '@/hooks/useSettings';
 
 // Map field names to common CSV header keywords (including localized Danish terms)
 const COLUMN_ALIASES: Record<string, string[]> = {
-    date: ['dato', 'booking', 'bogført', 'tidspunkt', 'transaktionsdato'],
-    source: ['tekst', 'beskrivelse', 'modtager', 'afsender', 'source', 'merchant', 'vendor', 'butik', 'detaljer'],
-    amount: ['beløb', 'sum', 'pris', 'value', 'dkk', 'currency', 'total'],
-    category: ['kategori', 'type', 'gruppe', 'label'],
-    sub_category: ['underkategori', 'sub', 'specifikation'],
+    date: ['date', 'dato', 'booking', 'bogført', 'tidspunkt', 'transaktionsdato'],
+    source: ['source', 'tekst', 'beskrivelse', 'modtager', 'afsender', 'merchant', 'vendor', 'butik', 'detaljer'],
+    amount: ['amount', 'beløb', 'sum', 'pris', 'value', 'dkk', 'currency', 'total'],
+    category: ['category', 'kategori', 'type', 'gruppe', 'label'],
+    sub_category: ['sub_category', 'subcategory', 'underkategori', 'sub', 'specifikation'],
     // planned: ['planlagt', 'budgetteret', 'forventet'], // Disabled - always true
-    recurring: ['fast', 'gentagelse', 'frekvens', 'periodisk'],
-    notes: ['note', 'kommentar', 'ekstra', 'description', 'beskrivelse']
+    recurring: ['recurring', 'fast', 'gentagelse', 'frekvens', 'periodisk'],
+    notes: ['notes', 'note', 'kommentar', 'ekstra', 'description', 'beskrivelse']
 };
 
 export const transactionColumns = Object.keys(COLUMN_ALIASES);
 
 const generateFingerprint = (t: any) => {
     const account = t.account || 'Unknown';
+    // Include category in fingerprint to distinguish between identical transactions with different categories (if needed, but usually strictly by financial data)
+    // Actually, stick to financial unique constraints: date, source, amount.
     const str = `${t.date}-${t.source}-${t.amount}-${account}`;
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -294,7 +296,8 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                         sub_category: '',
                         planned: true, // Default to Planned (unplanned=N)
                         recurring: 'N/A',
-                        notes: ''
+                        notes: '',
+                        hasExplicitCategory: false
                     };
 
                     let rawCsvCat = '';
@@ -314,10 +317,15 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                             else if (transactionField === 'category') {
                                 rawCsvCat = value;
                                 transaction[transactionField] = value;
+                                // Robust check: if value is non-empty string, mark as explicit
+                                if (value && String(value).trim().length > 0) {
+                                    transaction.hasExplicitCategory = true;
+                                }
                             }
                             else if (transactionField === 'sub_category') {
                                 rawCsvSub = value;
                                 transaction[transactionField] = value;
+                                if (value && value.trim().length > 0) transaction.hasExplicitCategory = true;
                             }
                             else transaction[transactionField] = value || '';
                         }
@@ -353,12 +361,28 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                     transaction.budget_year = processed.budget_year;
                     transaction.status = processed.status === 'Complete' ? 'Complete' : 'Pending Triage';
 
-                    // ONLY trust CSV categories if they actually exist, otherwise fallback to processed rules
-                    if (!trustCsvCategories || !transaction.category) {
-                        transaction.category = processed.category || transaction.category || null;
-                    }
-                    if (!trustCsvCategories || !transaction.sub_category) {
-                        transaction.sub_category = processed.sub_category || transaction.sub_category || '';
+                    // Priority: 1. CSV Value (Explicit) -> 2. Source Rule (Auto)
+                    // If we have an explicit category from CSV, ensuring strict adherence.
+                    if (transaction.hasExplicitCategory) {
+                        // Keep the CSV values (which are already in transaction.category/sub_category)
+                        // If they are empty strings, we might fallback? No, hasExplicitCategory checks for non-empty.
+                        // But double check logic:
+                        if (!transaction.category && processed.category) {
+                            // This edge case shouldn't happen if hasExplicitCategory is true, but safe fallback:
+                            transaction.category = processed.category;
+                        }
+                    } else {
+                        // FORCE CHECK: If rawCsvCat was found but hasExplicitCategory wasn't set for some reason
+                        if (rawCsvCat && rawCsvCat.trim().length > 0) {
+                            transaction.category = rawCsvCat;
+                            transaction.hasExplicitCategory = true;
+                            // If user provided a category, allow sub-category to be empty (don't force rule sub-cat)
+                            if (rawCsvSub) transaction.sub_category = rawCsvSub;
+                        } else {
+                            // No explicit category, fully trust the rule processor
+                            transaction.category = processed.category || null;
+                            transaction.sub_category = processed.sub_category || '';
+                        }
                     }
 
                     return transaction;
@@ -436,6 +460,13 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
 
             // Check if this row was promoted: Does the SUB-category have a direct mapping?
             // If so, that mapping overrides the parent category.
+            // BUT: If the user provided an Explicit Category in CSV, we should be very careful about overriding it with mappings logic unless they explicitly mapped it.
+
+            // Logic:
+            // 1. If hasExplicitCategory is true, we ONLY applying mappings if the user explicitly chose a mapping in Step 3/4.
+            // 2. If the mapping is "Create New" or "Keep", we keep existing. 
+            // 3. Current logic maps based on `categoryValueMapping[cat]`.
+
             if (sub && categoryValueMapping[sub]) {
                 cat = categoryValueMapping[sub];
             } else if (cat && categoryValueMapping[cat]) {
@@ -458,9 +489,15 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                     // If we mapped to a specific system subcategory, and we don't have a high-confidence parent yet
                     // or the sub-category is uniquely tied to a parent in our suggestions, use it.
                     // This fixes ")ss2) it's incorrectly aassociated with a sub-cat that doesn't exist under special"
-                    const suggestion = suggestions[sub];
-                    if (suggestion && suggestion.subCategory === mapped && suggestion.confidence >= 0.8) {
-                        cat = suggestion.category;
+
+                    // CRITICAL FIX: Only do this "reverse lookup" (Sub -> Cat) if the user didn't explicitly provide a category.
+                    // If they said "Special" -> "Home Improvement", we must NOT switch it to "Klintemarken" -> "Home Improvement"
+                    // just because "Home Improvement" is usually Klintemarken.
+                    if (!tx.hasExplicitCategory) {
+                        const suggestion = suggestions[sub];
+                        if (suggestion && suggestion.subCategory === mapped && suggestion.confidence >= 0.8) {
+                            cat = suggestion.category;
+                        }
                     }
                 }
             }
@@ -584,6 +621,9 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
     const executeImport = async () => {
         setIsProcessing(true);
         setErrors([]);
+
+        // Small delay to allow UI to show processing state
+        await new Promise(r => setTimeout(r, 100));
 
         // Identify which transactions to actually import
         // Non-conflicts + selected conflicts

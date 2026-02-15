@@ -257,6 +257,7 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
                                                 setEditedTx(prev => ({ ...prev, category: v, sub_category: '' }));
                                             }
                                         }}
+                                        hideSuggestions={true}
                                         className="h-10 shadow-sm border-slate-200 rounded-xl bg-slate-50"
                                     />
                                 ) : (
