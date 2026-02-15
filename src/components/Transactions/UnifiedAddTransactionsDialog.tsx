@@ -17,7 +17,7 @@ interface UnifiedAddTransactionsDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onAdd: (transaction: any) => Promise<void>;
-    onImport: (data: any[]) => void;
+    onImport: (data: any[], onProgress?: (current: number, total: number) => void) => void;
 }
 
 export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImport }: UnifiedAddTransactionsDialogProps) => {

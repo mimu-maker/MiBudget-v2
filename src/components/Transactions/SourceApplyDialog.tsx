@@ -57,11 +57,18 @@ export const SourceApplyDialog = ({
     const [isUnplanned, setIsUnplanned] = useState(false); // Default false (Planned)
     const [isExcluded, setIsExcluded] = useState(false);
 
-    // Fetch the target rule (Check both new and legacy tables)
-    const { data: rule, isLoading } = useQuery({
-        queryKey: ['source-rule', targetSourceName],
+    // Fetch the target rule (Check both new and legacy tables) AND Source Settings
+    const { data: combinedData, isLoading } = useQuery({
+        queryKey: ['source-rule-and-settings', targetSourceName],
         queryFn: async () => {
-            // 1. Check New Table
+            // 1. Fetch Source Settings (Centralized)
+            const { data: sourceSettings } = await supabase
+                .from('sources')
+                .select('*')
+                .eq('name', targetSourceName)
+                .maybeSingle();
+
+            // 2. Check New Rule Table
             const { data: sourceRule, error: sourceError } = await supabase
                 .from('source_rules')
                 .select('*')
@@ -70,49 +77,63 @@ export const SourceApplyDialog = ({
                 .maybeSingle();
 
             if (sourceError) throw sourceError;
-            if (sourceRule) return sourceRule;
 
-            // 2. Check Legacy Table
-            const { data: merchantRule, error: merchantError } = await (supabase as any)
-                .from('merchant_rules')
-                .select('*')
-                .eq('clean_merchant_name', targetSourceName)
-                .limit(1)
-                .maybeSingle();
+            let finalRule = sourceRule;
 
-            if (merchantError) throw merchantError;
+            // 3. Check Legacy Table if no new rule
+            if (!finalRule) {
+                const { data: merchantRule, error: merchantError } = await (supabase as any)
+                    .from('merchant_rules')
+                    .select('*')
+                    .eq('clean_merchant_name', targetSourceName)
+                    .limit(1)
+                    .maybeSingle();
 
-            if (merchantRule) {
-                // Map legacy structure to new component state
-                return {
-                    id: merchantRule.id,
-                    clean_source_name: merchantRule.clean_merchant_name,
-                    source_name: merchantRule.merchant_name,
-                    auto_category: merchantRule.auto_category,
-                    auto_sub_category: merchantRule.auto_sub_category,
-                    auto_recurring: merchantRule.auto_recurring,
-                    auto_planned: merchantRule.auto_planned,
-                    auto_budget: merchantRule.auto_budget,
-                    skip_triage: merchantRule.skip_triage,
-                    match_mode: merchantRule.match_mode || 'fuzzy'
-                };
+                if (merchantError) throw merchantError;
+
+                if (merchantRule) {
+                    finalRule = {
+                        id: merchantRule.id,
+                        clean_source_name: merchantRule.clean_merchant_name,
+                        source_name: merchantRule.merchant_name,
+                        auto_category: merchantRule.auto_category,
+                        auto_sub_category: merchantRule.auto_sub_category,
+                        // Legacy values might still be here, but we prefer 'sources' table
+                        auto_planned: merchantRule.auto_planned,
+                        auto_budget: merchantRule.auto_budget,
+                        match_mode: merchantRule.match_mode || 'fuzzy'
+                    };
+                }
             }
 
-            return null;
+            return { rule: finalRule, sourceSettings };
         },
         enabled: open && !!targetSourceName
     });
 
-    // Initialize Form State when Rule loads
+    // Initialize Form State
     useEffect(() => {
-        if (rule) {
-            setActiveCategory(rule.auto_category || 'Other');
-            setActiveSubCategory(rule.auto_sub_category || '');
-            setActiveRecurring(rule.auto_recurring || 'N/A');
-            setIsUnplanned(!rule.auto_planned); // Map to isUnplanned toggle
-            setIsExcluded(rule.auto_budget === 'Exclude');
+        if (combinedData) {
+            const { rule, sourceSettings } = combinedData;
+
+            // Prioritize Source Settings for recurring
+            if (sourceSettings) {
+                setActiveRecurring(sourceSettings.recurring || 'N/A');
+            } else if (rule?.auto_recurring) {
+                // Fallback to legacy rule setting if source setting missing
+                setActiveRecurring(rule.auto_recurring);
+            } else {
+                setActiveRecurring('N/A');
+            }
+
+            if (rule) {
+                setActiveCategory(rule.auto_category || 'Other');
+                setActiveSubCategory(rule.auto_sub_category || '');
+                setIsUnplanned(!rule.auto_planned); // Map to isUnplanned toggle
+                setIsExcluded(rule.auto_budget === 'Exclude');
+            }
         }
-    }, [rule]);
+    }, [combinedData]);
 
     // Find similar transactions
     const similarMatches = useMemo(() => {
@@ -135,17 +156,28 @@ export const SourceApplyDialog = ({
     // Apply Mutation uses the ACTIVE state values
     const applyMutation = useMutation({
         mutationFn: async () => {
-            if (!rule) throw new Error("No rule found");
+            // if (!rule) throw new Error("No rule found"); // We might be creating a new one entirely or updating source settings only
             if (!user?.id) throw new Error("User not authenticated");
 
+            // 1. Save Source Settings (Centralized)
+            const { error: sourceError } = await supabase
+                .from('sources')
+                .upsert({
+                    user_id: user.id,
+                    name: combinedData?.rule?.clean_source_name || targetSourceName,
+                    recurring: activeRecurring,
+                    is_auto_complete: true // Implicitly true when applying rules via this dialog
+                }, { onConflict: 'user_id, name' });
+
+            if (sourceError) throw sourceError;
+
+            // 2. Save Rule
             const newRulePayload: any = {
                 source_name: cleanSource(transaction.source, settings.noiseFilters),
-                clean_source_name: rule.clean_source_name,
+                clean_source_name: combinedData?.rule?.clean_source_name || targetSourceName,
                 auto_category: activeCategory,        // Use edited value
                 auto_sub_category: activeSubCategory, // Use edited value
-                auto_recurring: activeRecurring,      // Use edited value
                 auto_planned: !isUnplanned,           // Use edited value
-                skip_triage: true,
                 user_id: user.id,
                 auto_budget: isExcluded ? 'Exclude' : null
             };
@@ -160,9 +192,9 @@ export const SourceApplyDialog = ({
             }
 
             const updates: any = {
-                clean_source: rule.clean_source_name,
+                clean_source: combinedData?.rule?.clean_source_name || targetSourceName,
                 // COMPATIBILITY: Ensure legacy clean_merchant is also set for Pending Action queries
-                clean_merchant: rule.clean_source_name,
+                clean_merchant: combinedData?.rule?.clean_source_name || targetSourceName,
                 category: activeCategory,
                 sub_category: activeSubCategory,
                 recurring: activeRecurring,
@@ -188,6 +220,7 @@ export const SourceApplyDialog = ({
             toast.success(`Mapped rule and updated ${1 + selectedIds.size} transactions`);
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+                queryClient.invalidateQueries({ queryKey: ['sources'] }), // Invalidate sources
                 queryClient.invalidateQueries({ queryKey: ['source-rules-simple'] }),
                 queryClient.invalidateQueries({ queryKey: ['existing-source-names'] })
             ]);
@@ -216,7 +249,7 @@ export const SourceApplyDialog = ({
                 <div className="px-8 pb-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
                     {isLoading ? (
                         <div className="py-12 text-center text-slate-400">Loading rule details...</div>
-                    ) : !rule ? (
+                    ) : !combinedData ? (
                         <div className="py-12 text-center text-rose-500 flex flex-col items-center gap-2">
                             <AlertCircle className="w-10 h-10 opacity-50" />
                             <p>Could not find original rule for <strong>{targetSourceName}</strong></p>
@@ -477,7 +510,7 @@ export const SourceApplyDialog = ({
                     <Button
                         className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest h-14 px-10 rounded-2xl shadow-2xl shadow-blue-200 transition-all active:scale-95 order-1 sm:order-2 shrink-0 group"
                         onClick={() => applyMutation.mutate()}
-                        disabled={applyMutation.isPending || !rule}
+                        disabled={applyMutation.isPending || !combinedData}
                     >
                         {applyMutation.isPending ? "Applying Updates..." : <>
                             <Check className="w-5 h-5 mr-3 group-hover:scale-125 transition-transform" />

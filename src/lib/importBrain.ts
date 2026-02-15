@@ -56,18 +56,16 @@ export const processTransaction = (
     rawSource: string,
     rawDate: string,
     rules: any[],
-    noiseFilters: string[] = []
+    noiseFilters: string[] = [],
+    sourceSettings: any[] = []
 ): ProcessedTransaction => {
     const clean = cleanSource(rawSource, noiseFilters);
     const dateObj = new Date(rawDate);
-    const isFuture = dateObj > new Date();
 
     // Default budget month to the 1st of the transaction month
-    // We use string-based construction to avoid local/UTC timezone shifts
     const year = dateObj.getFullYear();
     const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
     const budgetMonth = `${year}-${month}-01`;
-
     const budgetYear = dateObj.getFullYear();
 
     const cleanLower = clean.toLowerCase();
@@ -82,36 +80,41 @@ export const processTransaction = (
     // 2. Try Prefix/Substring Match if no exact match AND rule is fuzzy
     if (!match) {
         match = rules.find(rule => {
-            // Short names should not be fuzzy matched to avoid accidental broad matches
             const sourceNameRaw = rule.source_name || "";
             const cleanNameRaw = rule.clean_source_name || "";
             const ruleName = (sourceNameRaw || cleanNameRaw).toLowerCase().trim();
 
-            // Critical: skip empty rules or pure noise rules
             if (!ruleName || ruleName.length < 2) return false;
-
-            // If match_mode is explicitly 'exact', skip fuzzy matching
             if (rule.match_mode === 'exact') return false;
 
             return rawSource.toLowerCase().startsWith(ruleName) ||
                 cleanLower.startsWith(ruleName) ||
-                (cleanLower.length > 3 && ruleName.startsWith(cleanLower)) || // Changed cleanLower to ruleName here
+                (cleanLower.length > 3 && ruleName.startsWith(cleanLower)) ||
                 rawSource.toLowerCase().includes(ruleName);
         });
         if (match) confidence = 0.8;
     }
+
+    const cleanName = match?.clean_source_name || clean;
+    const cleanNameLower = cleanName.toLowerCase();
+
+    // Find source-level settings for the resolved clean name
+    const sourcePref = sourceSettings.find(s => s.name.toLowerCase() === cleanNameLower);
 
     if (match) {
         const category = match.auto_category || "";
         const sub_category = match.auto_sub_category || null;
         const excluded = match.auto_budget === 'Exclude';
 
-        // Status is only Complete if skip_triage is true AND we have both category and sub-category
+        // Use source-level skip_triage (auto-complete) if available, otherwise fallback to rule
+        const isAutoComplete = sourcePref ? sourcePref.is_auto_complete : match.skip_triage;
+
+        // Status is only Complete if auto-complete is true AND we have both category and sub-category
         // UNLESS the transaction is excluded, in which case it can be Complete
-        const status = (match.skip_triage && (excluded || (category && sub_category))) ? 'Complete' : 'Pending Triage';
+        const status = (isAutoComplete && (excluded || (category && sub_category))) ? 'Complete' : 'Pending Triage';
 
         return {
-            clean_source: match.clean_source_name || clean,
+            clean_source: cleanName,
             category: category,
             sub_category: sub_category,
             status: status as any,
@@ -119,21 +122,21 @@ export const processTransaction = (
             budget_year: budgetYear,
             confidence: confidence,
             planned: match.auto_planned ?? true,
-            recurring: match.auto_recurring || (confidence === 1.0 ? 'Monthly' : 'N/A'),
+            recurring: sourcePref?.recurring || match.auto_recurring || (confidence === 1.0 ? 'Monthly' : 'N/A'),
             excluded: excluded
         };
     }
 
     return {
-        clean_source: clean,
+        clean_source: cleanName,
         category: "",
         sub_category: null,
         status: 'Pending Triage',
         budget_month: budgetMonth,
         budget_year: budgetYear,
         confidence: 0,
-        planned: true, // Default to Planned (unplanned=N)
-        recurring: 'N/A',
+        planned: true,
+        recurring: sourcePref?.recurring || 'N/A',
         excluded: false
     };
 };

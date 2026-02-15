@@ -42,7 +42,7 @@ export interface ProcessingProgress {
     dateSummary?: string;
 }
 
-export const useTransactionImport = (onImport: (data: any[]) => void) => {
+export const useTransactionImport = (onImport: (data: any[], onProgress?: (current: number, total: number) => void) => void) => {
     const { settings } = useSettings();
     const [step, setStep] = useState(1);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -89,6 +89,17 @@ export const useTransactionImport = (onImport: (data: any[]) => void) => {
 
     const queryClient = useQueryClient();
     const cachedRules = getCachedRules();
+    const { data: sourceSettings = [] } = useQuery({
+        queryKey: ['sources'],
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from('sources')
+                .select('*');
+            if (error) return [];
+            return data || [];
+        }
+    });
+
     const { data: rulesData, isLoading: isLoadingRules } = useQuery({
         queryKey: ['source_rules_mapping'],
         queryFn: async () => {
@@ -332,7 +343,8 @@ export const useTransactionImport = (onImport: (data: any[]) => void) => {
                         identificationString,
                         transaction.date,
                         rules as SourceRule[],
-                        settings.noiseFilters
+                        settings.noiseFilters,
+                        sourceSettings
                     );
 
                     transaction.clean_source = processed.clean_source;
@@ -650,10 +662,17 @@ export const useTransactionImport = (onImport: (data: any[]) => void) => {
                 const months = Array.from(new Set(finalData.map((t: any) => new Date(t.date).toLocaleString('default', { month: 'short' })))).sort();
                 const dateSummary = `${years.join(', ')} (${months.join(', ')})`;
 
-                await onImport(finalData);
+                await onImport(finalData, (current, total) => {
+                    setProcessingProgress(prev => ({
+                        ...prev,
+                        current,
+                        total,
+                        stage: 'saving'
+                    }));
+                });
                 setProcessingProgress({
-                    current: preview.length,
-                    total: preview.length,
+                    current: finalData.length,
+                    total: finalData.length,
                     stage: 'complete',
                     dateSummary
                 });

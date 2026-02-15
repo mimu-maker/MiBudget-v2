@@ -5,6 +5,7 @@ import { DeviceTrustDialog } from '@/components/Auth/DeviceTrustDialog';
 import { useDeviceTrust } from '@/hooks/useDeviceTrust';
 import { useSessionTimer } from '@/hooks/useSessionTimer';
 import { isEmailAllowed } from '@/lib/authUtils';
+import { SessionConflictDialog } from '@/components/Auth/SessionConflictDialog';
 
 interface AuthContextType {
   user: User | null;
@@ -30,6 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [userProfile, setUserProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionConflict, setSessionConflict] = useState(false);
 
   const {
     showDeviceTrustDialog,
@@ -162,6 +164,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  // Session Conflict - Realtime Listener
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('session-monitoring')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'user_profiles',
+          filter: `user_id=eq.${user.id}`,
+        },
+        async (payload) => {
+          const newProfile = payload.new as any;
+          const currentDeviceId = getDeviceId();
+          console.log('AuthContext: Realtime update received. New Active Device:', newProfile.active_device_id, 'Local:', currentDeviceId);
+
+          if (newProfile.active_device_id && newProfile.active_device_id !== currentDeviceId) {
+            console.warn('Active session changed to another device. Signing out.');
+            // Show a toast or alert? Maybe just sign out mostly.
+            // We could set a "signed out due to other session" flag to show a message on login screen.
+            await signOut();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    }
+  }, [user]);
+
+  const handleSessionReplace = async () => {
+    if (!user) return;
+    try {
+      const currentDeviceId = getDeviceId();
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({ active_device_id: currentDeviceId })
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+      setSessionConflict(false);
+
+      // Update local profile state
+      setUserProfile((prev: any) => ({ ...prev, active_device_id: currentDeviceId }));
+    } catch (error) {
+      console.error('Error updating active session:', error);
+      alert('Failed to switch session. Please try again.');
+    }
+  };
+
+  const handleSessionCancel = async () => {
+    await signOut();
+    setSessionConflict(false);
+  };
+
   const signInWithGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -193,7 +254,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           timezone: 'Europe/Copenhagen',
           role: 'user',
           is_setup_complete: true,
-          onboarding_status: 'completed'
+          onboarding_status: 'completed',
+          active_device_id: getDeviceId()
         };
         const { data: createdProfile, error: createError } = await supabase
           .from('user_profiles')
@@ -205,7 +267,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('AuthContext: Profile creation error', createError);
           return null;
         }
+        console.log('AuthContext: Created new profile with deviceId:', newProfile.active_device_id);
         return createdProfile;
+      }
+
+      // Check active session
+      const currentDeviceId = getDeviceId();
+      console.log('AuthContext: Checking session. Remote:', data.active_device_id, 'Local:', currentDeviceId);
+
+      if (data.active_device_id && data.active_device_id !== currentDeviceId) {
+        console.warn('Session conflict detected. Active on:', data.active_device_id);
+        setSessionConflict(true);
+      } else if (!data.active_device_id) {
+        console.log('AuthContext: Claiming empty session for device:', currentDeviceId);
+        // Claim session if none exists
+        await supabase.from('user_profiles').update({ active_device_id: currentDeviceId }).eq('user_id', userId);
+        data.active_device_id = currentDeviceId;
       }
 
       console.log('AuthContext: Profile fetched successfully:', data.full_name);
@@ -252,6 +329,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           onTrust={() => handleDeviceTrust()} // No callback needed for timer reset anymore, hook handles it
           onDontTrust={() => handleDeviceDontTrust()}
           onLogout={signOut}
+        />
+      )}
+      {sessionConflict && (
+        <SessionConflictDialog
+          onConfirm={handleSessionReplace}
+          onCancel={handleSessionCancel}
         />
       )}
     </AuthContext.Provider>

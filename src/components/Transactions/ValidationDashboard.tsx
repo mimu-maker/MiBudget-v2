@@ -373,6 +373,22 @@ export const ValidationDashboard = () => {
             skip_triage: boolean,
             auto_budget?: string | null
         }) => {
+            // 1. Save Source Settings (Centralized)
+            const { error: sourceSettingsError } = await supabase
+                .from('sources')
+                .upsert({
+                    user_id: user?.id,
+                    name: clean_source || name, // Use clean name as the identifier for source settings
+                    recurring: auto_recurring,
+                    is_auto_complete: skip_triage
+                }, { onConflict: 'user_id, name' });
+
+            if (sourceSettingsError) {
+                console.error("Error saving source settings:", sourceSettingsError);
+                throw sourceSettingsError;
+            }
+
+            // 2. Save Rule
             let { error } = await supabase
                 .from('source_rules')
                 .upsert([{
@@ -381,34 +397,15 @@ export const ValidationDashboard = () => {
                     clean_source_name: clean_source || name,
                     auto_category: category,
                     auto_sub_category: sub_category,
-                    auto_recurring: auto_recurring,
                     auto_planned: auto_planned,
-                    skip_triage: skip_triage,
                     auto_budget: auto_budget
                 }], { onConflict: 'user_id, source_name' });
-
-            if (error && (error.code === '42P01' || error.code === 'PGRST205' || error.code === 'PGRST204' || error.code === '42703' || error.message?.includes('not found') || error.message?.includes('column'))) {
-                console.log("source_rules not found, falling back to merchant_rules");
-                const { error: fallbackError } = await (supabase as any)
-                    .from('merchant_rules')
-                    .upsert([{
-                        user_id: user?.id,
-                        merchant_name: name,
-                        clean_merchant_name: clean_source || name,
-                        auto_category: category,
-                        auto_sub_category: sub_category,
-                        auto_recurring: auto_recurring,
-                        auto_planned: auto_planned,
-                        skip_triage: skip_triage,
-                        auto_budget: auto_budget
-                    }], { onConflict: 'user_id, merchant_name' });
-                error = fallbackError;
-            }
 
             if (error) throw error;
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['sources'] }); // Invalidate sources
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names-ranked'] });
             setRuleDialogOpen(false);
@@ -474,7 +471,7 @@ export const ValidationDashboard = () => {
                     auto_recurring: selectedSourceRule.auto_recurring,
                     auto_planned: selectedSourceRule.auto_planned,
                     auto_budget: selectedSourceRule.auto_exclude ? 'Exclude' : null,
-                    skip_triage: true
+                    skip_triage: selectedSourceRule.skip_triage
                 });
             } catch (error) {
                 console.warn("Failed to update source rule, proceeding with transaction updates...", error);

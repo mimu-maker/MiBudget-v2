@@ -187,17 +187,35 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
         }));
 
         // 2. Save Rules if checked
+        // 2. Save Rules and Source Settings if checked
         const rulesToSave = selectedSuggestions.filter(s => s.saveAsRule);
         if (rulesToSave.length > 0) {
             const { data: userData } = await supabase.auth.getUser();
+
+            // 2a. Save Source Settings into 'sources' table (Centralized)
+            const sourceSettingsPayload = rulesToSave.map(s => ({
+                user_id: userData.user?.id,
+                name: s.source || s.rawSource, // Use the clean name
+                recurring: s.interval,
+                is_auto_complete: true // Auto-suggested rules imply confidence, so we skip triage
+            }));
+
+            const { error: settingsError } = await supabase
+                .from('sources')
+                .upsert(sourceSettingsPayload, { onConflict: 'user_id, name' });
+
+            if (settingsError) {
+                console.error("Error saving source settings:", settingsError);
+                // Continue to save rules anyway, but log the error
+            }
+
+            // 2b. Save Rules into 'source_rules' table
             const payload = rulesToSave.map(s => ({
                 source_name: s.rawSource,
                 clean_source_name: s.source || s.rawSource,
                 auto_category: s.category,
                 auto_sub_category: s.subCategory,
-                auto_recurring: s.interval,
                 auto_planned: true,
-                skip_triage: true, // Default to auto-approve as requested
                 user_id: userData.user?.id
             }));
 

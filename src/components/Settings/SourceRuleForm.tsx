@@ -22,10 +22,8 @@ export interface SourceRuleState {
     name: string;
     category: string;
     sub_category: string;
-    auto_recurring: string;
     auto_planned: boolean;
     auto_exclude: boolean;
-    skip_triage: boolean;
     match_mode: 'exact' | 'fuzzy';
     isGroupDefault?: boolean;
 }
@@ -94,16 +92,13 @@ export const SourceRuleForm = ({
         }
 
         const finalRule = fullRule ? {
-            ...rule,
-            skip_triage: rule.auto_exclude || rule.skip_triage
+            ...rule
         } : {
             ...rule,
             category: '',
             sub_category: '',
-            auto_recurring: '',
             auto_planned: true,
-            auto_exclude: false,
-            skip_triage: false
+            auto_exclude: false
         };
 
         const finalSelectedIds = applyToHistory ? Array.from(selectedIds) : [];
@@ -289,8 +284,7 @@ export const SourceRuleForm = ({
                                         checked={rule.auto_exclude}
                                         onCheckedChange={(v) => setRule({
                                             ...rule,
-                                            auto_exclude: v,
-                                            skip_triage: v ? true : rule.skip_triage
+                                            auto_exclude: v
                                         })}
                                     />
                                 </div>

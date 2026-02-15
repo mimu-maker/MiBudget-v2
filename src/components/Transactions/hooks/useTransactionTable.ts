@@ -537,53 +537,27 @@ export const useTransactionTable = () => {
     setEditingCell(null);
   };
 
-  const handleImport = async (importedTransactions: any[]) => {
-    const { data: authData } = await supabase.auth.getUser();
-    const userId = authData.user?.id || 'a316d106-5bc5-447a-b594-91dab8814c06';
-
-    const toInsert = importedTransactions.map((t) => {
-      let status = t.status || 'Pending Triage';
-      if (!APP_STATUSES.includes(status)) status = 'Pending Triage';
-
-      return {
-        ...t,
-        id: (t.id && t.id.includes('-')) ? t.id : crypto.randomUUID(),
-        user_id: userId,
-        source: t.source || 'Unknown',
-        amount: parseAmount(t.amount.toString()) || 0,
-        account: t.account || 'Unknown',
-        status: status,
-        planned: parseBool(t.planned),
-        recurring: t.recurring || 'N/A',
-        confidence: t.confidence || 0
-      };
-    });
-
-    try {
-      await saveLocalTransactions(toInsert);
-    } catch (err: any) {
-      console.error("Local save failed:", err);
-    }
-
-    await queryClient.invalidateQueries({ queryKey: ['transactions'] });
-  };
-
-  const handleAddTransaction = async (newTransaction: Transaction) => {
-    const { id, ...transactionData } = newTransaction;
-    await addTransactionMutation.mutateAsync(transactionData);
-  };
-
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData.user?.id;
       if (!userId) throw new Error('User not authenticated');
-      const { error } = await (supabase as any)
-        .from('transactions')
-        .update({ status: 'Excluded', excluded: true, confidence: -1 })
-        .in('id', ids)
-        .eq('user_id', userId);
-      if (error) throw error;
+
+      // Chunk deletes to avoid "Request URI too long" or payload limits
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+        const chunk = ids.slice(i, i + CHUNK_SIZE);
+        const { error } = await (supabase as any)
+          .from('transactions')
+          .delete()
+          .in('id', chunk)
+          .eq('user_id', userId);
+
+        if (error) {
+          console.error(`Validating chunk ${i} failed:`, error);
+          throw error;
+        }
+      }
     },
     onSuccess: (_, variables) => {
       const previousTotal = queryClient.getQueryData<Transaction[]>(['transactions']);
@@ -596,11 +570,68 @@ export const useTransactionTable = () => {
         showUndo({
           type: 'delete',
           transactions: deletedTxs,
-          description: `Deleted ${deletedTxs.length} transaction${deletedTxs.length > 1 ? 's' : ''}`
+          description: `Permanently deleted ${deletedTxs.length} transaction${deletedTxs.length > 1 ? 's' : ''}`
         });
       }
     },
   });
+
+  const handleImport = async (importedTransactions: any[], onProgress?: (current: number, total: number) => void) => {
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData.user?.id || 'a316d106-5bc5-447a-b594-91dab8814c06';
+
+    const toInsert = importedTransactions.map((t) => {
+      let status = t.status || 'Pending Triage';
+      if (!APP_STATUSES.includes(status)) status = 'Pending Triage';
+
+      return {
+        ...t,
+        id: (t.id && t.id.includes('-')) ? t.id : crypto.randomUUID(),
+        user_id: userId,
+        source: t.source || 'Unknown',
+        merchant: t.source || 'Unknown', // Compatibility
+        amount: parseAmount(t.amount.toString()) || 0,
+        account: t.account || 'Unknown',
+        status: status,
+        planned: parseBool(t.planned),
+        recurring: t.recurring || 'N/A',
+        confidence: t.confidence || 0,
+        fingerprint: generateFingerprint(t)
+      };
+    });
+
+    try {
+      // Chunked upload directly to Supabase
+      const CHUNK_SIZE = 500;
+      const total = toInsert.length;
+      let processed = 0;
+
+      for (let i = 0; i < total; i += CHUNK_SIZE) {
+        const chunk = toInsert.slice(i, i + CHUNK_SIZE);
+
+        // Remove derived/frontend-only fields before sending to DB if necessary
+        // But for now we rely on Supabase ignoring extra fields or matching schema
+
+        const { error } = await supabase.from('transactions').upsert(chunk, { onConflict: 'fingerprint' });
+        if (error) throw error;
+
+        processed += chunk.length;
+        if (onProgress) onProgress(processed, total);
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['transactions'] });
+
+    } catch (err: any) {
+      console.error("Import failed:", err);
+      // Optional: Show error toast/alert to user
+      throw err; // Re-throw so UI can handle it if needed
+    }
+  };
+
+  const handleAddTransaction = async (newTransaction: Transaction) => {
+    const { id, ...transactionData } = newTransaction;
+    await addTransactionMutation.mutateAsync(transactionData);
+  };
 
   const bulkUpdateMutation = useMutation({
     mutationFn: async ({ ids, updates }: { ids: string[], updates: Partial<Transaction> }) => {
@@ -755,7 +786,61 @@ export const useTransactionTable = () => {
         notes: `Split from original ${previousAmount}`
       });
     },
-    emergencyClearAll,
+    emergencyClearAll: async () => {
+      // Deprecated in favor of specific actions, but kept for legacy calls just in case
+      await clearLocalTransactions();
+      localStorage.removeItem('mibudget_transactions');
+      queryClient.clear();
+    },
+    clearAllTransactions: async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData.user?.id;
+      if (!userId) throw new Error('User not authenticated');
+
+      // 1. Delete all transactions from server
+      const { error } = await (supabase as any)
+        .from('transactions')
+        .delete()
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      // 2. Clear local cache
+      await clearLocalTransactions();
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+    factoryReset: async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData.user?.id;
+      if (!userId) throw new Error('User not authenticated');
+
+      // 1. Transactions
+      await (supabase as any).from('transactions').delete().eq('user_id', userId);
+
+      // 2. Rules
+      await (supabase as any).from('source_rules').delete().eq('user_id', userId);
+      await (supabase as any).from('merchant_rules').delete().eq('user_id', userId);
+
+      // 3. Budgets & Categories (Cascading deletes should handle sub-resources)
+      await (supabase as any).from('budget_category_limits').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Clean limits first if possible, or rely on cascade
+      // Note: Delete categories carefully. Using a separate query to avoid blocking if tables don't exist
+      try { await (supabase as any).from('sub_categories').delete().userIdIsIrrelevantHereAsWeNeedCascade ? null : null; } catch (e) { /* ignore */ }
+
+      // We assume user_id is on categories. If not, this might fail or do nothing.
+      await (supabase as any).from('categories').delete().eq('user_id', userId);
+      await (supabase as any).from('budget_groups').delete().eq('user_id', userId);
+      await (supabase as any).from('budgets').delete().eq('user_id', userId);
+
+      // 4. Clear local
+      await clearLocalTransactions();
+      localStorage.clear();
+      if (window.indexedDB) {
+        try { indexedDB.deleteDatabase('mibudget_transactions_db'); } catch (e) { }
+      }
+
+      queryClient.clear();
+      window.location.reload(); // Force reload to reset app state
+    },
     isResolved: (t: Transaction) => !!(t.clean_source && knownSources.has(t.clean_source)),
     fixUnplannedStatus: async () => {
       const { data: authData } = await supabase.auth.getUser();

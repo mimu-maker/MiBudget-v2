@@ -340,56 +340,30 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
                             </div>
 
                             {/* Automation & Status */}
-                            <div className="bg-white p-4 rounded-2xl border border-slate-200/60 shadow-sm space-y-4">
-                                <div className="space-y-1.5">
-                                    <Label className="text-[9px] font-bold text-slate-400 uppercase">Recurring Rule</Label>
-                                    {isEditing ? (
-                                        <Select
-                                            value={editedTx.recurring || 'N/A'}
-                                            onValueChange={(v) => updateField('recurring', v)}
-                                        >
-                                            <SelectTrigger className="h-9 bg-slate-50 border-slate-200 shadow-sm text-[11px] font-black rounded-lg">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent className="rounded-lg">
-                                                {['N/A', 'Monthly', 'Quarterly', 'Annually', 'Weekly', 'One-off'].map(r => (
-                                                    <SelectItem key={r} value={r}>{r}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    ) : (
-                                        <div className="flex items-center gap-2 p-1.5 bg-slate-50 border border-slate-100 rounded-lg">
-                                            <RefreshCw className={cn("w-3 h-3", transaction.recurring !== 'N/A' ? "text-blue-500" : "text-slate-300")} />
-                                            <span className="text-[11px] font-black text-slate-600">{transaction.recurring || 'N/A'}</span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <Label className="text-[9px] font-bold text-slate-400 uppercase">Processing Status</Label>
-                                    {isEditing ? (
-                                        <Select
-                                            value={editedTx.status || 'Pending Triage'}
-                                            onValueChange={(v) => updateField('status', v)}
-                                        >
-                                            <SelectTrigger className="h-9 bg-slate-50 border-slate-200 shadow-sm text-[11px] font-black rounded-lg uppercase">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent className="rounded-lg">
-                                                {['Pending Triage', 'Complete', 'Reconciled', 'Pending Reconciliation', 'Review Needed'].map(s => (
-                                                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    ) : (
-                                        <Badge
-                                            variant={getStatusBadgeVariant(transaction.status)}
-                                            className="w-full justify-center h-6 text-[9px] font-black uppercase tracking-tight rounded-lg shadow-sm"
-                                        >
-                                            {transaction.status}
-                                        </Badge>
-                                    )}
-                                </div>
+                            <div className="space-y-1.5">
+                                <Label className="text-[9px] font-bold text-slate-400 uppercase">Processing Status</Label>
+                                {isEditing ? (
+                                    <Select
+                                        value={editedTx.status || 'Pending Triage'}
+                                        onValueChange={(v) => updateField('status', v)}
+                                    >
+                                        <SelectTrigger className="h-9 bg-slate-50 border-slate-200 shadow-sm text-[11px] font-black rounded-lg uppercase">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="rounded-lg">
+                                            {['Pending Triage', 'Complete', 'Reconciled', 'Pending Reconciliation', 'Review Needed'].map(s => (
+                                                <SelectItem key={s} value={s}>{s}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                ) : (
+                                    <Badge
+                                        variant={getStatusBadgeVariant(transaction.status)}
+                                        className="w-full justify-center h-6 text-[9px] font-black uppercase tracking-tight rounded-lg shadow-sm"
+                                    >
+                                        {transaction.status}
+                                    </Badge>
+                                )}
                             </div>
                         </div>
                     </div>

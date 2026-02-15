@@ -60,6 +60,42 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
     const [isBulkUpdating, setIsBulkUpdating] = useState(false);
     const [confirmingUnlinkId, setConfirmingUnlinkId] = useState<string | null>(null);
 
+    // Fetch Source-level Settings
+    const { data: sourceSettings = [] } = useQuery({
+        queryKey: ['sources'],
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from('sources')
+                .select('*');
+            if (error) {
+                console.error("Sources Fetch Error:", error);
+                return [];
+            }
+            return data || [];
+        }
+    });
+
+    const updateSourceMutation = useMutation({
+        mutationFn: async ({ name, updates }: { name: string, updates: any }) => {
+            const { error } = await supabase
+                .from('sources')
+                .upsert({
+                    user_id: user?.id,
+                    name,
+                    ...updates,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id, name' });
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['sources'] });
+            toast({ title: "Source Updated" });
+        },
+        onError: (error: any) => {
+            toast({ title: "Update Failed", description: error.message, variant: "destructive" });
+        }
+    });
+
     const { data: rules = [], isLoading } = useQuery({
         queryKey: ['source_rules'],
         queryFn: async () => {
@@ -762,13 +798,17 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
                 const bestSub = Object.entries(subs).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
 
+                const sourcePref = sourceSettings.find(s => s.name.toLowerCase() === key);
+
                 return {
                     name,
                     rules: groupRules.sort((a, b) => (a.source_name || '').localeCompare(b.source_name || '')),
                     category: bestCat,
                     sub_category: bestSub,
-                    hasAuto: groupRules.some(r => r.skip_triage),
-                    hasRecurring: groupRules.some(r => r.auto_recurring && r.auto_recurring !== 'N/A'),
+                    is_auto_complete: sourcePref?.is_auto_complete ?? groupRules.some(r => r.skip_triage),
+                    recurring: sourcePref?.recurring ?? (groupRules.find(r => r.auto_recurring && r.auto_recurring !== 'N/A')?.auto_recurring || 'N/A'),
+                    hasAuto: sourcePref?.is_auto_complete ?? groupRules.some(r => r.skip_triage),
+                    hasRecurring: (sourcePref?.recurring && sourcePref.recurring !== 'N/A') || groupRules.some(r => r.auto_recurring && r.auto_recurring !== 'N/A'),
                     hasExcluded: groupRules.some(r => r.auto_budget === 'Exclude'),
                     transactionCount: groupMetrics.count,
                     totalSpend: groupMetrics.spend,
@@ -1338,7 +1378,49 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                         </div>
                                                     )}
                                                 </div>
-                                                {group.hasAuto && <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 text-[9px] h-4">Auto</Badge>}
+                                                <div
+                                                    className="flex items-center gap-2 bg-emerald-50/50 hover:bg-emerald-50 border border-emerald-100/50 px-2 py-0.5 rounded-full transition-colors"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        updateSourceMutation.mutate({
+                                                            name: group.name,
+                                                            updates: { is_auto_complete: !group.is_auto_complete }
+                                                        });
+                                                    }}
+                                                >
+                                                    <Zap className={cn("w-3 h-3 transition-colors", group.is_auto_complete ? "fill-emerald-500 text-emerald-500" : "text-slate-300")} />
+                                                    <span className={cn("text-[9px] font-black uppercase tracking-tight", group.is_auto_complete ? "text-emerald-700" : "text-slate-400")}>Auto</span>
+                                                    <Switch
+                                                        checked={group.is_auto_complete}
+                                                        className="h-3 w-6 scale-75"
+                                                    />
+                                                </div>
+                                                <div
+                                                    className="flex items-center gap-2 bg-blue-50/50 hover:bg-blue-50 border border-blue-100/50 px-2 py-0.5 rounded-full transition-colors"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <RefreshCw className={cn("w-3 h-3 transition-colors", group.recurring !== 'N/A' ? "text-blue-500" : "text-slate-300")} />
+                                                    <Select
+                                                        value={group.recurring}
+                                                        onValueChange={(v) => {
+                                                            updateSourceMutation.mutate({
+                                                                name: group.name,
+                                                                updates: { recurring: v }
+                                                            });
+                                                        }}
+                                                    >
+                                                        <SelectTrigger className="h-4 p-0 bg-transparent border-none text-[9px] font-black uppercase tracking-tight text-blue-700 hover:ring-0 focus:ring-0 w-auto min-w-[60px] shadow-none">
+                                                            <SelectValue placeholder="One-off" />
+                                                        </SelectTrigger>
+                                                        <SelectContent className="rounded-xl border-slate-200">
+                                                            <SelectItem value="N/A" className="text-[10px] uppercase font-bold text-slate-400">One-off</SelectItem>
+                                                            <SelectSeparator />
+                                                            {['Weekly', 'Monthly', 'Quarterly', 'Annually'].map(r => (
+                                                                <SelectItem key={r} value={r} className="text-[10px] uppercase font-bold">{r}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
                                                 <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none text-[10px] font-bold">
                                                     {(group.rules || []).length} Pattern{(group.rules || []).length !== 1 ? 's' : ''}
                                                 </Badge>
@@ -1354,7 +1436,6 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                     {group.sub_category && <span className="text-slate-300">/</span>}
                                                     {group.sub_category && <span className="text-[10px]">{group.sub_category}</span>}
                                                 </span>
-                                                {group.hasRecurring && <span className="flex items-center gap-1 text-blue-500"><RefreshCw className="w-3 h-3" /> Recurring</span>}
                                                 {group.hasExcluded && <span className="flex items-center gap-1 text-rose-500"><EyeOff className="w-3 h-3" /> Excluded</span>}
                                                 {group.isOrphan && <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200 text-[8px] h-3.5 px-1 font-black">NO RULES</Badge>}
                                             </div>
@@ -1475,6 +1556,11 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                             allPendingTxs={transactions.filter(t => !t.clean_source)}
                                             onSave={handleSaveSourceMapping}
                                             onCancel={() => setRefiningSource(null)}
+                                            onUpdateNote={async (id, notes) => {
+                                                const { error } = await supabase.from('transactions').update({ notes }).eq('id', id);
+                                                if (error) throw error;
+                                                queryClient.invalidateQueries({ queryKey: ['transactions'] });
+                                            }}
                                         />
                                     </div>
                                 )}
@@ -1559,10 +1645,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                 name: editingRule.clean_source_name,
                                 category: editingRule.auto_category || '',
                                 sub_category: editingRule.auto_sub_category || '',
-                                auto_recurring: editingRule.auto_recurring || '',
                                 auto_planned: editingRule.auto_planned ?? true,
                                 auto_exclude: editingRule.auto_budget === 'Exclude',
-                                skip_triage: editingRule.skip_triage || false,
                                 match_mode: editingRule.match_mode || 'fuzzy'
                             }}
                             transactions={transactions}
@@ -1577,10 +1661,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                         raw_name: ruleData.raw_name,
                                         category: ruleData.category,
                                         sub_category: ruleData.sub_category,
-                                        auto_recurring: ruleData.auto_recurring,
                                         auto_planned: ruleData.auto_planned,
                                         auto_exclude: ruleData.auto_exclude,
-                                        skip_triage: ruleData.skip_triage,
                                         match_mode: ruleData.match_mode
                                     });
                                 } else {
@@ -1591,10 +1673,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                         source_name: ruleData.raw_name, // Update raw pattern name if possible
                                         auto_category: ruleData.category,
                                         auto_sub_category: ruleData.sub_category,
-                                        auto_recurring: ruleData.auto_recurring,
                                         auto_planned: ruleData.auto_planned,
                                         auto_budget: ruleData.auto_exclude ? 'Exclude' : 'Budgeted',
-                                        skip_triage: ruleData.skip_triage,
                                         match_mode: ruleData.match_mode
                                     });
                                 }

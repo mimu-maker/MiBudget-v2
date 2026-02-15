@@ -8,6 +8,9 @@ import { cleanSource } from '@/lib/importBrain';
 import { SourceRuleForm, SourceRuleState } from '@/components/Settings/SourceRuleForm';
 import { Sparkles } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { useSettings } from '@/hooks/useSettings';
 
 interface SourceResolveDialogProps {
@@ -50,11 +53,15 @@ export const SourceResolveDialog = ({
         name: baseName,
         category: transaction.category !== 'Other' ? transaction.category : '',
         sub_category: transaction.sub_category || '',
-        auto_recurring: transaction.recurring || 'N/A',
         auto_planned: true, // Auto-planned default (Unplanned OFF)
         auto_exclude: transaction.excluded || false,
-        skip_triage: true,
         match_mode: 'fuzzy'
+    });
+
+    // Separate source-level settings
+    const [sourceSettings, setSourceSettings] = useState({
+        recurring: transaction.recurring || 'N/A',
+        is_auto_complete: true // Default to auto-complete (skip triage) for resolved sources
     });
 
     useEffect(() => {
@@ -64,18 +71,32 @@ export const SourceResolveDialog = ({
                 name: initialName !== undefined ? initialName : (transaction.clean_source || cleanSource(transaction.source, noiseFilters)),
                 category: transaction.category !== 'Other' ? transaction.category : '',
                 sub_category: transaction.sub_category || '',
-                auto_recurring: transaction.recurring || 'N/A',
                 auto_planned: true, // Auto-planned default (Unplanned OFF)
                 auto_exclude: transaction.excluded || false,
-                skip_triage: true,
                 match_mode: 'fuzzy'
+            });
+            setSourceSettings({
+                recurring: transaction.recurring || 'N/A',
+                is_auto_complete: true
             });
         }
     }, [open, transaction.id, initialName, noiseFilters]);
 
     const addRuleMutation = useMutation({
-        mutationFn: async ({ rule, selectedIds }: { rule: SourceRuleState, selectedIds: string[] }) => {
-            // 1. Create the rule
+        mutationFn: async ({ rule, selectedIds, settings }: { rule: SourceRuleState, selectedIds: string[], settings: { recurring: string, is_auto_complete: boolean } }) => {
+            // 1. Save Source Settings (Centralized)
+            const { error: sourceError } = await supabase
+                .from('sources')
+                .upsert({
+                    user_id: user?.id,
+                    name: rule.name, // Use the clean name as the ID
+                    recurring: settings.recurring,
+                    is_auto_complete: settings.is_auto_complete
+                }, { onConflict: 'user_id, name' });
+
+            if (sourceError) throw sourceError;
+
+            // 2. Create the rule
             // Unified internal rule representation
             const sourceRuleData = {
                 user_id: user?.id,
@@ -83,8 +104,6 @@ export const SourceResolveDialog = ({
                 clean_source_name: rule.name,
                 auto_category: rule.category,
                 auto_sub_category: rule.sub_category,
-                skip_triage: rule.skip_triage,
-                auto_recurring: rule.auto_recurring,
                 auto_planned: rule.auto_planned,
                 match_mode: rule.match_mode || 'fuzzy',
                 // Handle auto_budget correctly
@@ -106,8 +125,6 @@ export const SourceResolveDialog = ({
                     clean_merchant_name: rule.name,
                     auto_category: rule.category,
                     auto_sub_category: rule.sub_category,
-                    skip_triage: rule.skip_triage,
-                    auto_recurring: rule.auto_recurring,
                     auto_planned: rule.auto_planned,
                     match_mode: rule.match_mode || 'fuzzy',
                     auto_budget: rule.auto_exclude ? 'Exclude' : 'Budgeted'
@@ -121,7 +138,7 @@ export const SourceResolveDialog = ({
 
             if (ruleError) throw ruleError;
 
-            // 2. Apply to selected transactions
+            // 3. Apply to selected transactions
             if (selectedIds.length > 0) {
                 const updates: any = {
                     // Always standardize names
@@ -129,7 +146,7 @@ export const SourceResolveDialog = ({
                     clean_merchant: rule.name,
 
                     // Apply recurring/planned settings even if not skipping triage
-                    recurring: rule.auto_recurring,
+                    recurring: settings.recurring,
                     planned: rule.auto_planned,
                     excluded: rule.auto_exclude,
                     budget: rule.auto_exclude ? 'Exclude' : 'Budgeted'
@@ -141,7 +158,7 @@ export const SourceResolveDialog = ({
                     if (rule.sub_category) updates.sub_category = rule.sub_category;
                 }
 
-                if (rule.skip_triage) {
+                if (settings.is_auto_complete) {
                     updates.status = 'Complete';
                 }
 
@@ -169,6 +186,7 @@ export const SourceResolveDialog = ({
             }
         },
         onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['sources'] }); // Invalidate sources too!
             queryClient.invalidateQueries({ queryKey: ['source_rules'] });
             queryClient.invalidateQueries({ queryKey: ['merchant_rules'] });
             queryClient.invalidateQueries({ queryKey: ['source-rules-simple'] });
@@ -216,11 +234,41 @@ export const SourceResolveDialog = ({
                     <SourceRuleForm
                         initialRule={initialRule}
                         transactions={allTransactions}
-                        onSave={(rule, selectedIds) => addRuleMutation.mutate({ rule, selectedIds })}
+                        onSave={(rule, selectedIds) => addRuleMutation.mutate({ rule, selectedIds, settings: sourceSettings })}
                         onCancel={() => setOpen(false)}
                         isSaving={addRuleMutation.isPending}
                         showFullForm={!minimal}
                     />
+
+                    {/* Source Settings Section */}
+                    <div className="mt-6 pt-6 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-3">
+                            <Label className="text-xs font-bold text-slate-500 uppercase">Recurring Status</Label>
+                            <Select
+                                value={sourceSettings.recurring}
+                                onValueChange={(v) => setSourceSettings(prev => ({ ...prev, recurring: v }))}
+                            >
+                                <SelectTrigger className="w-full h-10">
+                                    <SelectValue placeholder="Select frequency" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {['N/A', 'Monthly', 'Quarterly', 'Annually', 'Weekly', 'One-off'].map(r => (
+                                        <SelectItem key={r} value={r}>{r}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-3">
+                            <Label className="text-xs font-bold text-slate-500 uppercase">Auto-complete</Label>
+                            <div className="flex items-center justify-between p-3 border rounded-lg bg-slate-50">
+                                <span className="text-sm font-medium text-slate-700">Skip Triage</span>
+                                <Switch
+                                    checked={sourceSettings.is_auto_complete}
+                                    onCheckedChange={(v) => setSourceSettings(prev => ({ ...prev, is_auto_complete: v }))}
+                                />
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </DialogContent>
         </Dialog>
