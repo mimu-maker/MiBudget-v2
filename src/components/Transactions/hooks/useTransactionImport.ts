@@ -15,7 +15,7 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     amount: ['beløb', 'sum', 'pris', 'value', 'dkk', 'currency', 'total'],
     category: ['kategori', 'type', 'gruppe', 'label'],
     sub_category: ['underkategori', 'sub', 'specifikation'],
-    planned: ['planlagt', 'budgetteret', 'forventet'],
+    // planned: ['planlagt', 'budgetteret', 'forventet'], // Disabled - always true
     recurring: ['fast', 'gentagelse', 'frekvens', 'periodisk'],
     notes: ['note', 'kommentar', 'ekstra', 'description', 'beskrivelse']
 };

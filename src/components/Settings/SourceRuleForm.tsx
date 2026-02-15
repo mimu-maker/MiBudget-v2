@@ -255,22 +255,12 @@ export const SourceRuleForm = ({
                     <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-200/60 shadow-inner">
                         <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest block mb-4">Automation & Rules</Label>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Always Mark Unplanned */}
-                            <div className={cn(
-                                "p-4 rounded-xl border transition-all flex flex-col justify-between gap-3",
-                                !rule.auto_planned ? "bg-amber-50/50 border-amber-200" : "bg-white border-slate-200"
-                            )}>
-                                <div className="flex items-center justify-between">
-                                    <Label className="text-xs font-bold text-slate-700">Always Mark Unplanned</Label>
-                                    <Switch
-                                        checked={!rule.auto_planned}
-                                        onCheckedChange={(v) => setRule({ ...rule, auto_planned: !v })}
-                                        disabled={rule.auto_exclude}
-                                    />
-                                </div>
-                                <p className="text-[10px] text-slate-400 italic leading-tight">
-                                    Bypass budget period logic and mark as unplanned.
-                                </p>
+                            {/* Always Mark Unplanned - Hidden/Deprecated */}
+                            <div className="hidden">
+                                <Switch
+                                    checked={!rule.auto_planned}
+                                    onCheckedChange={(v) => setRule({ ...rule, auto_planned: !v })}
+                                />
                             </div>
 
                             {/* Always Exclude */}

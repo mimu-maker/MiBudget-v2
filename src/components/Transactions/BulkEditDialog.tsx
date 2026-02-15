@@ -238,7 +238,8 @@ export const BulkEditDialog = ({
                             </div>
                         </div>
 
-                        {/* Planned */}
+                        {/* Planned - Removed/Hidden */}
+                        {/* 
                         <div className="flex items-center space-x-4">
                             <Checkbox
                                 id="edit-unplanned"
@@ -255,6 +256,7 @@ export const BulkEditDialog = ({
                                 <Label htmlFor="unplanned">Mark as Unplanned</Label>
                             </div>
                         </div>
+                        */}
 
                     </div>
                 </div>

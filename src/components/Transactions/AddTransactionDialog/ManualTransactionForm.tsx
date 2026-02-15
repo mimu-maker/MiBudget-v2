@@ -121,17 +121,10 @@ export const ManualTransactionForm = ({ onAdd, onCancel, setIsProcessing, setErr
             </div>
 
             <div className="grid grid-cols-2 gap-4 py-2">
-                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
-                    <div className="space-y-0.5">
-                        <Label className="text-sm font-bold text-slate-700">Unplanned</Label>
-                        <p className="text-[10px] text-slate-400 font-medium">Is this a future expense?</p>
-                    </div>
-                    <Switch
-                        checked={!formData.planned}
-                        onCheckedChange={(v) => setFormData(p => ({ ...p, planned: !v }))}
-                    />
+                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm hidden">
+                    {/* Hidden Unplanned Field - defaulting to true internally */}
                 </div>
-                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
+                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 shadow-sm col-span-2">
                     <div className="space-y-0.5">
                         <Label className="text-sm font-bold text-slate-700">Exclude</Label>
                         <p className="text-[10px] text-slate-400 font-medium">Hide from calculations</p>
