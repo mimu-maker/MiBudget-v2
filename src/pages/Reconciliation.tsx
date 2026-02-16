@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 // Page dealing with pending transactions and offsetting matches
 import { useTransactionTable, Transaction } from '@/components/Transactions/hooks/useTransactionTable';
 import { EditableCell } from '@/components/Transactions/EditableCell';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Check, ArrowRightLeft, X, Sparkles, Split, History, User, Building, Briefcase, AlertCircle, RefreshCw } from 'lucide-react';
+import { Check, ArrowRightLeft, X, Sparkles, Split, History, User, Building, Briefcase, AlertCircle, RefreshCw, Pencil } from 'lucide-react';
 import { ReconciliationOverview } from '@/components/Overview/ReconciliationOverview';
 import { formatCurrency } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
@@ -181,6 +182,8 @@ const Reconciliation = () => {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editingField, setEditingField] = useState<keyof Transaction | null>(null);
     const [showHistory, setShowHistory] = useState(false);
+    const [renamingEntity, setRenamingEntity] = useState<string | null>(null);
+    const [newEntityName, setNewEntityName] = useState("");
 
     const handleStartEdit = (id: string, field: keyof Transaction) => {
         setEditingId(id);
@@ -371,6 +374,27 @@ const Reconciliation = () => {
         return <User className="w-5 h-5 text-indigo-500" />;
     };
 
+    const handleSaveRename = (oldName: string) => {
+        if (!newEntityName || newEntityName === oldName) {
+            setRenamingEntity(null);
+            return;
+        }
+
+        const items = groupedByEntity[oldName];
+        if (!items) return;
+
+        const ids = items.map(i => i.id);
+        bulkUpdate({
+            ids,
+            updates: { entity: newEntityName }
+        });
+
+        toast.success("Entity Renamed", {
+            description: `Renamed ${oldName} to ${newEntityName}`
+        });
+        setRenamingEntity(null);
+    };
+
     return (
         <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-10 animate-in fade-in duration-500 pb-32">
             <div className="flex flex-col gap-2">
@@ -428,7 +452,42 @@ const Reconciliation = () => {
                                             {getEntityIcon(entity)}
                                         </div>
                                         <div>
-                                            <CardTitle className="text-xl font-black tracking-tight">{entity}</CardTitle>
+                                            {renamingEntity === entity ? (
+                                                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                                    <Input
+                                                        value={newEntityName}
+                                                        onChange={e => setNewEntityName(e.target.value)}
+                                                        className="h-8 w-[200px] font-bold"
+                                                        autoFocus
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') handleSaveRename(entity);
+                                                            if (e.key === 'Escape') setRenamingEntity(null);
+                                                        }}
+                                                    />
+                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-600 hover:bg-emerald-50" onClick={() => handleSaveRename(entity)}>
+                                                        <Check className="w-4 h-4" />
+                                                    </Button>
+                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600 hover:bg-rose-50" onClick={() => setRenamingEntity(null)}>
+                                                        <X className="w-4 h-4" />
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 group/title">
+                                                    <CardTitle className="text-xl font-black tracking-tight">{entity}</CardTitle>
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        className="h-6 w-6 opacity-0 group-hover/title:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setRenamingEntity(entity);
+                                                            setNewEntityName(entity);
+                                                        }}
+                                                    >
+                                                        <Pencil className="w-3 h-3" />
+                                                    </Button>
+                                                </div>
+                                            )}
                                             <CardDescription className="text-xs font-bold uppercase tracking-wider">
                                                 {items.length} ACTIVE ITEMS • NET:
                                                 <span className={cn("ml-1", entityBalance >= 0 ? "text-emerald-600" : "text-rose-600")}>

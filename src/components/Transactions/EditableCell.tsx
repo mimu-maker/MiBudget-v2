@@ -49,10 +49,13 @@ export const EditableCell = ({
   const value = transaction[field];
 
   const [localValue, setLocalValue] = useState(String(value || ''));
+  const [isEnteringEntity, setIsEnteringEntity] = useState(false);
+  const [pendingStatusSelection, setPendingStatusSelection] = useState<string | null>(null);
 
   // Sync local value when external value changes
   useEffect(() => {
     setLocalValue(String(value || ''));
+    setPendingStatusSelection(null); // Reset pending selection on prop change
   }, [value]);
 
   if (isEditing) {
@@ -75,15 +78,12 @@ export const EditableCell = ({
 
       // Handle specific entity assignment
       const handleStatusChange = (newStatus: string) => {
+        setPendingStatusSelection(newStatus);
+
         if (newStatus === 'Pending Reconciliation') {
           // If simply selecting the base status, we don't change it immediately
           // The UI will show the secondary dropdown because the select value matches 'Pending Reconciliation'
-
-          if (!transaction.entity) {
-            onEdit(transaction.id, field, 'Pending Reconciliation');
-          } else {
-            onEdit(transaction.id, field, 'Pending Reconciliation');
-          }
+          onEdit(transaction.id, field, 'Pending Reconciliation');
         } else {
           onEdit(transaction.id, field, newStatus);
         }
@@ -91,10 +91,10 @@ export const EditableCell = ({
 
       const handleEntityAssignment = (name: string) => {
         if (name === 'new') {
-          // Set temporary 'new' state to show input
-          onEdit(transaction.id, 'entity', 'new');
+          setIsEnteringEntity(true);
         } else {
           onBulkEdit(transaction.id, { status: 'Pending Reconciliation', entity: name });
+          onStopEdit();
         }
       };
 
@@ -136,7 +136,10 @@ export const EditableCell = ({
 
 
       // Ensure that 'Pending: John' matches 'Pending Reconciliation' in the main Select value
-      const isPending = String(value).startsWith('Pending: ') || String(value) === 'Pending Reconciliation' || !!transaction.entity;
+      // Use pendingStatusSelection if available to prevent flickering or premature closing
+      const currentValueStr = pendingStatusSelection || String(value);
+      const isPending = currentValueStr.startsWith('Pending: ') || currentValueStr === 'Pending Reconciliation' || !!transaction.entity;
+
       const displayValue = field === 'status' && isPending
         ? 'Pending Reconciliation'
         : String(value);
@@ -212,9 +215,10 @@ export const EditableCell = ({
             />
           )}
 
+
           {/* Secondary Dropdown for Entity Assignment */}
           {field === 'status' && isPending && (
-            transaction.entity === 'new' ? (
+            isEnteringEntity ? (
               <Input
                 autoFocus
                 className="h-8 w-[140px] bg-amber-50 border-amber-200 text-amber-900 placeholder:text-amber-900/50"
@@ -222,14 +226,20 @@ export const EditableCell = ({
                 onBlur={(e) => {
                   if (e.target.value) {
                     onBulkEdit(transaction.id, { status: 'Pending Reconciliation', entity: e.target.value });
+                    setIsEnteringEntity(false);
+                    onStopEdit();
                   } else {
-                    // Reset if empty
-                    onEdit(transaction.id, 'entity', null);
+                    setIsEnteringEntity(false);
                   }
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     onBulkEdit(transaction.id, { status: 'Pending Reconciliation', entity: e.currentTarget.value });
+                    setIsEnteringEntity(false);
+                    onStopEdit();
+                  }
+                  if (e.key === 'Escape') {
+                    setIsEnteringEntity(false);
                   }
                 }}
               />
@@ -376,6 +386,7 @@ export const EditableCell = ({
           className="h-8"
           autoFocus
         />
+      );
     }
   }
 

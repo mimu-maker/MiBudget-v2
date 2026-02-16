@@ -92,7 +92,7 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
 
         filtered = filtered.filter(t => t.budget !== 'Exclude' && !t.excluded && t.status !== 'Pending Reconciliation' && !t.status?.startsWith('Pending: '));
         return filtered;
-    }, [dateFilteredTransactions, includeSpecial, includeKlintemarken, budgetData]);
+    }, [dateFilteredTransactions, includeCore, includeSpecial, includeKlintemarken, budgetData]);
 
     // Core Summary (Income, Expense, Net) - now based on flowFiltered
     const summary = useMemo(() => {
@@ -187,7 +187,12 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
         const interval = effectiveInterval;
         const monthsInPeriod = eachMonthOfInterval(interval).length;
 
-        const expenseCategories = budgetData?.categories.filter(cat => cat.category_group === 'expenditure') || [];
+        const expenseCategories = budgetData?.categories.filter(cat => {
+            if (cat.category_group === 'expenditure') return includeCore;
+            if (cat.category_group === 'special') return includeSpecial;
+            if (cat.category_group === 'klintemarken') return includeKlintemarken;
+            return false;
+        }) || [];
         const expenseCategoryNames = new Set(expenseCategories.map(c => c.name));
 
         const dataMap: Record<string, { budgeted: number; actual: number; icon?: string; color?: string }> = {};
@@ -216,7 +221,7 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
             color: vals.color
         })).filter(d => d.budgeted > 0 || d.actual > 0)
             .sort((a, b) => b.budgeted - a.budgeted);
-    }, [budgetData, flowFiltered, effectiveInterval]);
+    }, [budgetData, flowFiltered, effectiveInterval, includeCore, includeSpecial, includeKlintemarken]);
 
     // Y-Axis scaling for Cash Flow chart
     const y2Data = useMemo(() => {

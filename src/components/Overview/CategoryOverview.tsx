@@ -6,17 +6,18 @@ import { formatCurrency } from '@/lib/formatUtils';
 import { cn } from '@/lib/utils';
 
 interface CategoryOverviewProps {
+    includeCore?: boolean;
     includeSpecial: boolean;
     includeKlintemarken: boolean;
 }
 
-export const CategoryOverview = ({ includeSpecial, includeKlintemarken }: CategoryOverviewProps) => {
+export const CategoryOverview = ({ includeCore = true, includeSpecial, includeKlintemarken }: CategoryOverviewProps) => {
     const {
         monthlyData,
         radarData,
         settings,
         amountFormat,
-    } = useOverviewData({ includeSpecial, includeKlintemarken });
+    } = useOverviewData({ includeCore, includeSpecial, includeKlintemarken });
 
     const chartColors = {
         grid: settings.darkMode ? '#1e293b' : '#f0f0f0',

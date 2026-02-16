@@ -194,6 +194,7 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
 
                         {step === 6 && (
                             <ImportDuplicateCheckStep
+                                preview={preview}
                                 conflicts={conflicts}
                                 selectedConflictIds={selectedConflictIds}
                                 toggleConflictSelection={toggleConflictSelection}

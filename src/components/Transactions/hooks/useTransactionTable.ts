@@ -209,6 +209,16 @@ const useInfiniteTransactions = (sortBy: keyof Transaction, sortOrder: 'asc' | '
         let dbField = field;
         if (field === 'source') dbField = 'merchant';
 
+        // Custom Status Filter for Pending Reconciliation + Entity
+        if (field === 'status' && Array.isArray(filterValue)) {
+          const hasPendingRecon = filterValue.includes('Pending Reconciliation');
+          if (hasPendingRecon) {
+            const safeValues = filterValue.map(v => `"${v}"`).join(',');
+            query = query.or(`status.in.(${safeValues}),status.ilike."Pending: %"`);
+            return;
+          }
+        }
+
         if (field === 'date' && filterValue.type) {
           if (filterValue.type === 'range' && filterValue.value?.from) {
             query = query.gte('date', new Date(filterValue.value.from).toISOString());
@@ -320,6 +330,16 @@ const useTransactionCounts = (filters: Record<string, any>) => {
 
         let dbField = field;
         if (field === 'source') dbField = 'merchant';
+
+        // Custom Status Filter for Pending Reconciliation + Entity
+        if (field === 'status' && Array.isArray(filterValue)) {
+          const hasPendingRecon = filterValue.includes('Pending Reconciliation');
+          if (hasPendingRecon) {
+            const safeValues = filterValue.map(v => `"${v}"`).join(',');
+            filteredQuery = filteredQuery.or(`status.in.(${safeValues}),status.ilike."Pending: %"`);
+            return;
+          }
+        }
 
         if (field === 'date' && filterValue.type) {
           if (filterValue.type === 'range' && filterValue.value?.from) {

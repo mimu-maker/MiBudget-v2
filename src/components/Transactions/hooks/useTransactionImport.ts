@@ -276,13 +276,29 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
     const generatePreview = () => {
         if (csvData.length === 0) return;
         setIsProcessing(true);
-        setTimeout(() => {
-            try {
-                const dataRows = hasHeaders ? csvData.slice(1) : csvData;
-                const csvCats = new Set<string>();
-                const csvSubCatsByCat: Record<string, Set<string>> = {};
+        setProcessingProgress(prev => ({ ...prev, stage: 'parsing', current: 0, total: csvData.length }));
 
-                const previewData = dataRows.map((row, rowIndex) => {
+        // Use a timeout to allow UI update before heavy lifting starts
+        setTimeout(() => {
+            const dataRows = hasHeaders ? csvData.slice(1) : csvData;
+            const CHUNK_SIZE = 500;
+            const previewData: any[] = [];
+            const csvCats = new Set<string>();
+            const csvSubCatsByCat: Record<string, Set<string>> = {};
+
+            let currentIndex = 0;
+
+            const processChunk = () => {
+                const chunk = dataRows.slice(currentIndex, currentIndex + CHUNK_SIZE);
+
+                if (chunk.length === 0) {
+                    // Finalize
+                    finalizePreview(previewData, csvCats, csvSubCatsByCat);
+                    return;
+                }
+
+                chunk.forEach((row, idx) => {
+                    const rowIndex = currentIndex + idx;
                     const txId = `preview-${rowIndex}`;
                     const transaction: any = {
                         id: txId,
@@ -362,7 +378,6 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                     // If we have an explicit category from CSV, ensuring strict adherence.
                     if (transaction.hasExplicitCategory) {
                         // Keep the CSV values (which are already in transaction.category/sub_category)
-                        // If they are empty strings, we might fallback? No, hasExplicitCategory checks for non-empty.
                         // But double check logic:
                         if (!transaction.category && processed.category) {
                             // This edge case shouldn't happen if hasExplicitCategory is true, but safe fallback:
@@ -382,72 +397,98 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                         }
                     }
 
-                    return transaction;
+                    previewData.push(transaction);
                 });
 
-                setPreview(previewData);
-                const newErrors: string[] = [];
-                if (!Object.values(columnMapping).includes('source')) newErrors.push("Missing 'source' mapping");
-                if (!Object.values(columnMapping).includes('amount')) newErrors.push("Missing 'amount' mapping");
+                // Update progress and schedule next chunk
+                currentIndex += CHUNK_SIZE;
+                setProcessingProgress(prev => ({
+                    ...prev,
+                    current: Math.min(currentIndex, dataRows.length),
+                    total: dataRows.length
+                }));
 
-                setErrors(newErrors);
-                if (newErrors.length === 0) {
-                    const uniqueCats = Array.from(csvCats).sort();
-                    setUniqueCsvCategories(uniqueCats);
+                setTimeout(processChunk, 0);
+            };
 
-                    // Auto-populate mapping with high confidence suggestions
-                    const initialMapping: Record<string, string> = {};
-                    const initialSubMapping: Record<string, string> = {};
-                    const newSuggestions: Record<string, { category: string, subCategory?: string, confidence: number }> = {};
+            processChunk();
 
-                    uniqueCats.forEach(cat => {
-                        const suggestion = generateSuggestions(cat);
-                        if (suggestion.category) {
-                            newSuggestions[cat] = { category: suggestion.category, confidence: suggestion.confidence };
-                        }
-
-                        // Auto-fill if confidence is high (inclusive of fuzzy matches at 0.8)
-                        if (suggestion.confidence >= 0.7) {
-                            initialMapping[cat] = suggestion.category;
-                            if (suggestion.subCategory) {
-                                initialSubMapping[cat] = suggestion.subCategory;
-                            }
-                        }
-                    });
-                    setSuggestions(newSuggestions);
-                    setCategoryValueMapping(initialMapping);
-
-                    const subCatsObj: Record<string, string[]> = {};
-                    Object.entries(csvSubCatsByCat).forEach(([cat, subs]) => {
-                        subCatsObj[cat] = Array.from(subs).sort();
-
-                        // Try to map subcategories too
-                        subs.forEach(sub => {
-                            const subSuggestion = generateSuggestions(sub);
-                            if (subSuggestion.subCategory) {
-                                // Add to suggestions record for exact-match detection in UI
-                                newSuggestions[sub] = {
-                                    category: subSuggestion.category,
-                                    subCategory: subSuggestion.subCategory,
-                                    confidence: subSuggestion.confidence
-                                };
-
-                                if (subSuggestion.confidence >= 0.7) {
-                                    initialSubMapping[sub] = subSuggestion.subCategory;
-                                }
-                            }
-                        });
-                    });
-                    setSuggestions(newSuggestions); // Final update after processing both cats and subs
-                    setSubCategoryValueMapping(initialSubMapping);
-                    setUniqueCsvSubCategories(subCatsObj);
-
-                    setStep(3); // Go to Value Mapping
-                }
-            } finally {
-                setIsProcessing(false);
-            }
         }, 100);
+    };
+
+    const finalizePreview = (
+        previewData: any[],
+        csvCats: Set<string>,
+        csvSubCatsByCat: Record<string, Set<string>>
+    ) => {
+        try {
+            setPreview(previewData);
+            const newErrors: string[] = [];
+            if (!Object.values(columnMapping).includes('source')) newErrors.push("Missing 'source' mapping");
+            if (!Object.values(columnMapping).includes('amount')) newErrors.push("Missing 'amount' mapping");
+
+            setErrors(newErrors);
+            if (newErrors.length === 0) {
+                const uniqueCats = Array.from(csvCats).sort();
+                setUniqueCsvCategories(uniqueCats);
+
+                // Auto-populate mapping with high confidence suggestions
+                const initialMapping: Record<string, string> = {};
+                const initialSubMapping: Record<string, string> = {};
+                const newSuggestions: Record<string, { category: string, subCategory?: string, confidence: number }> = {};
+
+                uniqueCats.forEach(cat => {
+                    const suggestion = generateSuggestions(cat);
+                    if (suggestion.category) {
+                        newSuggestions[cat] = { category: suggestion.category, confidence: suggestion.confidence };
+                    }
+
+                    // Auto-fill if confidence is high (inclusive of fuzzy matches at 0.8)
+                    if (suggestion.confidence >= 0.7) {
+                        initialMapping[cat] = suggestion.category;
+                        if (suggestion.subCategory) {
+                            initialSubMapping[cat] = suggestion.subCategory;
+                        }
+                    }
+                });
+
+                // We update suggestions partially here, then finish with subcats below
+
+                const subCatsObj: Record<string, string[]> = {};
+                Object.entries(csvSubCatsByCat).forEach(([cat, subs]) => {
+                    subCatsObj[cat] = Array.from(subs).sort();
+
+                    // Try to map subcategories too
+                    subs.forEach(sub => {
+                        const subSuggestion = generateSuggestions(sub);
+                        if (subSuggestion.subCategory) {
+                            // Add to suggestions record for exact-match detection in UI
+                            newSuggestions[sub] = {
+                                category: subSuggestion.category,
+                                subCategory: subSuggestion.subCategory,
+                                confidence: subSuggestion.confidence
+                            };
+
+                            if (subSuggestion.confidence >= 0.7) {
+                                initialSubMapping[sub] = subSuggestion.subCategory;
+                            }
+                        }
+                    });
+                });
+
+                setSuggestions(newSuggestions);
+                setCategoryValueMapping(initialMapping);
+                setSubCategoryValueMapping(initialSubMapping);
+                setUniqueCsvSubCategories(subCatsObj);
+
+                setStep(3); // Go to Value Mapping
+            }
+        } catch (e) {
+            console.error("Finalization error", e);
+            setErrors(["Error finalizing preview generation"]);
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     const applyValueMappings = () => {
