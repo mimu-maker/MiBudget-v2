@@ -129,15 +129,34 @@ const useTransactions = () => {
       }
 
       try {
-        const { data, error } = await (supabase as any)
-          .from('transactions')
-          .select('*')
-          .eq('user_id', userId)
-          .order('date', { ascending: false });
+        let allTransactions: any[] = [];
+        let from = 0;
+        const batchSize = 1000;
+        let hasMore = true;
 
-        if (error) throw error;
+        while (hasMore) {
+          const { data, error } = await (supabase as any)
+            .from('transactions')
+            .select('*')
+            .eq('user_id', userId)
+            .order('date', { ascending: false })
+            .range(from, from + batchSize - 1);
 
-        return (data || []).map((t: any) => {
+          if (error) throw error;
+
+          if (data) {
+            allTransactions = [...allTransactions, ...data];
+            if (data.length < batchSize) {
+              hasMore = false;
+            } else {
+              from += batchSize;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+
+        return allTransactions.map((t: any) => {
           // Compatibility logic: Handle both 'source' (new) and 'merchant' (old) keys
           const sourceName = t.source || t.merchant || 'Unknown';
           const cleanSourceName = t.clean_source || t.clean_merchant || null;
