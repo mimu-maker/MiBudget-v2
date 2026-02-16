@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
-import { formatCurrency } from '@/lib/formatUtils';
+import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
 import { cleanSource, SKIP_PATTERNS } from '@/lib/importBrain';
 import { SourceMappingRefiner } from './SourceMappingRefiner';
@@ -16,7 +16,7 @@ import { SourceNameSelector } from './SourceNameSelector';
 import { TransactionNote } from './TransactionNote';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTransactionTable } from './hooks/useTransactionTable';
-import { useTransactionUndo } from '@/contexts/TransactionUndoContext';
+import { useProfile } from '@/contexts/ProfileContext';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -46,6 +46,7 @@ export const ValidationDashboard = () => {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
     const { user } = useAuth();
+    const { userProfile } = useProfile();
     const { settings } = useSettings();
     const currentYear = new Date().getFullYear();
     const { budget } = useAnnualBudget(currentYear);
@@ -60,18 +61,17 @@ export const ValidationDashboard = () => {
     const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
     const [confirmingKeepGroupId, setConfirmingKeepGroupId] = useState<string | null>(null);
     const [confirmingDeleteAllDuplicates, setConfirmingDeleteAllDuplicates] = useState(false);
-    const [manuallyDifferentiatedIds, setManuallyDifferentiatedIds] = useState<Set<string>>(new Set());
 
     const {
         transactions,
         isLoading,
+        updateTransaction,
         bulkUpdate,
         isBulkUpdating,
         bulkDelete,
         deleteTransaction,
         differentiateTransaction
-    } = useTransactionTable();
-    const { showUndo } = useTransactionUndo();
+    } = useTransactionTable({ mode: 'all' });
     const [currentBucket, setCurrentBucket] = useState<string | undefined>(undefined);
     const [expandedValidationSource, setExpandedValidationSource] = useState<string | null>(null);
 
@@ -79,7 +79,6 @@ export const ValidationDashboard = () => {
     const duplicateGroups = useMemo(() => {
         const groups: Record<string, any[]> = {};
         transactions.forEach(tx => {
-            if (manuallyDifferentiatedIds.has(tx.id)) return;
             const key = `${tx.date}_${tx.amount}_${(tx.source || '').toLowerCase()}`;
             if (!groups[key]) groups[key] = [];
             groups[key].push(tx);
@@ -87,7 +86,7 @@ export const ValidationDashboard = () => {
         return Object.values(groups)
             .filter(g => g.length > 1)
             .sort((a, b) => new Date(b[0].date).getTime() - new Date(a[0].date).getTime());
-    }, [transactions, manuallyDifferentiatedIds]);
+    }, [transactions]);
 
     const duplicateIds = useMemo(() => {
         const ids = new Set<string>();
@@ -265,7 +264,7 @@ export const ValidationDashboard = () => {
         const ids = allTxs.map(tx => tx.id);
         if (ids.length === 0) return;
 
-        bulkUpdateMutation.mutate({
+        bulkUpdate({
             ids,
             updates: {
                 status: 'Complete',
@@ -314,55 +313,7 @@ export const ValidationDashboard = () => {
         }
     }, [defaultOpen, currentBucket]);
 
-    const updateMutation = useMutation({
-        mutationFn: async ({ id, updates }: { id: string, updates: any }) => {
-            const { error } = await supabase
-                .from('transactions')
-                .update(updates)
-                .eq('id', id);
-            if (error) throw error;
-        },
-        onMutate: async ({ id }) => {
-            const prev = transactions.find(t => t.id === id);
-            return { prev };
-        },
-        onSuccess: (data, variables, context) => {
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
-            queryClient.invalidateQueries({ queryKey: ['transactions', 'no-clean-source'] });
-            if (context?.prev) {
-                showUndo({
-                    type: 'update',
-                    transactions: [context.prev],
-                    description: `Updated transaction: ${context.prev.description || context.prev.source}`
-                });
-            }
-        }
-    });
-
-    const bulkUpdateMutation = useMutation({
-        mutationFn: async ({ ids, updates }: { ids: string[], updates: any }) => {
-            const { error } = await supabase
-                .from('transactions')
-                .update(updates)
-                .in('id', ids);
-            if (error) throw error;
-        },
-        onMutate: async ({ ids }) => {
-            const prev = transactions.filter(t => ids.includes(t.id));
-            return { prev };
-        },
-        onSuccess: (data, variables, context) => {
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
-            queryClient.invalidateQueries({ queryKey: ['transactions', 'no-clean-source'] });
-            if (context?.prev && context.prev.length > 0) {
-                showUndo({
-                    type: 'bulk-update',
-                    transactions: context.prev,
-                    description: `Updated ${context.prev.length} transactions`
-                });
-            }
-        }
-    });
+    // Simplified: Using centralization in useTransactionTable
 
     const createRuleMutation = useMutation({
         mutationFn: async ({ name, clean_source, category, sub_category, auto_recurring, auto_planned, skip_triage, auto_budget }: {
@@ -423,8 +374,15 @@ export const ValidationDashboard = () => {
         // Requirement: category and sub_category are required to mark as Complete
         const canComplete = isExcluded || (finalCategory && finalSubCategory);
 
-        updateMutation.mutate({
+        updateTransaction({
             id: tx.id,
+            field: 'status' as any, // We'll pass updates as a bulk if needed, or just multiple single ones
+            value: canComplete ? 'Complete' : 'Pending Triage',
+        });
+        // We'll need to update other fields too - wait, updateTransaction only takes one field.
+        // Let's use bulkUpdate with a single ID for multi-field updates.
+        bulkUpdate({
+            ids: [tx.id],
             updates: {
                 status: canComplete ? 'Complete' : 'Pending Triage',
                 category: finalCategory,
@@ -522,7 +480,7 @@ export const ValidationDashboard = () => {
         }
 
         // 2. Apply to current transactions
-        bulkUpdateMutation.mutate({
+        bulkUpdate({
             ids: ids,
             updates: {
                 clean_source: cleanName,
@@ -645,11 +603,11 @@ export const ValidationDashboard = () => {
                                     <span className="text-[10px] font-normal text-slate-300 italic truncate group-hover:text-slate-400 transition-colors">[{tx.source}]</span>
                                     <TransactionNote
                                         transaction={tx}
-                                        onSave={(id, note) => updateMutation.mutate({ id, updates: { notes: note } })}
+                                        onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
                                     />
                                 </h3>
                                 <div className="flex items-center gap-2 mt-0.5">
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{tx.date}</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}</p>
                                     {tx.description && <span className="text-[10px] text-slate-300 italic truncate max-w-[150px]">• {tx.description}</span>}
                                 </div>
                             </div>
@@ -1045,15 +1003,14 @@ export const ValidationDashboard = () => {
                                                     ? "bg-emerald-600 hover:bg-emerald-700 text-white"
                                                     : "text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
                                             )}
-                                            onClick={(e) => {
+                                            onClick={async (e) => {
                                                 e.stopPropagation();
                                                 if (confirmingKeepGroupId === `group-${idx}`) {
-                                                    // Mark all transactions in this group as manually differentiated
-                                                    setManuallyDifferentiatedIds(prev => {
-                                                        const next = new Set(prev);
-                                                        group.forEach(tx => next.add(tx.id));
-                                                        return next;
-                                                    });
+                                                    // Permanently differentiate transactions in this group
+                                                    // We skip the first one (keep original time) and shift others by 1, 2, 3... hours
+                                                    for (let i = 1; i < group.length; i++) {
+                                                        await differentiateTransaction(group[i].id, i);
+                                                    }
                                                     setConfirmingKeepGroupId(null);
                                                 } else {
                                                     setConfirmingKeepGroupId(`group-${idx}`);
@@ -1062,14 +1019,19 @@ export const ValidationDashboard = () => {
                                             }}
                                         >
                                             <PlusCircle className="w-3.5 h-3.5 mr-2" />
-                                            {confirmingKeepGroupId === `group-${idx}` ? "CONFIRM KEEP BOTH" : "KEEP BOTH"}
+                                            {confirmingKeepGroupId === `group-${idx}`
+                                                ? (group.length > 2 ? "CONFIRM KEEP ALL" : "CONFIRM KEEP BOTH")
+                                                : (group.length > 2 ? "KEEP ALL" : "KEEP BOTH")}
                                         </Button>
                                     </div>
                                     <div className="divide-y divide-slate-50">
                                         {group.map(tx => (
                                             <div key={tx.id} className="flex items-center p-3 hover:bg-rose-50/80 group/row transition-all duration-200 hover:rounded-xl hover:mx-1 hover:shadow-sm border-b border-transparent last:border-0 border-slate-50">
                                                 <div className="flex-1 flex items-center gap-4">
-                                                    <span className="w-[80px] text-[11px] font-mono text-slate-400 shrink-0">{tx.date}</span>
+                                                    <span className="w-[80px] text-[11px] font-mono text-slate-400 shrink-0">
+                                                        {formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}
+                                                    </span>
+
                                                     <div className="flex-1 min-w-0 pr-4">
                                                         <div className="flex items-center gap-2 mb-0.5">
                                                             {tx.clean_source ? (
@@ -1081,7 +1043,7 @@ export const ValidationDashboard = () => {
                                                             )}
                                                             <TransactionNote
                                                                 transaction={tx}
-                                                                onSave={(id, note) => updateMutation.mutate({ id, updates: { notes: note } })}
+                                                                onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
                                                             />
                                                         </div>
                                                         {tx.clean_source && tx.clean_source !== tx.source && (
@@ -1232,7 +1194,7 @@ export const ValidationDashboard = () => {
                                                 allPendingTxs={transactions.filter(t => t.status !== 'Complete' && !duplicateIds.has(t.id))}
                                                 onSave={handleSaveSourceMapping}
                                                 onCancel={() => setExpandedSource(null)}
-                                                onUpdateNote={(id, note) => updateMutation.mutate({ id, updates: { notes: note } })}
+                                                onUpdateNote={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
                                             />
                                         </div>
                                     )}
@@ -1245,12 +1207,12 @@ export const ValidationDashboard = () => {
                                         </div>
                                         {txs.map(tx => (
                                             <div key={tx.id} className="flex items-center p-1 px-4 hover:bg-orange-50/80 rounded-lg group/row text-[11px] transition-all duration-200 hover:shadow-sm mx-1">
-                                                <span className="w-[100px] text-slate-400 font-mono shrink-0">{tx.date}</span>
+                                                <span className="w-[100px] text-slate-400 font-mono shrink-0">{formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}</span>
                                                 <div className="flex-1 flex items-center gap-2 min-w-0">
                                                     <span className="text-slate-600 truncate font-medium">{tx.source}</span>
                                                     <TransactionNote
                                                         transaction={tx}
-                                                        onSave={(id, note) => updateMutation.mutate({ id, updates: { notes: note } })}
+                                                        onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
                                                     />
                                                 </div>
                                                 <span className={cn("w-[120px] text-right font-black font-mono tabular-nums", tx.amount < 0 ? "text-slate-700" : "text-emerald-600")}>
@@ -1331,7 +1293,7 @@ export const ValidationDashboard = () => {
                                     });
 
                                     // Direct bulk update for current items
-                                    bulkUpdateMutation.mutate({
+                                    bulkUpdate({
                                         ids: txs.map(t => t.id),
                                         updates: {
                                             category: edit.category,
@@ -1441,12 +1403,12 @@ export const ValidationDashboard = () => {
 
                                                 return (
                                                     <div key={tx.id} className="flex items-center text-[11px] px-12 py-1.5 hover:bg-amber-50/80 group/row transition-all duration-200 hover:rounded-lg mx-2">
-                                                        <span className="text-slate-400 font-mono w-[100px] shrink-0">{tx.date}</span>
+                                                        <span className="text-slate-400 font-mono w-[100px] shrink-0">{formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}</span>
                                                         <div className="flex-1 flex items-center gap-2 min-w-0 pr-4">
                                                             <span className="text-slate-600 truncate font-medium">{tx.source}</span>
                                                             <TransactionNote
                                                                 transaction={tx}
-                                                                onSave={(id, note) => updateMutation.mutate({ id, updates: { notes: note } })}
+                                                                onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
                                                             />
                                                             {tx.description && tx.description !== tx.source && (
                                                                 <span className="text-[10px] text-slate-300 italic truncate ml-2">[{tx.description}]</span>
@@ -1542,7 +1504,7 @@ export const ValidationDashboard = () => {
                                                 onClick={() => {
                                                     // Bulk confirm all in this group
                                                     const ids = group.txs.map(t => t.id);
-                                                    bulkUpdateMutation.mutate({
+                                                    bulkUpdate({
                                                         ids,
                                                         updates: { status: 'Complete', confidence: 1 }
                                                     });
@@ -1599,7 +1561,7 @@ export const ValidationDashboard = () => {
                                         </Badge>
                                         <TransactionNote
                                             transaction={tx}
-                                            onSave={(id, note) => updateMutation.mutate({ id, updates: { notes: note } })}
+                                            onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
                                         />
                                         {tx.source && tx.source !== tx.clean_source && (
                                             <span className="text-[10px] text-slate-400 italic truncate block">({tx.source})</span>
@@ -1696,7 +1658,7 @@ export const ValidationDashboard = () => {
                                                 <span className="text-sm font-bold text-slate-700 truncate block line-through decoration-slate-400">{tx.source}</span>
                                                 <TransactionNote
                                                     transaction={tx}
-                                                    onSave={(id, note) => updateMutation.mutate({ id, updates: { notes: note } })}
+                                                    onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
                                                 />
                                             </div>
                                             <span className="text-[10px] text-slate-400 uppercase font-black">Manually Excluded</span>
@@ -1711,7 +1673,7 @@ export const ValidationDashboard = () => {
                                             variant="ghost"
                                             className="h-8 text-[10px] font-bold text-blue-600 hover:bg-blue-50 gap-1.5"
                                             onClick={() => {
-                                                bulkUpdateMutation.mutate({
+                                                bulkUpdate({
                                                     ids: [tx.id],
                                                     updates: { status: 'Pending Triage', excluded: false, confidence: 0 }
                                                 });

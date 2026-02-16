@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
+import { VirtualList } from '@/components/ui/virtual-list';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Check, HelpCircle, Zap, Store, History, ChevronRight, ChevronDown, ChevronUp, Edit2, Search, Split, RefreshCw, AlertTriangle, Trash2, PlusCircle, PartyPopper, Sparkles, LayoutGrid, ListFilter, Tag, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { formatCurrency } from '@/lib/formatUtils';
+import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
+import { useProfile } from '@/contexts/ProfileContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SourceNameSelector } from './SourceNameSelector';
@@ -140,6 +142,7 @@ export const TriageAccordion = ({
     mode = 'dashboard'
 }: TriageAccordionProps) => {
     const { settings } = useSettings();
+    const { userProfile } = useProfile();
     const [expandedSource, setExpandedSource] = useState<string | null>(null);
     const [selectedSourceRule, setSelectedSourceRule] = useState<any | null>(null);
     const [categorisationEdits, setCategorisationEdits] = useState<Record<string, { category: string, sub_category: string }>>({});
@@ -393,34 +396,43 @@ export const TriageAccordion = ({
                         onSort={(f: string) => handleSort('pending-source', f)}
                         color="amber"
                     />
-                    {groupedSourceMapping.map(({ source, txs, total, avgAmount }) => (
-                        <div key={source} className="flex flex-col border rounded-lg overflow-hidden border-slate-200 bg-white hover:border-amber-300 transition-colors shadow-sm">
-                            <div className="flex items-center px-4 py-3 bg-slate-50/50 justify-between gap-4">
-                                <div className="flex items-center gap-3 flex-1 min-w-0">
-                                    <div className="p-2 bg-amber-100 rounded-lg shrink-0">
-                                        <HelpCircle className="w-5 h-5 text-amber-600" />
+                    <VirtualList
+                        items={groupedSourceMapping}
+                        height="600px"
+                        estimateSize={80}
+                        className="pr-2"
+                        renderItem={(item) => {
+                            const { source, txs, total, avgAmount } = item;
+                            return (
+                                <div key={source} className="flex flex-col border rounded-lg overflow-hidden border-slate-200 bg-white hover:border-amber-300 transition-colors shadow-sm">
+                                    <div className="flex items-center px-4 py-3 bg-slate-50/50 justify-between gap-4">
+                                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                                            <div className="p-2 bg-amber-100 rounded-lg shrink-0">
+                                                <HelpCircle className="w-5 h-5 text-amber-600" />
+                                            </div>
+                                            <h3 className="font-black text-slate-900 text-[15px] truncate tracking-tight">{source}</h3>
+                                            <Badge variant="outline" className="text-[12px] h-7 bg-white border-slate-200 text-slate-500 font-bold px-3">{txs.length} {txs.length === 1 ? 'tx' : 'txs'}</Badge>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <span className="font-mono text-[15px] font-black text-slate-700">{formatCurrency(total, settings.currency)}</span>
+                                            <Button size="sm" onClick={() => openRuleDialog(source, txs, true)} className="bg-amber-600 hover:bg-amber-700 h-9 px-6 font-bold text-sm">Resolve</Button>
+                                        </div>
                                     </div>
-                                    <h3 className="font-black text-slate-900 text-[15px] truncate tracking-tight">{source}</h3>
-                                    <Badge variant="outline" className="text-[12px] h-7 bg-white border-slate-200 text-slate-500 font-bold px-3">{txs.length} {txs.length === 1 ? 'tx' : 'txs'}</Badge>
+                                    {expandedSource === txs[0]?.id && (
+                                        <div className="p-6 border-t border-slate-100 bg-slate-50/30">
+                                            <RuleForm
+                                                rule={selectedSourceRule}
+                                                setRule={setSelectedSourceRule}
+                                                onSave={handleSaveRuleInternal}
+                                                onCancel={() => setExpandedSource(null)}
+                                                getSubCategoryList={getSubCategoryList}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="flex items-center gap-4">
-                                    <span className="font-mono text-[15px] font-black text-slate-700">{formatCurrency(total, settings.currency)}</span>
-                                    <Button size="sm" onClick={() => openRuleDialog(source, txs, true)} className="bg-amber-600 hover:bg-amber-700 h-9 px-6 font-bold text-sm">Resolve</Button>
-                                </div>
-                            </div>
-                            {expandedSource === txs[0]?.id && (
-                                <div className="p-6 border-t border-slate-100 bg-slate-50/30">
-                                    <RuleForm
-                                        rule={selectedSourceRule}
-                                        setRule={setSelectedSourceRule}
-                                        onSave={handleSaveRuleInternal}
-                                        onCancel={() => setExpandedSource(null)}
-                                        getSubCategoryList={getSubCategoryList}
-                                    />
-                                </div>
-                            )}
-                        </div>
-                    ))}
+                            );
+                        }}
+                    />
                 </div>
             )
         },
@@ -444,49 +456,56 @@ export const TriageAccordion = ({
                         onSort={(f: string) => handleSort('pending-categorisation', f)}
                         color="blue"
                     />
-                    {groupedCategorisation.map(({ source, txs, total }) => {
-                        const firstTx = txs[0];
-                        const defaultCat = firstTx?.suggested_category || '';
-                        const defaultSub = firstTx?.suggested_sub_category || '';
-                        const edit = categorisationEdits[source] || { category: defaultCat, sub_category: defaultSub };
-                        const subCats = getSubCategoryList(edit.category);
-                        return (
-                            <div key={source} className="flex flex-col border rounded-lg overflow-hidden border-slate-200 bg-white shadow-sm hover:border-blue-300 transition-colors">
-                                <div className="flex items-center px-4 py-3 bg-slate-50 justify-between gap-6">
-                                    <div className="flex-1 min-w-0 flex items-center gap-4">
-                                        <span className="font-black text-slate-900 text-[15px] truncate">{source}</span>
-                                        <span className="font-mono text-sm font-bold text-slate-400 shrink-0">{formatCurrency(total, settings.currency)}</span>
-                                    </div>
-                                    <div className="flex gap-3 items-center">
-                                        <CategorySelector
-                                            value={edit.category}
-                                            onValueChange={v => {
-                                                if (v.includes(':')) {
-                                                    const [cat, sub] = v.split(':');
-                                                    setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], category: cat, sub_category: sub } }));
-                                                } else {
-                                                    setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], category: v, sub_category: '' } }));
-                                                }
-                                            }}
-                                            type="all"
-                                            suggestionLimit={3}
-                                            placeholder="Category"
-                                            className="h-10 w-[240px] text-sm font-medium"
-                                        />
-                                        <SmartSelector
-                                            value={edit.sub_category}
-                                            onValueChange={v => setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], sub_category: v } }))}
-                                            disabled={!edit.category}
-                                            options={subCats.map(s => ({ label: s, value: s }))}
-                                            placeholder="Sub-category"
-                                            className="h-10 w-[200px]"
-                                        />
-                                        <Button size="sm" className="h-10 bg-blue-600 hover:bg-blue-700 px-8 font-black text-sm uppercase tracking-tight" onClick={() => onBulkUpdate(txs.map(t => t.id), { category: edit.category, sub_category: edit.sub_category, status: (edit.category && edit.sub_category) ? 'Complete' : 'Pending Triage' })}>SAVE ACTIONS</Button>
+                    <VirtualList
+                        items={groupedCategorisation}
+                        height="600px"
+                        estimateSize={80}
+                        className="pr-2"
+                        renderItem={(item) => {
+                            const { source, txs, total } = item;
+                            const firstTx = txs[0];
+                            const defaultCat = firstTx?.suggested_category || '';
+                            const defaultSub = firstTx?.suggested_sub_category || '';
+                            const edit = categorisationEdits[source] || { category: defaultCat, sub_category: defaultSub };
+                            const subCats = getSubCategoryList(edit.category);
+                            return (
+                                <div key={source} className="flex flex-col border rounded-lg overflow-hidden border-slate-200 bg-white shadow-sm hover:border-blue-300 transition-colors">
+                                    <div className="flex items-center px-4 py-3 bg-slate-50 justify-between gap-6">
+                                        <div className="flex-1 min-w-0 flex items-center gap-4">
+                                            <span className="font-black text-slate-900 text-[15px] truncate">{source}</span>
+                                            <span className="font-mono text-sm font-bold text-slate-400 shrink-0">{formatCurrency(total, settings.currency)}</span>
+                                        </div>
+                                        <div className="flex gap-3 items-center">
+                                            <CategorySelector
+                                                value={edit.category}
+                                                onValueChange={v => {
+                                                    if (v.includes(':')) {
+                                                        const [cat, sub] = v.split(':');
+                                                        setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], category: cat, sub_category: sub } }));
+                                                    } else {
+                                                        setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], category: v, sub_category: '' } }));
+                                                    }
+                                                }}
+                                                type="all"
+                                                suggestionLimit={3}
+                                                placeholder="Category"
+                                                className="h-10 w-[240px] text-sm font-medium"
+                                            />
+                                            <SmartSelector
+                                                value={edit.sub_category}
+                                                onValueChange={v => setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], sub_category: v } }))}
+                                                disabled={!edit.category}
+                                                options={subCats.map(s => ({ label: s, value: s }))}
+                                                placeholder="Sub-category"
+                                                className="h-10 w-[200px]"
+                                            />
+                                            <Button size="sm" className="h-10 bg-blue-600 hover:bg-blue-700 px-8 font-black text-sm uppercase tracking-tight" onClick={() => onBulkUpdate(txs.map(t => t.id), { category: edit.category, sub_category: edit.sub_category, status: (edit.category && edit.sub_category) ? 'Complete' : 'Pending Triage' })}>SAVE ACTIONS</Button>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        );
-                    })}
+                            );
+                        }}
+                    />
                 </div>
             )
         },
@@ -515,179 +534,186 @@ export const TriageAccordion = ({
                         collapsible
                         value={expandedValidationSource || ""}
                         onValueChange={setExpandedValidationSource}
-                        className="space-y-4"
                     >
-                        {validationGroups.map((group: any) => (
-                            <AccordionItem key={group.sourceName} value={group.sourceName} className="border rounded-xl bg-white overflow-hidden border-slate-200 hover:border-indigo-300 transition-colors">
-                                <AccordionTrigger className="bg-slate-50 border-b border-slate-100 px-6 py-3 hover:no-underline group/trigger">
-                                    <div className="flex items-center justify-between w-full pr-4">
-                                        <div className="flex items-center gap-4">
-                                            <div className="p-2 bg-indigo-100 rounded-lg group-hover/trigger:bg-indigo-200 transition-colors">
-                                                <Zap className="w-5 h-5 text-indigo-600" />
+                        <VirtualList
+                            items={validationGroups}
+                            height="600px"
+                            estimateSize={80}
+                            className="pr-2"
+                            renderItem={(group) => (
+                                <div className="pb-4">
+                                    <AccordionItem key={group.sourceName} value={group.sourceName} className="border rounded-xl bg-white overflow-hidden border-slate-200 hover:border-indigo-300 transition-colors">
+                                        <AccordionTrigger className="bg-slate-50 border-b border-slate-100 px-6 py-3 hover:no-underline group/trigger">
+                                            <div className="flex items-center justify-between w-full pr-4">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="p-2 bg-indigo-100 rounded-lg group-hover/trigger:bg-indigo-200 transition-colors">
+                                                        <Zap className="w-5 h-5 text-indigo-600" />
+                                                    </div>
+                                                    <h4 className="text-[15px] font-black text-slate-900 uppercase tracking-tight">{group.sourceName}</h4>
+                                                    <Badge variant="outline" className="text-[12px] h-7 font-bold text-slate-500 bg-white border-slate-200 px-3">
+                                                        {group.txCount || group.txs?.length || "?"} {(group.txCount || group.txs?.length) === 1 ? 'match' : 'matches'}
+                                                    </Badge>
+                                                </div>
+                                                <div className="flex items-center gap-6">
+                                                    <span className="font-black text-slate-900 text-[16px] font-mono tabular-nums">{formatCurrency(group.total, settings.currency)}</span>
+                                                </div>
                                             </div>
-                                            <h4 className="text-[15px] font-black text-slate-900 uppercase tracking-tight">{group.sourceName}</h4>
-                                            <Badge variant="outline" className="text-[12px] h-7 font-bold text-slate-500 bg-white border-slate-200 px-3">
-                                                {group.txCount || group.txs?.length || "?"} {(group.txCount || group.txs?.length) === 1 ? 'match' : 'matches'}
-                                            </Badge>
-                                        </div>
-                                        <div className="flex items-center gap-6">
-                                            <span className="font-black text-slate-900 text-[16px] font-mono tabular-nums">{formatCurrency(group.total, settings.currency)}</span>
-                                        </div>
-                                    </div>
-                                </AccordionTrigger>
-                                <AccordionContent className="p-0">
-                                    <div className="p-6 space-y-6 bg-slate-50/20">
-                                        <div className="flex justify-center border-b border-slate-100/50 pb-5 mb-2">
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm h-11 px-14 shadow-lg shadow-emerald-900/10 border-none tracking-tight rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleVerifyAllInGroup(group);
-                                                }}
-                                            >
-                                                <Check className="w-5 h-5 mr-3" />
-                                                Validate All {group.sourceName} Transactions
-                                            </Button>
-                                        </div>
-                                        <div className="space-y-6">
-                                            {Object.values(group.categories).map((cat: any) => (
-                                                <div key={cat.catName} className="pl-4 border-l-[3px] border-indigo-100/50 space-y-4">
-                                                    {Object.values(cat.subCategories).map((sub: any) => (
-                                                        <div key={sub.subCatName} className="space-y-2">
-                                                            {sub.txs.map((tx: any) => (
-                                                                <Card key={tx.id} className="p-0 hover:shadow-lg transition-all bg-white border-slate-200 overflow-hidden group/card shadow-sm border-slate-200/80 rounded-xl">
-                                                                    <div className="flex items-center h-14">
-                                                                        <div
-                                                                            className="w-[28%] min-w-0 px-5 h-full flex flex-col justify-center border-r border-slate-50 group-hover/card:bg-indigo-50/40 transition-colors cursor-pointer"
-                                                                            onClick={() => openRuleDialog(tx.source, [tx], true)}
-                                                                            title="Click to Map Source"
-                                                                        >
-                                                                            <div className="flex items-center gap-2">
-                                                                                <div className="font-black text-[14px] text-slate-900 leading-tight truncate hover:text-indigo-600 transition-colors" title={tx.clean_source || tx.source}>
-                                                                                    {tx.clean_source || tx.source}
-                                                                                </div>
-                                                                                {onUpdateRow && (
-                                                                                    <TransactionNote
-                                                                                        transaction={tx}
-                                                                                        onSave={(id, note) => onUpdateRow(id, { notes: note })}
-                                                                                    />
-                                                                                )}
-                                                                            </div>
-                                                                            {tx.clean_source && tx.clean_source !== tx.source && (
-                                                                                <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter truncate mt-0.5">
-                                                                                    {tx.source}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-
-                                                                        <div className="flex-1 flex items-center px-6 h-full gap-8 bg-slate-50/5">
-                                                                            <div className="flex items-center gap-4 shrink-0">
-                                                                                <span className={cn(
-                                                                                    "text-[10px] font-black uppercase tracking-wider tabular-nums leading-none",
-                                                                                    tx.needs_date_verification ? "text-amber-600 flex items-center gap-1" : "text-slate-400"
-                                                                                )}>
-                                                                                    {tx.needs_date_verification && <AlertTriangle className="w-3 h-3" />}
-                                                                                    {tx.date}
-                                                                                </span>
-                                                                                {editingRowId === tx.id ? (
-                                                                                    <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
-                                                                                        <CategorySelector
-                                                                                            value={editingState.category}
-                                                                                            onValueChange={(v) => {
-                                                                                                if (v.includes(':')) {
-                                                                                                    const [cat, sub] = v.split(':');
-                                                                                                    setEditingState({ category: cat, sub_category: sub });
-                                                                                                } else {
-                                                                                                    setEditingState(p => ({ ...p, category: v }));
-                                                                                                }
-                                                                                            }}
-                                                                                            type="all"
-                                                                                            className="h-7 text-xs w-32"
-                                                                                            placeholder="Category"
-                                                                                        />
-                                                                                        <SmartSelector
-                                                                                            value={editingState.sub_category}
-                                                                                            onValueChange={(v) => setEditingState(p => ({ ...p, sub_category: v }))}
-                                                                                            options={getSubCategoryList(editingState.category).map((s: string) => ({ label: s, value: s }))}
-                                                                                            disabled={!editingState.category}
-                                                                                            placeholder="Sub"
-                                                                                            className="h-7 text-xs w-32"
-                                                                                        />
-                                                                                        <Button
-                                                                                            size="sm"
-                                                                                            className="h-7 w-7 p-0 bg-emerald-600 hover:bg-emerald-700"
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                if (onUpdateRow) {
-                                                                                                    onUpdateRow(tx.id, {
-                                                                                                        category: editingState.category,
-                                                                                                        sub_category: editingState.sub_category,
-                                                                                                        // If manually edited, we treat it as Explicit/verified
-                                                                                                        status: (editingState.category && editingState.sub_category) ? 'Complete' : 'Pending Triage'
-                                                                                                    });
-                                                                                                }
-                                                                                                setEditingRowId(null);
-                                                                                            }}
-                                                                                        >
-                                                                                            <Check className="w-3.5 h-3.5" />
-                                                                                        </Button>
-                                                                                        <Button
-                                                                                            size="sm"
-                                                                                            variant="ghost"
-                                                                                            className="h-7 w-7 p-0 text-slate-400 hover:text-slate-600"
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                setEditingRowId(null);
-                                                                                            }}
-                                                                                        >
-                                                                                            <X className="w-3.5 h-3.5" />
-                                                                                        </Button>
+                                        </AccordionTrigger>
+                                        <AccordionContent className="p-0">
+                                            <div className="p-6 space-y-6 bg-slate-50/20">
+                                                <div className="flex justify-center border-b border-slate-100/50 pb-5 mb-2">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm h-11 px-14 shadow-lg shadow-emerald-900/10 border-none tracking-tight rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleVerifyAllInGroup(group);
+                                                        }}
+                                                    >
+                                                        <Check className="w-5 h-5 mr-3" />
+                                                        Validate All {group.sourceName} Transactions
+                                                    </Button>
+                                                </div>
+                                                <div className="space-y-6">
+                                                    {Object.values(group.categories).map((cat: any) => (
+                                                        <div key={cat.catName} className="pl-4 border-l-[3px] border-indigo-100/50 space-y-4">
+                                                            {Object.values(cat.subCategories).map((sub: any) => (
+                                                                <div key={sub.subCatName} className="space-y-2">
+                                                                    {sub.txs.map((tx: any) => (
+                                                                        <Card key={tx.id} className="p-0 hover:shadow-lg transition-all bg-white border-slate-200 overflow-hidden group/card shadow-sm border-slate-200/80 rounded-xl">
+                                                                            <div className="flex items-center h-14">
+                                                                                <div
+                                                                                    className="w-[28%] min-w-0 px-5 h-full flex flex-col justify-center border-r border-slate-50 group-hover/card:bg-indigo-50/40 transition-colors cursor-pointer"
+                                                                                    onClick={() => openRuleDialog(tx.source, [tx], true)}
+                                                                                    title="Click to Map Source"
+                                                                                >
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <div className="font-black text-[14px] text-slate-900 leading-tight truncate hover:text-indigo-600 transition-colors" title={tx.clean_source || tx.source}>
+                                                                                            {tx.clean_source || tx.source}
+                                                                                        </div>
+                                                                                        {onUpdateRow && (
+                                                                                            <TransactionNote
+                                                                                                transaction={tx}
+                                                                                                onSave={(id, note) => onUpdateRow(id, { notes: note })}
+                                                                                            />
+                                                                                        )}
                                                                                     </div>
-                                                                                ) : (
-                                                                                    <Badge
-                                                                                        variant="secondary"
-                                                                                        className="text-[10px] h-6 px-3 bg-white text-slate-600 border border-slate-200/80 font-black tracking-tight shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all group/badge"
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            setEditingRowId(tx.id);
-                                                                                            setEditingState({ category: tx.category, sub_category: tx.sub_category || '' });
-                                                                                        }}
-                                                                                    >
-                                                                                        <Tag className="w-3 h-3 opacity-40 group-hover/badge:text-blue-500" />
-                                                                                        {tx.category} <ChevronRight className="w-2.5 h-2.5 opacity-30" /> {tx.sub_category}
-                                                                                        <Edit2 className="w-3 h-3 ml-1 opacity-0 group-hover/badge:opacity-100 transition-opacity" />
-                                                                                    </Badge>
-                                                                                )}
-                                                                            </div>
+                                                                                    {tx.clean_source && tx.clean_source !== tx.source && (
+                                                                                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter truncate mt-0.5">
+                                                                                            {tx.source}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
 
-                                                                            <div className="flex-1 text-right border-l border-slate-100 pl-6">
-                                                                                <span className={cn(
-                                                                                    "font-mono tabular-nums text-[16px] font-black tracking-tighter",
-                                                                                    tx.amount < 0 ? "text-slate-900" : "text-emerald-600"
-                                                                                )}>
-                                                                                    {formatCurrency(tx.amount, settings.currency)}
-                                                                                </span>
-                                                                            </div>
-                                                                        </div>
+                                                                                <div className="flex-1 flex items-center px-6 h-full gap-8 bg-slate-50/5">
+                                                                                    <div className="flex items-center gap-4 shrink-0">
+                                                                                        <span className={cn(
+                                                                                            "text-[10px] font-black uppercase tracking-wider tabular-nums leading-none",
+                                                                                            tx.needs_date_verification ? "text-amber-600 flex items-center gap-1" : "text-slate-400"
+                                                                                        )}>
+                                                                                            {tx.needs_date_verification && <AlertTriangle className="w-3 h-3" />}
+                                                                                            {formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}
+                                                                                        </span>
+                                                                                        {editingRowId === tx.id ? (
+                                                                                            <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
+                                                                                                <CategorySelector
+                                                                                                    value={editingState.category}
+                                                                                                    onValueChange={(v) => {
+                                                                                                        if (v.includes(':')) {
+                                                                                                            const [cat, sub] = v.split(':');
+                                                                                                            setEditingState({ category: cat, sub_category: sub });
+                                                                                                        } else {
+                                                                                                            setEditingState(p => ({ ...p, category: v }));
+                                                                                                        }
+                                                                                                    }}
+                                                                                                    type="all"
+                                                                                                    className="h-7 text-xs w-32"
+                                                                                                    placeholder="Category"
+                                                                                                />
+                                                                                                <SmartSelector
+                                                                                                    value={editingState.sub_category}
+                                                                                                    onValueChange={(v) => setEditingState(p => ({ ...p, sub_category: v }))}
+                                                                                                    options={getSubCategoryList(editingState.category).map((s: string) => ({ label: s, value: s }))}
+                                                                                                    disabled={!editingState.category}
+                                                                                                    placeholder="Sub"
+                                                                                                    className="h-7 text-xs w-32"
+                                                                                                />
+                                                                                                <Button
+                                                                                                    size="sm"
+                                                                                                    className="h-7 w-7 p-0 bg-emerald-600 hover:bg-emerald-700"
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        if (onUpdateRow) {
+                                                                                                            onUpdateRow(tx.id, {
+                                                                                                                category: editingState.category,
+                                                                                                                sub_category: editingState.sub_category,
+                                                                                                                // If manually edited, we treat it as Explicit/verified
+                                                                                                                status: (editingState.category && editingState.sub_category) ? 'Complete' : 'Pending Triage'
+                                                                                                            });
+                                                                                                        }
+                                                                                                        setEditingRowId(null);
+                                                                                                    }}
+                                                                                                >
+                                                                                                    <Check className="w-3.5 h-3.5" />
+                                                                                                </Button>
+                                                                                                <Button
+                                                                                                    size="sm"
+                                                                                                    variant="ghost"
+                                                                                                    className="h-7 w-7 p-0 text-slate-400 hover:text-slate-600"
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        setEditingRowId(null);
+                                                                                                    }}
+                                                                                                >
+                                                                                                    <X className="w-3.5 h-3.5" />
+                                                                                                </Button>
+                                                                                            </div>
+                                                                                        ) : (
+                                                                                            <Badge
+                                                                                                variant="secondary"
+                                                                                                className="text-[10px] h-6 px-3 bg-white text-slate-600 border border-slate-200/80 font-black tracking-tight shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all group/badge"
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    setEditingRowId(tx.id);
+                                                                                                    setEditingState({ category: tx.category, sub_category: tx.sub_category || '' });
+                                                                                                }}
+                                                                                            >
+                                                                                                <Tag className="w-3 h-3 opacity-40 group-hover/badge:text-blue-500" />
+                                                                                                {tx.category} <ChevronRight className="w-2.5 h-2.5 opacity-30" /> {tx.sub_category}
+                                                                                                <Edit2 className="w-3 h-3 ml-1 opacity-0 group-hover/badge:opacity-100 transition-opacity" />
+                                                                                            </Badge>
+                                                                                        )}
+                                                                                    </div>
 
-                                                                        <div className="w-fit flex items-center gap-2 shrink-0 px-4 h-full border-l border-slate-50 bg-white">
-                                                                            <Button size="sm" variant="ghost" onClick={() => onSplit(tx)} className="h-9 w-9 p-0 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all rounded-lg" title="Split Transaction"><Split className="w-4 h-4" /></Button>
-                                                                            <Button size="sm" variant="ghost" onClick={() => onVerifySingle(tx)} className="h-9 w-9 p-0 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-100/50 transition-all rounded-lg" title="Verify Transaction"><Check className="w-5 h-5" /></Button>
-                                                                        </div>
-                                                                    </div>
-                                                                </Card>
+                                                                                    <div className="flex-1 text-right border-l border-slate-100 pl-6">
+                                                                                        <span className={cn(
+                                                                                            "font-mono tabular-nums text-[16px] font-black tracking-tighter",
+                                                                                            tx.amount < 0 ? "text-slate-900" : "text-emerald-600"
+                                                                                        )}>
+                                                                                            {formatCurrency(tx.amount, settings.currency)}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                <div className="w-fit flex items-center gap-2 shrink-0 px-4 h-full border-l border-slate-50 bg-white">
+                                                                                    <Button size="sm" variant="ghost" onClick={() => onSplit(tx)} className="h-9 w-9 p-0 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all rounded-lg" title="Split Transaction"><Split className="w-4 h-4" /></Button>
+                                                                                    <Button size="sm" variant="ghost" onClick={() => onVerifySingle(tx)} className="h-9 w-9 p-0 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-100/50 transition-all rounded-lg" title="Verify Transaction"><Check className="w-5 h-5" /></Button>
+                                                                                </div>
+                                                                            </div>
+                                                                        </Card>
+                                                                    ))}
+                                                                </div>
                                                             ))}
                                                         </div>
                                                     ))}
                                                 </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </AccordionContent>
-                            </AccordionItem>
-                        ))}
+                                            </div>
+                                        </AccordionContent>
+                                    </AccordionItem>
+                                </div>
+                            )}
+                        />
                     </Accordion>
                 </div>
             )
@@ -756,7 +782,7 @@ export const TriageAccordion = ({
                                         tx.needs_date_verification ? "text-amber-600 flex items-center gap-1" : "text-slate-400"
                                     )}>
                                         {tx.needs_date_verification && <AlertTriangle className="w-2.5 h-2.5" />}
-                                        {tx.date}
+                                        {formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}
                                     </div>
                                 </div>
 
@@ -869,7 +895,7 @@ export const TriageAccordion = ({
                                                 tx.needs_date_verification ? "text-amber-600 flex items-center gap-1" : "text-slate-400"
                                             )}>
                                                 {tx.needs_date_verification && <AlertTriangle className="w-3 h-3" />}
-                                                {tx.date}
+                                                {formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <div className="text-[12px] text-slate-600 truncate font-semibold leading-tight">{tx.source}</div>

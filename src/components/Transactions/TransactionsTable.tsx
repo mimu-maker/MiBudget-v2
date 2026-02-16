@@ -8,7 +8,6 @@ import { TransactionSplitModal } from './TransactionSplitModal';
 import { TransactionsTableHeader } from './TransactionsTableHeader';
 import { TransactionsTableRow } from './TransactionsTableRow';
 import { useTransactionTable, Transaction } from './hooks/useTransactionTable';
-import { filterTransactions, sortTransactions } from './utils/transactionUtils';
 import { BulkActionBar } from './BulkActionBar';
 import { BulkEditDialog } from './BulkEditDialog';
 
@@ -55,7 +54,14 @@ export const TransactionsTable = () => {
     isBulkDeleting,
     projections,
     emergencyClearAll,
-    knownSources
+    knownSources,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    totalCount,
+    filteredCount,
+    hasActiveFilters,
+    isSaving
   } = useTransactionTable();
 
   const { settings } = useSettings();
@@ -115,10 +121,7 @@ export const TransactionsTable = () => {
 
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
 
-  const filteredAndSortedTransactions = useMemo(() => {
-    const tableFiltered = filterTransactions(transactions, filters);
-    return sortTransactions(tableFiltered, sortBy, sortOrder);
-  }, [transactions, filters, sortBy, sortOrder]);
+  const filteredAndSortedTransactions = transactions;
 
   const handleStartEdit = (id: string, field: keyof Transaction) => {
     setEditingCell({ id, field });
@@ -138,6 +141,18 @@ export const TransactionsTable = () => {
     getScrollElement: () => parentRef.current,
     estimateSize: () => 45, // Estimate row height
     overscan: 10,
+    onChange: (instance) => {
+      const lastItem = instance.getVirtualItems().at(-1);
+      if (!lastItem) return;
+
+      if (
+        lastItem.index >= filteredAndSortedTransactions.length - 1 &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    }
   });
 
   const virtualItems = virtualizer.getVirtualItems();
@@ -147,22 +162,7 @@ export const TransactionsTable = () => {
     : 0;
 
   return (
-    <div className="px-6 pb-6 pt-2 h-full flex flex-col box-border">
-      <div className="relative flex items-center justify-between mb-6 shrink-0">
-        <h1 className="text-2xl font-bold text-foreground">Transactions</h1>
-
-        <div className="flex items-center space-x-2">
-          <Button
-            size="lg"
-            onClick={() => setAddTransactionsOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all active:scale-95"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Add Transactions
-          </Button>
-        </div>
-      </div>
-
+    <div className="px-6 pb-6 pt-4 h-full flex flex-col box-border">
       {isLoading && (
         <div className="mb-4 p-4 bg-blue-50 border border-blue-100 rounded-lg animate-pulse flex items-center shrink-0">
           <div className="w-2 h-2 bg-blue-500 rounded-full mr-3" />
@@ -180,8 +180,18 @@ export const TransactionsTable = () => {
       )}
 
       <Card className="flex flex-col flex-1 min-h-0">
-        <CardHeader className="py-3 px-6 shrink-0">
-          <CardTitle>All Transactions ({filteredAndSortedTransactions.length})</CardTitle>
+        <CardHeader className="py-6 px-6 shrink-0 flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-2xl font-bold text-foreground">
+            All Transactions ({hasActiveFilters ? `${filteredCount} of ${totalCount}` : totalCount})
+          </CardTitle>
+          <Button
+            size="lg"
+            onClick={() => setAddTransactionsOpen(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all active:scale-95"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Add Transactions
+          </Button>
         </CardHeader>
         <CardContent className="flex-1 overflow-hidden p-0 relative">
           <div
@@ -243,6 +253,7 @@ export const TransactionsTable = () => {
                       projections={projections}
                       knownSources={knownSources}
                       allTransactions={transactions}
+                      isSaving={isSaving(transaction.id)}
                     />
                   );
                 })}

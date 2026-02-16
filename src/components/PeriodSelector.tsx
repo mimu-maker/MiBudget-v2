@@ -24,7 +24,7 @@ export const PeriodSelector = () => {
         options.push({ label: 'Year to Date', value: 'Year to Date' });
 
         // This Quarter
-        options.push({ label: `This Q${quarter}`, value: 'This Quarter' });
+        options.push({ label: 'This Quarter', value: 'This Quarter' });
 
         return options;
     }, []);

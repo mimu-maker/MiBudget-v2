@@ -183,9 +183,12 @@ export const CategorySelectContent = ({
 
                     {(type === 'all' || type === 'expense') && (
                         <>
-                            {feeders.map((f, idx) => renderGroup(`Feeder: ${f.name}`, f.categories, true))}
-                            {renderGroup('Expenses', expenses, true)}
-                            {renderGroup('Slush Fund 🍧', slush, true)}
+                            {feeders.map((f, idx) => {
+                                const showSep = (idx === 0) ? (!hideSuggestions && popular.length > 0) || (type === 'all' && income.length > 0) : true;
+                                return renderGroup(`Feeder: ${f.name}`, f.categories, showSep);
+                            })}
+                            {renderGroup('Expenses', expenses, (!hideSuggestions && popular.length > 0) || (type === 'all' && income.length > 0) || feeders.length > 0)}
+                            {renderGroup('Slush Fund 🍧', slush, (!hideSuggestions && popular.length > 0) || (type === 'all' && income.length > 0) || feeders.length > 0 || expenses.length > 0)}
                         </>
                     )}
                 </>

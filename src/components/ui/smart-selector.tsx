@@ -25,6 +25,7 @@ interface SmartSelectorProps {
     className?: string;
     disabled?: boolean;
     emptyMessage?: string;
+    hideSuggestions?: boolean;
 }
 
 export const SmartSelector = ({
@@ -35,7 +36,8 @@ export const SmartSelector = ({
     placeholder = "Select...",
     className,
     disabled = false,
-    emptyMessage = "No results found."
+    emptyMessage = "No results found.",
+    hideSuggestions = false
 }: SmartSelectorProps) => {
     const [open, setOpen] = React.useState(false);
     const [searchValue, setSearchValue] = React.useState("");
@@ -63,7 +65,6 @@ export const SmartSelector = ({
                         "w-full justify-between bg-white text-sm font-medium h-10 px-3 border-slate-200 hover:border-slate-300 transition-all",
                         className
                     )}
-                    onFocus={() => setOpen(true)}
                 >
                     <span className="truncate">
                         {selectedOption ? selectedOption.label : placeholder}

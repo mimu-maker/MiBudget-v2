@@ -1,8 +1,7 @@
-import { useTransactionUndoActions } from '@/contexts/TransactionUndoContext';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { APP_STATUSES } from '@/hooks/useSettings';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { parseAmount } from '@/lib/importUtils';
 import { getLocalTransactions, saveLocalTransactions, clearLocalTransactions } from '@/lib/localDb';
 import { format, parseISO, startOfMonth } from 'date-fns';
@@ -62,19 +61,23 @@ const parseBool = (val: any) => {
   return !!val;
 };
 
-const useTransactions = () => {
+/**
+ * Hook for fetching ALL transactions (Legacy/Analytics use case)
+ */
+export const useAllTransactions = (options?: { enabled?: boolean }) => {
   const queryClient = useQueryClient();
 
   return useQuery({
-    queryKey: ['transactions'],
+    queryKey: ['transactions-all'],
     queryFn: async () => {
-      console.log("Fetching transactions...");
+      console.log("Fetching all transactions...");
 
       const { data: authData } = await supabase.auth.getUser();
       const userId = authData.user?.id || 'a316d106-5bc5-447a-b594-91dab8814c06';
 
       let localData = await getLocalTransactions();
 
+      // Migration logic from localStorage...
       const storedLegacy = localStorage.getItem('mibudget_transactions');
       if (storedLegacy) {
         try {
@@ -101,26 +104,19 @@ const useTransactions = () => {
           const CHUNK_SIZE = 500;
           for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
             const chunk = toInsert.slice(i, i + CHUNK_SIZE);
-
-            // Sanitize chunk for DB insert - mapping source -> merchant for DB compatibility
             const dbChunk = chunk.map(idx => {
               const { source, clean_source, source_description, suggested_category, suggested_sub_category, clean_merchant, merchant_description, ...rest } = idx;
               return {
                 ...rest,
-                // map source fields to legacy merchant fields
                 merchant: source,
                 clean_merchant: clean_source || clean_merchant,
                 merchant_description: source_description || merchant_description
               };
             });
-
-            // Deduplicate chunk by fingerprint to avoid "ON CONFLICT DO UPDATE command cannot affect row a second time"
             const uniqueDbChunk = Array.from(new Map(dbChunk.map(item => [item.fingerprint, item])).values());
-
             const { error } = await supabase.from('transactions').upsert(uniqueDbChunk as any, { onConflict: 'fingerprint' });
             if (error) throw error;
           }
-
           await clearLocalTransactions();
           localData = [];
         } catch (e: any) {
@@ -143,29 +139,19 @@ const useTransactions = () => {
             .range(from, from + batchSize - 1);
 
           if (error) throw error;
-
           if (data) {
             allTransactions = [...allTransactions, ...data];
-            if (data.length < batchSize) {
-              hasMore = false;
-            } else {
-              from += batchSize;
-            }
-          } else {
-            hasMore = false;
-          }
+            if (data.length < batchSize) hasMore = false;
+            else from += batchSize;
+          } else hasMore = false;
         }
 
         return allTransactions.map((t: any) => {
-          // Compatibility logic: Handle both 'source' (new) and 'merchant' (old) keys
           const sourceName = t.source || t.merchant || 'Unknown';
           const cleanSourceName = t.clean_source || t.clean_merchant || null;
           const sourceDesc = t.source_description || t.merchant_description || null;
-
-          // Self-heal: ensure budget_month/year exist
           let budget_month = t.budget_month;
           let budget_year = t.budget_year;
-
           if (!budget_month || !budget_year) {
             const d = parseISO(t.date);
             if (!isNaN(d.getTime())) {
@@ -173,7 +159,6 @@ const useTransactions = () => {
               budget_year = budget_year || d.getFullYear();
             }
           }
-
           return {
             ...t,
             source: sourceName,
@@ -191,13 +176,212 @@ const useTransactions = () => {
       }
     },
     retry: 1,
-    staleTime: 0, // Ensure fresh data on navigation
+    staleTime: 60000, // Keep longer for analytics
+    enabled: options?.enabled !== false,
   });
 };
 
-export const useTransactionTable = () => {
+/**
+ * Hook for INFINITE transactions with server-side sorting/filtering
+ */
+const useInfiniteTransactions = (sortBy: keyof Transaction, sortOrder: 'asc' | 'desc', filters: Record<string, any>, options?: { enabled?: boolean }) => {
+  return useInfiniteQuery({
+    queryKey: ['transactions-infinite', sortBy, sortOrder, filters],
+    initialPageParam: 0,
+    queryFn: async ({ pageParam = 0 }) => {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id || 'a316d106-5bc5-447a-b594-91dab8814c06';
+      const pageSize = 50;
+      const from = pageParam * pageSize;
+      const to = from + pageSize - 1;
+
+      let query = (supabase as any)
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId);
+
+      // Apply Filters
+      Object.entries(filters).forEach(([field, filterValue]) => {
+        if (filterValue === undefined || filterValue === null || filterValue === '' || filterValue === 'all') return;
+        if (Array.isArray(filterValue) && filterValue.length === 0) return;
+
+        // Map field names if they differ from DB columns
+        let dbField = field;
+        if (field === 'source') dbField = 'merchant';
+
+        if (field === 'date' && filterValue.type) {
+          if (filterValue.type === 'range' && filterValue.value?.from) {
+            query = query.gte('date', new Date(filterValue.value.from).toISOString());
+            if (filterValue.value.to) {
+              query = query.lte('date', new Date(filterValue.value.to).toISOString());
+            }
+          } else if (filterValue.type === 'year') {
+            query = query.gte('date', `${filterValue.value}-01-01`).lte('date', `${filterValue.value}-12-31`);
+          } else if (filterValue.type === 'month') {
+            // Month filter is trickier server-side without raw SQL, for now let's use current year
+            const year = new Date().getFullYear();
+            const month = String(filterValue.value).padStart(2, '0');
+            query = query.gte('date', `${year}-${month}-01`).lte('date', `${year}-${month}-31`);
+          }
+        } else if (field === 'amount' && filterValue.type === 'number') {
+          const val = parseFloat(filterValue.value);
+          if (!isNaN(val)) {
+            switch (filterValue.operator) {
+              case '=': query = query.eq('amount', val); break;
+              case '!=': query = query.neq('amount', val); break;
+              case '>': query = query.gt('amount', val); break;
+              case '>=': query = query.gte('amount', val); break;
+              case '<': query = query.lt('amount', val); break;
+              case '<=': query = query.lte('amount', val); break;
+            }
+          }
+        } else if (Array.isArray(filterValue)) {
+          query = query.in(dbField, filterValue);
+        } else if (field === 'resolution') {
+          if (filterValue === 'unresolved') {
+            query = query.neq('status', 'Complete');
+            // clean_source check is hard without local join, ignoring for now as status is primary resolved indicator
+          } else if (filterValue === 'resolved') {
+            query = query.eq('status', 'Complete');
+          }
+        } else if (typeof filterValue === 'string') {
+          query = query.ilike(dbField, `%${filterValue}%`);
+        } else if (typeof filterValue === 'boolean') {
+          query = query.eq(dbField, filterValue);
+        }
+      });
+
+      // Default: Hide Excluded if no status filter
+      if (!filters.status || (Array.isArray(filters.status) && filters.status.length === 0)) {
+        query = query.neq('status', 'Excluded');
+      }
+
+      // Apply Sorting
+      let dbSortField = sortBy as string;
+      if (sortBy === 'source') dbSortField = 'merchant';
+      query = query.order(dbSortField, { ascending: sortOrder === 'asc' });
+
+      // Apply Range
+      const { data, error } = await query.range(from, to);
+
+      if (error) throw error;
+
+      return (data || []).map((t: any) => {
+        const sourceName = t.source || t.merchant || 'Unknown';
+        const cleanSourceName = t.clean_source || t.clean_merchant || null;
+        const sourceDesc = t.source_description || t.merchant_description || null;
+        return {
+          ...t,
+          source: sourceName,
+          clean_source: cleanSourceName,
+          source_description: sourceDesc,
+          subCategory: t.sub_category || '',
+          parent_id: t.parent_id
+        };
+      }) as Transaction[];
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      return lastPage.length === 50 ? allPages.length : undefined;
+    },
+    staleTime: 30000,
+    enabled: options?.enabled !== false,
+  });
+};
+
+const useTransactions = () => useAllTransactions(); // Keep for backward compatibility internally if needed
+
+
+const useTransactionCounts = (filters: Record<string, any>) => {
+  return useQuery({
+    queryKey: ['transactions-counts', filters],
+    queryFn: async () => {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id || 'a316d106-5bc5-447a-b594-91dab8814c06';
+
+      // 1. Total Count (non-excluded)
+      const { count: totalCount, error: totalError } = await (supabase as any)
+        .from('transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .neq('status', 'Excluded');
+
+      if (totalError) throw totalError;
+
+      // 2. Filtered Count
+      let filteredQuery = (supabase as any)
+        .from('transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
+
+      // Apply Filters (matching useInfiniteTransactions logic)
+      Object.entries(filters).forEach(([field, filterValue]) => {
+        if (filterValue === undefined || filterValue === null || filterValue === '' || filterValue === 'all') return;
+        if (Array.isArray(filterValue) && filterValue.length === 0) return;
+
+        let dbField = field;
+        if (field === 'source') dbField = 'merchant';
+
+        if (field === 'date' && filterValue.type) {
+          if (filterValue.type === 'range' && filterValue.value?.from) {
+            filteredQuery = filteredQuery.gte('date', new Date(filterValue.value.from).toISOString());
+            if (filterValue.value.to) {
+              filteredQuery = filteredQuery.lte('date', new Date(filterValue.value.to).toISOString());
+            }
+          } else if (filterValue.type === 'year') {
+            filteredQuery = filteredQuery.gte('date', `${filterValue.value}-01-01`).lte('date', `${filterValue.value}-12-31`);
+          } else if (filterValue.type === 'month') {
+            const year = new Date().getFullYear();
+            const month = String(filterValue.value).padStart(2, '0');
+            filteredQuery = filteredQuery.gte('date', `${year}-${month}-01`).lte('date', `${year}-${month}-31`);
+          }
+        } else if (field === 'amount' && filterValue.type === 'number') {
+          const val = parseFloat(filterValue.value);
+          if (!isNaN(val)) {
+            switch (filterValue.operator) {
+              case '=': filteredQuery = filteredQuery.eq('amount', val); break;
+              case '!=': filteredQuery = filteredQuery.neq('amount', val); break;
+              case '>': filteredQuery = filteredQuery.gt('amount', val); break;
+              case '>=': filteredQuery = filteredQuery.gte('amount', val); break;
+              case '<': filteredQuery = filteredQuery.lt('amount', val); break;
+              case '<=': filteredQuery = filteredQuery.lte('amount', val); break;
+            }
+          }
+        } else if (Array.isArray(filterValue)) {
+          filteredQuery = filteredQuery.in(dbField, filterValue);
+        } else if (field === 'resolution') {
+          if (filterValue === 'unresolved') {
+            filteredQuery = filteredQuery.neq('status', 'Complete');
+          } else if (filterValue === 'resolved') {
+            filteredQuery = filteredQuery.eq('status', 'Complete');
+          }
+        } else if (typeof filterValue === 'string') {
+          filteredQuery = filteredQuery.ilike(dbField, `%${filterValue}%`);
+        } else if (typeof filterValue === 'boolean') {
+          filteredQuery = filteredQuery.eq(dbField, filterValue);
+        }
+      });
+
+      // Default: Hide Excluded if no status filter
+      if (!filters.status || (Array.isArray(filters.status) && filters.status.length === 0)) {
+        filteredQuery = filteredQuery.neq('status', 'Excluded');
+      }
+
+      const { count: filteredCount, error: filteredError } = await filteredQuery;
+
+      if (filteredError) throw filteredError;
+
+      return {
+        total: totalCount || 0,
+        filtered: filteredCount || 0
+      };
+    },
+    staleTime: 30000,
+  });
+};
+
+export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { mode: 'infinite' }) => {
   const queryClient = useQueryClient();
-  const { showUndo } = useTransactionUndoActions();
+  const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
 
   const { data: projections = [] } = useQuery({
     queryKey: ['projections-list'],
@@ -252,18 +436,48 @@ export const useTransactionTable = () => {
     new Set(sourceRules.map((r: any) => r.clean_source_name).filter(Boolean)),
     [sourceRules]);
 
-  const { data: rawTransactions = [], isLoading, isError } = useTransactions();
-
-  const transactions = useMemo(() => {
-    return rawTransactions.map(t => ({
-      ...t,
-      is_resolved: !!(t.clean_source && knownSources.has(t.clean_source))
-    }));
-  }, [rawTransactions, knownSources]);
-
   const [sortBy, setSortBy] = useState<keyof Transaction>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [filters, setFilters] = useState<Record<string, any>>({});
+
+  // Infinite Query (Default)
+  const {
+    data: infiniteData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: isInfiniteLoading,
+    isError: isInfiniteError
+  } = useInfiniteTransactions(sortBy, sortOrder, filters, { enabled: options.mode === 'infinite' });
+
+  // All Query (Optional Mode)
+  const {
+    data: allData,
+    isLoading: isAllLoading,
+    isError: isAllError
+  } = useAllTransactions({ enabled: options.mode === 'all' });
+
+  const { data: counts } = useTransactionCounts(filters);
+  const totalCount = counts?.total || 0;
+  const filteredCount = counts?.filtered || 0;
+
+  const transactions = useMemo(() => {
+    let raw: Transaction[] = [];
+    if (options.mode === 'all') {
+      raw = allData || [];
+    } else {
+      raw = infiniteData?.pages.flat() || [];
+    }
+
+    return raw.map(t => ({
+      ...t,
+      is_resolved: !!(t.clean_source && knownSources.has(t.clean_source))
+    }));
+  }, [infiniteData, allData, knownSources, options.mode]);
+
+  const isLoading = options.mode === 'all' ? isAllLoading : isInfiniteLoading;
+  const isError = options.mode === 'all' ? isAllError : isInfiniteError;
+
   const [editingCell, setEditingCell] = useState<{ id: string, field: keyof Transaction } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -294,8 +508,8 @@ export const useTransactionTable = () => {
 
       // Shadow logic & Self-healing
       if (field === 'date') {
-        const transactions = queryClient.getQueryData<Transaction[]>(['transactions']);
-        const oldTx = transactions?.find(t => t.id === id);
+        const previousAll = queryClient.getQueryData<Transaction[]>(['transactions-all']);
+        const oldTx = previousAll?.find(t => t.id === id);
 
         if (oldTx) {
           const oldDate = parseISO(oldTx.date);
@@ -345,142 +559,44 @@ export const useTransactionTable = () => {
       return { id };
     },
     onMutate: async ({ id, field, value }) => {
-      await queryClient.cancelQueries({ queryKey: ['transactions'] });
-      const previousTotal = queryClient.getQueryData<Transaction[]>(['transactions']);
-      const previousTx = previousTotal?.find(t => t.id === id);
+      await queryClient.cancelQueries({ queryKey: ['transactions-infinite'] });
+      await queryClient.cancelQueries({ queryKey: ['transactions-all'] });
 
-      // Optimistic update
-      if (previousTotal) {
-        queryClient.setQueryData(['transactions'], (old: Transaction[] | undefined) => {
+      const previousTotalAll = queryClient.getQueryData<Transaction[]>(['transactions-all']);
+      const previousTx = previousTotalAll?.find(t => t.id === id);
+
+      if (previousTotalAll) {
+        queryClient.setQueryData(['transactions-all'], (old: Transaction[] | undefined) => {
           if (!old) return [];
           return old.map(t => t.id === id ? { ...t, [field]: value } : t);
         });
       }
 
-      return { previousTx, previousTotal };
+      queryClient.setQueriesData({ queryKey: ['transactions-infinite'] }, (old: any) => {
+        if (!old || !old.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: Transaction[]) =>
+            page.map(t => t.id === id ? { ...t, [field]: value } : t)
+          )
+        };
+      });
+
+      return { previousTx, previousTotalAll };
     },
     onSuccess: (data, variables, context) => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-
-      if (context?.previousTx) {
-        showUndo({
-          type: 'update',
-          transactions: [context.previousTx],
-          description: `Updated transaction: ${context.previousTx.description || context.previousTx.source}`
-        });
-      }
+      queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
     },
     onError: (err, variables, context) => {
-      if (context?.previousTotal) {
-        queryClient.setQueryData(['transactions'], context.previousTotal);
+      if (context?.previousTotalAll) {
+        queryClient.setQueryData(['transactions-all'], context.previousTotalAll);
       }
+      queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
     },
   });
 
-  const bulkUpdateTransactionMutation = useMutation({
-    mutationFn: async ({ id, updates }: { id: string, updates: Partial<Transaction> }) => {
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData.user?.id;
-
-      // Compatibility mapping for the database
-      let dbUpdates: any = { ...updates };
-      // Ensure specific fields map to both new and old columns
-      if ('source' in updates) {
-        dbUpdates.source = updates.source;
-        dbUpdates.merchant = updates.source;
-      }
-      if ('clean_source' in updates) {
-        dbUpdates.clean_source = updates.clean_source;
-        dbUpdates.clean_merchant = updates.clean_source;
-      }
-      if ('source_description' in updates) {
-        dbUpdates.source_description = updates.source_description;
-        dbUpdates.merchant_description = updates.source_description;
-      }
-
-      let finalUpdates = { ...dbUpdates };
-
-      if (updates.date) {
-        const transactions = queryClient.getQueryData<Transaction[]>(['transactions']);
-        const oldTx = transactions?.find(t => t.id === id); // NOTE: Bulk Edit often targets IDs, but here input logic says `ids` vs `id`. Check signature.
-        // Wait, bulkUpdateTransactionMutation takes `id` and `updates`. It is for single row edits but "bulk cell edit"?
-        // The signature is: mutationFn: async ({ id, updates }: { id: string, updates: Partial<Transaction> }) 
-        // This mutation is incorrectly named "bulkUpdateTransactionMutation" but it handles single ID updates with partial payload.
-        // The bulk one is `bulkUpdateMutation` further down.
-        // This block is for `bulkUpdateTransactionMutation`.
-
-        const txId = id; // use the id from args
-        if (oldTx) {
-          const oldDate = parseISO(oldTx.date);
-          const newDate = parseISO(updates.date);
-
-          if (!isNaN(oldDate.getTime()) && !isNaN(newDate.getTime())) {
-            const expectedOldMonth = format(startOfMonth(oldDate), 'yyyy-MM-01');
-
-            if (!oldTx.budget_month || oldTx.budget_month === expectedOldMonth) {
-              finalUpdates.budget_month = format(startOfMonth(newDate), 'yyyy-MM-01');
-              finalUpdates.budget_year = newDate.getFullYear();
-            }
-          }
-        }
-      }
-
-      let { error } = await (supabase as any)
-        .from('transactions')
-        .update(finalUpdates)
-        .eq('id', id)
-        .eq('user_id', userId);
-
-      if (error && (error.code === '42703' || error.message?.includes('column') || error.message?.includes('does not exist'))) {
-        const { source, clean_source, source_description, ...safeUpdates } = finalUpdates;
-        // Ensure legacy fields are set if we stripped source fields
-        if (updates.source) safeUpdates.merchant = updates.source;
-        if (updates.clean_source) safeUpdates.clean_merchant = updates.clean_source;
-        if (updates.source_description) safeUpdates.merchant_description = updates.source_description;
-
-        const { error: retryError } = await (supabase as any)
-          .from('transactions')
-          .update(safeUpdates)
-          .eq('id', id)
-          .eq('user_id', userId);
-        error = retryError;
-      }
-
-      if (error) throw error;
-      return { id };
-    },
-    onMutate: async ({ id, updates }) => {
-      await queryClient.cancelQueries({ queryKey: ['transactions'] });
-      const previousTotal = queryClient.getQueryData<Transaction[]>(['transactions']);
-      const previousTx = previousTotal?.find(t => t.id === id);
-
-      // Optimistic update
-      if (previousTotal) {
-        queryClient.setQueryData(['transactions'], (old: Transaction[] | undefined) => {
-          if (!old) return [];
-          return old.map(t => t.id === id ? { ...t, ...updates } : t);
-        });
-      }
-
-      return { previousTx, previousTotal };
-    },
-    onSuccess: (data, variables, context) => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-
-      if (context?.previousTx) {
-        showUndo({
-          type: 'update',
-          transactions: [context.previousTx],
-          description: `Updated transaction: ${context.previousTx.description || context.previousTx.source}`
-        });
-      }
-    },
-    onError: (err, variables, context) => {
-      if (context?.previousTotal) {
-        queryClient.setQueryData(['transactions'], context.previousTotal);
-      }
-    },
-  });
+  // Consolidated everything into bulkUpdateMutation below
 
   const addTransactionMutation = useMutation({
     mutationFn: async (newTransaction: Omit<Transaction, 'id'>) => {
@@ -512,49 +628,64 @@ export const useTransactionTable = () => {
       if (error) throw error;
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      showUndo({
-        type: 'add',
-        transactions: [variables as unknown as Transaction],
-        description: `Added transaction: ${variables.description || variables.source}`
-      });
+      queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
     },
   });
 
-  const handleSort = (field: keyof Transaction) => {
+  const handleSort = useCallback((field: keyof Transaction) => {
     if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortBy(field);
       setSortOrder('asc');
     }
-  };
+  }, [sortBy]);
 
-  const handleFilter = (field: string, value: any) => {
+
+  const handleFilter = useCallback((field: string, value: any) => {
     setFilters(prev => ({ ...prev, [field]: value }));
-  };
+  }, []);
 
-  const clearFilter = (field: string) => {
+  const clearFilter = useCallback((field: string) => {
     setFilters(prev => {
       const newFilters = { ...prev };
       delete newFilters[field];
       return newFilters;
     });
-  };
+  }, []);
 
-  const clearAllFilters = () => {
+  const clearAllFilters = useCallback(() => {
     setFilters({});
-  };
+  }, []);
 
-  const handleCellEdit = (id: string, field: keyof Transaction, value: any) => {
-    updateTransactionMutation.mutate({ id, field, value });
+  const handleCellEdit = useCallback((id: string, field: keyof Transaction, value: any) => {
+    setSavingMap(prev => ({ ...prev, [id]: true }));
+    updateTransactionMutation.mutate({ id, field, value }, {
+      onSettled: () => {
+        setSavingMap(prev => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    });
     setEditingCell(null);
-  };
+  }, []);
 
-  const handleBulkCellEdit = (id: string, updates: Partial<Transaction>) => {
-    bulkUpdateTransactionMutation.mutate({ id, updates });
+  const handleBulkCellEdit = useCallback((id: string, updates: Partial<Transaction>) => {
+    setSavingMap(prev => ({ ...prev, [id]: true }));
+    bulkUpdateMutation.mutate({ ids: [id], updates }, {
+      onSettled: () => {
+        setSavingMap(prev => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    });
     setEditingCell(null);
-  };
+  }, []);
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
@@ -579,19 +710,12 @@ export const useTransactionTable = () => {
       }
     },
     onSuccess: (_, variables) => {
-      const previousTotal = queryClient.getQueryData<Transaction[]>(['transactions']);
-      const deletedTxs = previousTotal?.filter(t => variables.includes(t.id)) || [];
+      const previousTotalAll = queryClient.getQueryData<Transaction[]>(['transactions-all']);
+      const deletedTxs = previousTotalAll?.filter(t => variables.includes(t.id)) || [];
 
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
       setSelectedIds(new Set());
-
-      if (deletedTxs.length > 0) {
-        showUndo({
-          type: 'delete',
-          transactions: deletedTxs,
-          description: `Permanently deleted ${deletedTxs.length} transaction${deletedTxs.length > 1 ? 's' : ''}`
-        });
-      }
     },
   });
 
@@ -673,7 +797,8 @@ export const useTransactionTable = () => {
         if (onProgress) onProgress(processed, total);
       }
 
-      await queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      await queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+      await queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
 
     } catch (err: any) {
       console.error("Import failed:", err);
@@ -737,32 +862,36 @@ export const useTransactionTable = () => {
       if (error) throw error;
     },
     onMutate: async ({ ids, updates }) => {
-      await queryClient.cancelQueries({ queryKey: ['transactions'] });
-      const previousTotal = queryClient.getQueryData<Transaction[]>(['transactions']);
+      await queryClient.cancelQueries({ queryKey: ['transactions-infinite'] });
+      await queryClient.cancelQueries({ queryKey: ['transactions-all'] });
 
-      // Optimistic update
-      if (previousTotal) {
-        queryClient.setQueryData(['transactions'], (old: Transaction[] | undefined) => {
+      const previousTotalAll = queryClient.getQueryData<Transaction[]>(['transactions-all']);
+
+      if (previousTotalAll) {
+        queryClient.setQueryData(['transactions-all'], (old: Transaction[] | undefined) => {
           if (!old) return [];
           return old.map(t => ids.includes(t.id) ? { ...t, ...updates } : t);
         });
       }
 
-      return { previousTotal };
+      queryClient.setQueriesData({ queryKey: ['transactions-infinite'] }, (old: any) => {
+        if (!old || !old.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: Transaction[]) =>
+            page.map(t => ids.includes(t.id) ? { ...t, ...updates } : t)
+          )
+        };
+      });
+
+      return { previousTotalAll };
     },
     onSuccess: (_, variables, context) => {
-      const updatedTxs = context?.previousTotal?.filter(t => variables.ids.includes(t.id)) || [];
+      const updatedTxs = context?.previousTotalAll?.filter(t => variables.ids.includes(t.id)) || [];
 
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
       setSelectedIds(new Set());
-
-      if (updatedTxs.length > 0) {
-        showUndo({
-          type: 'bulk-update',
-          transactions: updatedTxs,
-          description: `Updated ${updatedTxs.length} transaction${updatedTxs.length > 1 ? 's' : ''}`
-        });
-      }
     },
   });
 
@@ -791,14 +920,23 @@ export const useTransactionTable = () => {
     sortBy,
     sortOrder,
     filters,
+    totalCount,
+    filteredCount,
+    hasActiveFilters: Object.keys(filters).length > 0,
     editingCell,
     setEditingCell,
+    savingMap,
+    isSaving: (id: string) => !!savingMap[id],
     handleSort,
     handleFilter,
     clearFilter,
     clearAllFilters,
     handleCellEdit,
     handleBulkCellEdit,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    bulkUpdateMutation,
     handleImport,
     handleAddTransaction,
     toggleSelection,
@@ -806,16 +944,29 @@ export const useTransactionTable = () => {
     clearSelection,
     isLoading,
     isError,
-    bulkUpdate: bulkUpdateMutation.mutate,
-    bulkDelete: bulkDeleteMutation.mutate,
+    updateTransaction: updateTransactionMutation.mutate,
+    bulkUpdate: (variables: { ids: string[], updates: Partial<Transaction> }) => bulkUpdateMutation.mutate(variables),
+    bulkDelete: (ids: string[]) => bulkDeleteMutation.mutate(ids),
     deleteTransaction: (id: string) => bulkDeleteMutation.mutate([id]),
-    differentiateTransaction: async (id: string) => {
+    differentiateTransaction: async (id: string, index: number = 1) => {
       const tx = transactions.find(t => t.id === id);
       if (!tx) return;
-      const time = new Date().toLocaleTimeString('en-GB', { hour12: false });
-      const newDate = `${tx.date.split(' ')[0]} ${time}`;
-      const newFingerprint = generateFingerprint({ ...tx, date: newDate });
-      await bulkUpdateMutation.mutateAsync({ ids: [id], updates: { date: newDate, fingerprint: newFingerprint } });
+
+      // Parse current date and add hours based on index to ensure uniqueness within the group
+      const baseDate = new Date(tx.date);
+      if (isNaN(baseDate.getTime())) return;
+
+      const newDate = new Date(baseDate.getTime() + (index * 60 * 60 * 1000));
+      const newDateStr = newDate.toISOString();
+      const newFingerprint = generateFingerprint({ ...tx, date: newDateStr });
+
+      await bulkUpdateMutation.mutateAsync({
+        ids: [id],
+        updates: {
+          date: newDateStr,
+          fingerprint: newFingerprint
+        }
+      });
     },
     isBulkUpdating: bulkUpdateMutation.isPending,
     isBulkDeleting: bulkDeleteMutation.isPending,
@@ -861,7 +1012,8 @@ export const useTransactionTable = () => {
 
       // 2. Clear local cache
       await clearLocalTransactions();
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
     },
     factoryReset: async () => {
       const { data: userData } = await supabase.auth.getUser();
@@ -923,7 +1075,8 @@ export const useTransactionTable = () => {
         // Ignore if Table doesn't exist
       }
 
-      await queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      await queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+      await queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
       await queryClient.invalidateQueries({ queryKey: ['source-rules-simple'] });
     },
     purgeSoftDeletedTransactions: async () => {
@@ -938,7 +1091,8 @@ export const useTransactionTable = () => {
         .eq('excluded', true);
 
       if (error) throw error;
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
     }
   };
 };

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
+import { useAllTransactions } from '@/components/Transactions/hooks/useTransactionTable';
 import { useSettings } from '@/hooks/useSettings';
 import { usePeriod } from '@/contexts/PeriodContext';
 import { getPeriodInterval } from '@/lib/dateUtils';
@@ -9,12 +9,14 @@ import { useAnnualBudget } from '@/hooks/useAnnualBudget';
 import { useProfile } from '@/contexts/ProfileContext';
 
 interface UseOverviewDataProps {
+    includeCore: boolean;
     includeSpecial: boolean;
     includeKlintemarken: boolean;
 }
 
-export const useOverviewData = ({ includeSpecial, includeKlintemarken }: UseOverviewDataProps) => {
-    const { transactions } = useTransactionTable();
+
+export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemarken }: UseOverviewDataProps) => {
+    const { data: transactions = [] } = useAllTransactions();
     const { settings } = useSettings();
     const { userProfile } = useProfile();
     const { selectedPeriod, customDateRange } = usePeriod();
@@ -78,6 +80,15 @@ export const useOverviewData = ({ includeSpecial, includeKlintemarken }: UseOver
         if (!includeKlintemarken) {
             filtered = filtered.filter(t => t.budget !== 'Klintemarken' && getGroup(t.category) !== 'klintemarken');
         }
+        if (!includeCore) {
+            filtered = filtered.filter(t => {
+                const isSpecial = t.budget === 'Special' || getGroup(t.category) === 'special';
+                const isKlintemarken = t.budget === 'Klintemarken' || getGroup(t.category) === 'klintemarken';
+                // Keep only if it is one of the non-core types
+                return isSpecial || isKlintemarken;
+            });
+        }
+
 
         filtered = filtered.filter(t => t.budget !== 'Exclude' && !t.excluded && t.status !== 'Pending Reconciliation' && !t.status?.startsWith('Pending: '));
         return filtered;
@@ -169,14 +180,7 @@ export const useOverviewData = ({ includeSpecial, includeKlintemarken }: UseOver
         return [startPoint, ...trend];
     }, [monthlyData]);
 
-    // Split balance for conditional area filling (positive/negative areas)
-    const splitBalanceTrend = useMemo(() => {
-        return balanceTrend.map(d => ({
-            ...d,
-            posBalance: d.cumulativeBalance > 0 ? d.cumulativeBalance : 0,
-            negBalance: d.cumulativeBalance < 0 ? d.cumulativeBalance : 0,
-        }));
-    }, [balanceTrend]);
+
 
     // Radar Chart Data (Spending by Category)
     const radarData = useMemo(() => {
@@ -257,7 +261,6 @@ export const useOverviewData = ({ includeSpecial, includeKlintemarken }: UseOver
         netIncome,
         monthlyData,
         balanceTrend,
-        splitBalanceTrend,
         radarData,
         y2Data,
         lineGradientOffset,

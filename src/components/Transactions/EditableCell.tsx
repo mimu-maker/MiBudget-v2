@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Store, Sparkles } from 'lucide-react';
+import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CategorySelectContent } from '@/components/Budget/CategorySelectContent';
@@ -10,6 +11,7 @@ import { getStatusBadgeVariant, getBudgetBadgeVariant } from './utils/transactio
 import { APP_STATUSES, useSettings } from '@/hooks/useSettings';
 import { useCategorySource, useUnifiedCategoryActions } from '@/hooks/useBudgetCategories';
 import { CategorySelector } from '@/components/Budget/CategorySelector';
+import { useProfile } from '@/contexts/ProfileContext';
 import { SmartSelector } from '@/components/ui/smart-selector';
 import { formatCurrency, formatDate, formatBudgetMonth } from '@/lib/formatUtils';
 import { addMonths, startOfMonth, format, parseISO } from 'date-fns';
@@ -24,6 +26,7 @@ interface EditableCellProps {
   onStopEdit: () => void;
   customDisplay?: React.ReactNode;
   projections?: any[];
+  isSaving?: boolean;
 }
 
 export const EditableCell = ({
@@ -35,9 +38,11 @@ export const EditableCell = ({
   onStartEdit,
   onStopEdit,
   customDisplay,
-  projections
+  projections,
+  isSaving
 }: EditableCellProps) => {
   const { settings } = useSettings();
+  const { userProfile } = useProfile();
   const { addCategory, addSubCategory } = useUnifiedCategoryActions();
   const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
   const { transactions } = useTransactionTable();
@@ -371,8 +376,15 @@ export const EditableCell = ({
           className="h-8"
           autoFocus
         />
-      );
     }
+  }
+
+  if (isSaving) {
+    return (
+      <div className="flex items-center justify-center p-1 h-full min-h-[32px]">
+        <Spinner size="sm" className="text-blue-500" />
+      </div>
+    );
   }
 
   const isDynamicField = field === 'date' || field === 'amount';
@@ -394,8 +406,9 @@ export const EditableCell = ({
         </span>
       ) : field === 'date' ? (
         <span className="dynamic-text">
-          {formatDate(String(value))}
+          {formatDate(String(value), userProfile?.show_time, userProfile?.date_format)}
         </span>
+
       ) : field === 'status' ? (
         <Badge variant={getStatusBadgeVariant(String(value))} className="whitespace-normal h-auto text-center px-1.5 py-0.5 text-[10px] leading-tight justify-center">
           {String(value) === 'Reconciled'

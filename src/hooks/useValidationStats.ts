@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
+import { useAllTransactions } from '@/components/Transactions/hooks/useTransactionTable';
 
 export const useValidationStats = () => {
-    const { transactions } = useTransactionTable();
+    const { data: transactions = [] } = useAllTransactions();
 
     // Buckets calculation - logic copied from ValidationDashboard.tsx
     const duplicateGroups = useMemo(() => {

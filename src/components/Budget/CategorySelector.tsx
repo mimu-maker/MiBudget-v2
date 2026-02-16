@@ -56,7 +56,6 @@ export const CategorySelector = ({
                         "w-full justify-between bg-white text-xs font-medium h-9 px-3 border-slate-200 hover:border-slate-300 transition-all",
                         className
                     )}
-                    onFocus={() => setOpen(true)}
                 >
                     <span className="truncate">
                         {(!value || value === 'always-ask') && showAlwaysAsk ? "Always Ask" : (value || placeholder)}

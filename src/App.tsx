@@ -9,8 +9,6 @@ import { ProfileProvider } from "./contexts/ProfileContext";
 import { LocalAuthProvider } from "./contexts/LocalAuthContext";
 import { UnifiedAuthProvider } from "./contexts/UnifiedAuthContext";
 import { PeriodProvider } from "./contexts/PeriodContext";
-import { TransactionUndoProvider } from "./contexts/TransactionUndoContext";
-import { TransactionUndoOverlay } from "./components/Transactions/TransactionUndoOverlay";
 import { ThemeProvider } from "./components/ThemeProvider";
 import ProtectedRoute from "./components/Auth/ProtectedRoute";
 import { AuthSwitcher } from "./components/Auth/AuthSwitcher";
@@ -130,14 +128,11 @@ const AuthWrapper = () => {
       <ProfileProvider>
         <UnifiedAuthProvider>
           <PeriodProvider>
-            <TransactionUndoProvider>
-              <ThemeProvider>
-                <BrowserRouter>
-                  <AppLayout />
-                  <TransactionUndoOverlay />
-                </BrowserRouter>
-              </ThemeProvider>
-            </TransactionUndoProvider>
+            <ThemeProvider>
+              <BrowserRouter>
+                <AppLayout />
+              </BrowserRouter>
+            </ThemeProvider>
           </PeriodProvider>
         </UnifiedAuthProvider>
       </ProfileProvider>

@@ -8,8 +8,9 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Store, Calendar, CreditCard, Tag, FileText, Info, Pencil, Save, X, RefreshCw, EyeOff, Link2Off, AlertTriangle, Check, Search } from 'lucide-react';
 import { Transaction } from './hooks/useTransactionTable';
-import { formatCurrency } from '@/lib/formatUtils';
+import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
+import { useProfile } from '@/contexts/ProfileContext';
 import { useCategorySource } from '@/hooks/useBudgetCategories';
 import { getStatusBadgeVariant } from './utils/transactionUtils';
 import { CategorySelector } from '@/components/Budget/CategorySelector';
@@ -26,6 +27,7 @@ interface TransactionDetailDialogProps {
 
 export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSave, initialEditMode = false }: TransactionDetailDialogProps) => {
     const { settings } = useSettings();
+    const { userProfile } = useProfile();
     const { subCategories } = useCategorySource();
     const [isEditing, setIsEditing] = useState(initialEditMode);
     const [isSaving, setIsSaving] = useState(false);
@@ -216,7 +218,7 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
                                 <Label className="text-[9px] font-bold text-slate-400 uppercase">Transaction Date</Label>
                                 <div className="flex items-center gap-3 p-2 bg-slate-50/50 rounded-xl border border-slate-100">
                                     <Calendar className="w-4 h-4 text-slate-400" />
-                                    <span className="text-xs font-bold text-slate-700">{transaction.date}</span>
+                                    <span className="text-xs font-bold text-slate-700">{formatDate(transaction.date, userProfile?.show_time, userProfile?.date_format)}</span>
                                 </div>
                             </div>
                             <div className="space-y-2">

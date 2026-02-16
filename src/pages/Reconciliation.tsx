@@ -11,7 +11,6 @@ import { formatCurrency } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
 import { cn } from '@/lib/utils';
 import { Toaster, toast } from 'sonner';
-import { useTransactionUndo } from '@/contexts/TransactionUndoContext';
 
 const MatchCard = ({ item1, item2, onMatch, onIgnore, currency }: {
     item1: Transaction,
@@ -177,7 +176,6 @@ const EntityRow = ({
 const Reconciliation = () => {
     const { transactions, handleBulkCellEdit, splitTransaction, bulkUpdate, handleCellEdit } = useTransactionTable();
     const { settings } = useSettings();
-    const { showUndo } = useTransactionUndo();
     const [ignoredMatches, setIgnoredMatches] = useState<Set<string>>(new Set());
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [editingId, setEditingId] = useState<string | null>(null);

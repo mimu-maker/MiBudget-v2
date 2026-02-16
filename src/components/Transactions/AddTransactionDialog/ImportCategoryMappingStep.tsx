@@ -410,8 +410,7 @@ const MappingItem = ({
                             isPerfectMatch && "border-emerald-200 bg-emerald-50/20"
                         )}
                         placeholder={hasSuggestion ? `Suggested: ${suggestion.category}` : "Map to system category..."}
-                        showAlwaysAsk={false}
-                        disabled={disabled}
+                        hideSuggestions={true}
                     />
                 ) : (
                     <SmartSelector
@@ -430,6 +429,7 @@ const MappingItem = ({
                             hasSuggestion && !value && "border-amber-300 bg-amber-50/30",
                             isPerfectMatch && "border-emerald-200 bg-emerald-50/20"
                         )}
+                        hideSuggestions={true}
                     />
                 )}
 

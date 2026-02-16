@@ -9,9 +9,30 @@ import { cn } from '@/lib/utils';
 import BudgetSankey from '@/components/Budget/BudgetSankey';
 
 export const MainOverview = () => {
+  const [localIncludeCore, setLocalIncludeCore] = useState(true);
   const [localIncludeSpecial, setLocalIncludeSpecial] = useState(false);
   const [localIncludeKlintemarken, setLocalIncludeKlintemarken] = useState(false);
   const [flowTab, setFlowTab] = useState<'cashflow' | 'categoryflow'>('cashflow');
+
+  const toggleFilter = (type: 'core' | 'special' | 'klintemarken') => {
+    const isCore = type === 'core';
+    const isSpecial = type === 'special';
+    const isKlintemarken = type === 'klintemarken';
+
+    // Current state
+    const current = isCore ? localIncludeCore : isSpecial ? localIncludeSpecial : localIncludeKlintemarken;
+
+    // If turning off, check if it's the last one enabled
+    if (current) {
+      const activeCount = (localIncludeCore ? 1 : 0) + (localIncludeSpecial ? 1 : 0) + (localIncludeKlintemarken ? 1 : 0);
+      if (activeCount <= 1) return; // Prevent disabling the last one
+    }
+
+    if (isCore) setLocalIncludeCore(!localIncludeCore);
+    if (isSpecial) setLocalIncludeSpecial(!localIncludeSpecial);
+    if (isKlintemarken) setLocalIncludeKlintemarken(!localIncludeKlintemarken);
+  };
+
 
   const {
     budgetLoading,
@@ -19,13 +40,14 @@ export const MainOverview = () => {
     amountFormat,
     summary,
     netIncome,
-    splitBalanceTrend,
+    balanceTrend,
     y2Data,
     lineGradientOffset,
     radarData, // Still needed for the total budgeted amount in the expense card
     budgetData,
     flowFiltered,
   } = useOverviewData({
+    includeCore: localIncludeCore,
     includeSpecial: localIncludeSpecial,
     includeKlintemarken: localIncludeKlintemarken
   });
@@ -104,6 +126,7 @@ export const MainOverview = () => {
   // Replicating for now as it's specific to Sankey view.
   const categoriesWithActuals = budgetData?.categories
     .filter(cat => {
+      if (!localIncludeCore && (cat.category_group === 'income' || cat.category_group === 'expenditure')) return false;
       if (!localIncludeSpecial && cat.category_group === 'special') return false;
       if (!localIncludeKlintemarken && cat.category_group === 'klintemarken') return false;
       return true;
@@ -244,21 +267,35 @@ export const MainOverview = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setLocalIncludeKlintemarken(!localIncludeKlintemarken)}
+                  onClick={() => toggleFilter('core')}
                   className={cn(
                     "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
-                    localIncludeKlintemarken
-                      ? "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+                    localIncludeCore
+                      ? "bg-slate-500/10 border-slate-500/20 text-slate-600 dark:text-slate-400 hover:bg-slate-500/20"
                       : "bg-background border-border text-muted-foreground hover:bg-accent"
                   )}
                 >
-                  <LucideIcons.Wallet className={cn("w-3 h-3", localIncludeKlintemarken ? "fill-amber-500/50" : "")} />
+                  <LucideIcons.Home className={cn("w-3 h-3", localIncludeCore ? "fill-slate-500/50" : "")} />
+                  CORE
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => toggleFilter('klintemarken')}
+                  className={cn(
+                    "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
+                    localIncludeKlintemarken
+                      ? "bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20"
+                      : "bg-background border-border text-muted-foreground hover:bg-accent"
+                  )}
+                >
+                  <LucideIcons.Wallet className={cn("w-3 h-3", localIncludeKlintemarken ? "fill-blue-500/50" : "")} />
                   FEEDER
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setLocalIncludeSpecial(!localIncludeSpecial)}
+                  onClick={() => toggleFilter('special')}
                   className={cn(
                     "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
                     localIncludeSpecial
@@ -275,13 +312,19 @@ export const MainOverview = () => {
               {flowTab === 'cashflow' ? (
                 <div className="h-[400px] w-full mt-4">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={splitBalanceTrend}>
+                    <ComposedChart data={balanceTrend}>
                       <defs>
                         <linearGradient id="lineColor" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0" stopColor="#10b981" stopOpacity={1} />
                           <stop offset={lineGradientOffset} stopColor="#10b981" stopOpacity={1} />
                           <stop offset={lineGradientOffset} stopColor="#f43f5e" stopOpacity={1} />
                           <stop offset="1" stopColor="#f43f5e" stopOpacity={1} />
+                        </linearGradient>
+                        <linearGradient id="fillColor" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0" stopColor="#10b981" stopOpacity={0.3} />
+                          <stop offset={lineGradientOffset} stopColor="#10b981" stopOpacity={0.3} />
+                          <stop offset={lineGradientOffset} stopColor="#f43f5e" stopOpacity={0.3} />
+                          <stop offset="1" stopColor="#f43f5e" stopOpacity={0.3} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartColors.grid} />
@@ -312,20 +355,9 @@ export const MainOverview = () => {
                       <Area
                         yAxisId="right"
                         type="monotone"
-                        dataKey="posBalance"
-                        fill="#10b981"
-                        fillOpacity={0.3}
-                        stroke="transparent"
-                        connectNulls
-                        isAnimationActive={false}
-                      />
-                      <Area
-                        yAxisId="right"
-                        type="monotone"
-                        dataKey="negBalance"
-                        fill="#f43f5e"
-                        fillOpacity={0.3}
-                        stroke="transparent"
+                        dataKey="cumulativeBalance"
+                        fill="url(#fillColor)"
+                        stroke="transparent" // Area stroke is transparent, the Line handles the stroke
                         connectNulls
                         isAnimationActive={false}
                       />

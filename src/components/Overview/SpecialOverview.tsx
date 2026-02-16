@@ -44,7 +44,7 @@ export const SpecialOverview = () => {
 
     specialTransactions.forEach(t => {
       const cat = t.category || 'Uncategorized';
-      const sub = t.subCategory || 'Other';
+      const sub = t.sub_category || 'Other';
 
       if (!map[cat]) map[cat] = { total: 0, transactions: 0, subcats: {} };
       map[cat].total += t.amount;
@@ -123,7 +123,7 @@ export const SpecialOverview = () => {
       const months = new Date().getMonth() + 1;
       return slushBudgetAccount * months;
     }
-    if (selectedPeriod === 'This Q1') return slushBudgetAccount * 3;
+    if (selectedPeriod === 'This Quarter') return slushBudgetAccount * 3;
     if (selectedPeriod === 'Custom' && customDateRange?.from && customDateRange?.to) {
       const diffTime = Math.abs(customDateRange.to.getTime() - customDateRange.from.getTime());
       const diffMonths = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 30.44));

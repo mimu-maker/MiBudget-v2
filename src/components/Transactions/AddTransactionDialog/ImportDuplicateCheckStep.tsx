@@ -4,7 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/hooks/useSettings';
-import { formatCurrency } from '@/lib/formatUtils';
+import { formatCurrency, formatDate } from '@/lib/formatUtils';
+import { useProfile } from '@/contexts/ProfileContext';
 
 interface ImportDuplicateCheckStepProps {
     conflicts: any[];
@@ -26,6 +27,7 @@ export const ImportDuplicateCheckStep = ({
     isProcessing
 }: ImportDuplicateCheckStepProps) => {
     const { settings } = useSettings();
+    const { userProfile } = useProfile();
     const allSelected = conflicts.length > 0 && selectedConflictIds.size === conflicts.length;
 
     return (
@@ -70,7 +72,7 @@ export const ImportDuplicateCheckStep = ({
                                     onCheckedChange={() => toggleConflictSelection(tx.id)}
                                 />
                                 <div className="grid grid-cols-4 gap-4 flex-1 items-center">
-                                    <span className="text-xs font-mono text-slate-400">{tx.date}</span>
+                                    <span className="text-xs font-mono text-slate-400">{formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}</span>
                                     <div className="col-span-2">
                                         <span className="text-sm font-bold text-slate-900 block truncate leading-tight">
                                             {tx.clean_source || tx.source}

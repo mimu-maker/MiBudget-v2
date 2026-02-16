@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 
 export const GeneralSettings = () => {
     const { userProfile, updateUserProfile, loading } = useProfile();
@@ -17,7 +18,8 @@ export const GeneralSettings = () => {
         language: userProfile?.language || 'en-US',
         currency: userProfile?.currency || 'DKK',
         date_format: userProfile?.date_format || 'YY/MM/DD',
-        amount_format: userProfile?.amount_format || 'comma_decimal'
+        amount_format: userProfile?.amount_format || 'comma_decimal',
+        show_time: userProfile?.show_time || false
     });
 
     const handleSave = async () => {
@@ -27,7 +29,8 @@ export const GeneralSettings = () => {
                 language: formData.language as 'en-US' | 'da-DK',
                 currency: formData.currency,
                 date_format: formData.date_format as any,
-                amount_format: formData.amount_format as any
+                amount_format: formData.amount_format as any,
+                show_time: formData.show_time
             });
             toast({
                 title: "Settings Saved",
@@ -131,6 +134,21 @@ export const GeneralSettings = () => {
                             </SelectContent>
                         </Select>
                     </div>
+
+                    <div className="flex items-center justify-between pt-2">
+                        <div className="space-y-0.5">
+                            <Label htmlFor="showTime">Show Time in Dates</Label>
+                            <p className="text-[0.8rem] text-muted-foreground">
+                                Detailed timestamps for transactions (useful for tracking duplicates).
+                            </p>
+                        </div>
+                        <Switch
+                            id="showTime"
+                            checked={formData.show_time}
+                            onCheckedChange={(val) => setFormData({ ...formData, show_time: val })}
+                        />
+                    </div>
+
 
                     <div className="pt-4">
                         <Button onClick={handleSave} disabled={saving}>

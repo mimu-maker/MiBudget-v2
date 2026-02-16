@@ -27,12 +27,32 @@ export const formatCurrency = (
     return `${formatted} ${suffix}`;
 };
 
-export const formatDate = (date: string | Date): string => {
+export const formatDate = (
+    date: string | Date,
+    showTime: boolean = false,
+    dateFormat: string = 'YY/MM/DD'
+): string => {
     if (!date) return '';
     try {
-        const d = typeof date === 'string' ? parseISO(date) : date;
-        // Enforce Michael's style: YY/MM/DD
-        return format(d, 'yy/MM/dd');
+        let d: Date;
+        if (typeof date === 'string') {
+            // Try parseISO first, then fallback to new Date() if it looks like a manual format or has space
+            d = parseISO(date);
+            if (isNaN(d.getTime())) {
+                d = new Date(date);
+            }
+        } else {
+            d = date;
+        }
+
+        if (isNaN(d.getTime())) return date.toString();
+
+        // Map UI format strings to date-fns format strings
+        let baseFormat = 'yy/MM/dd';
+        if (dateFormat === 'DD/MM/YYYY') baseFormat = 'dd/MM/yyyy';
+        if (dateFormat === 'YYYY-MM-DD') baseFormat = 'yyyy-MM-dd';
+
+        return format(d, showTime ? `${baseFormat} HH:mm` : baseFormat);
     } catch {
         return date.toString();
     }

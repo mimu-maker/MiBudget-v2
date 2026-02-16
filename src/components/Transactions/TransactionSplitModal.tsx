@@ -12,8 +12,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency } from '@/lib/formatUtils';
 import { Badge } from '@/components/ui/badge';
-import { useTransactionUndo } from '@/contexts/TransactionUndoContext';
-
 interface TransactionSplitModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -31,7 +29,6 @@ interface SplitItem {
 
 export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplitComplete }: TransactionSplitModalProps) => {
     const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
-    const { showUndo } = useTransactionUndo();
     const [items, setItems] = useState<SplitItem[]>([]);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -106,12 +103,6 @@ export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplit
                 .eq('id', transaction.id);
 
             if (updateError) throw updateError;
-
-            showUndo({
-                type: 'split',
-                transactions: [transaction],
-                description: `Split transaction: ${transaction.source}`
-            });
 
             onOpenChange(false);
             onSplitComplete();

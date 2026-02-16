@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { processTransaction, SourceRule } from '@/lib/importBrain';
 import { getCachedRules, saveRulesCache } from '@/lib/sourceRulesCache';
-import { parseDate, parseAmount, fuzzyMatchField, parseRecurringValue } from '@/lib/importUtils';
+import { parseDate, parseAmount, fuzzyMatchField } from '@/lib/importUtils';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCategories } from '@/hooks/useAnnualBudget';
 import { useUnifiedCategoryActions } from '@/hooks/useBudgetCategories';
@@ -16,7 +16,6 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     category: ['category', 'kategori', 'type', 'gruppe', 'label'],
     sub_category: ['sub_category', 'subcategory', 'underkategori', 'sub', 'specifikation'],
     // planned: ['planlagt', 'budgetteret', 'forventet'], // Disabled - always true
-    recurring: ['recurring', 'fast', 'gentagelse', 'frekvens', 'periodisk'],
     notes: ['notes', 'note', 'kommentar', 'ekstra', 'description', 'beskrivelse']
 };
 
@@ -295,7 +294,6 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                         category: null,
                         sub_category: '',
                         planned: true, // Default to Planned (unplanned=N)
-                        recurring: 'N/A',
                         notes: '',
                         hasExplicitCategory: false
                     };
@@ -313,7 +311,6 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                                 transaction[transactionField] = parsed;
                             }
                             else if (transactionField === 'planned') transaction[transactionField] = ['yes', 'y', 'true', '1', 'on', 'checked', 'x'].includes(value?.toLowerCase().trim());
-                            else if (transactionField === 'recurring') transaction[transactionField] = parseRecurringValue(value);
                             else if (transactionField === 'category') {
                                 rawCsvCat = value;
                                 transaction[transactionField] = value;
@@ -541,7 +538,6 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                     sub_category: rule.sub_category,
                     status: canComplete ? 'Complete' : 'Pending Triage',
                     confidence: 1,
-                    recurring: rule.auto_recurring || row.recurring,
                     planned: rule.auto_planned ?? row.planned,
                     excluded: isExcluded
                 };
@@ -568,20 +564,30 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
             const previewFingerprints = previewWithFingerprints.map(p => p.fingerprint);
 
             // BATCH CHECKS to avoid "400 Request URI too long" (Supabase/PostgREST limit)
+            // BATCH CHECKS to avoid "400 Request URI too long" (Supabase/PostgREST limit)
             const BATCH_SIZE = 100;
             const existingFingerprints = new Set<string>();
 
+            const batches = [];
             for (let i = 0; i < previewFingerprints.length; i += BATCH_SIZE) {
-                const batch = previewFingerprints.slice(i, i + BATCH_SIZE);
-                const { data: existingBatch, error: batchError } = await supabase
-                    .from('transactions')
-                    .select('fingerprint')
-                    .eq('user_id', userId)
-                    .neq('excluded', true) // Ignore soft-deleted/excluded transactions
-                    .in('fingerprint', batch);
+                batches.push(previewFingerprints.slice(i, i + BATCH_SIZE));
+            }
 
-                if (batchError) throw batchError;
-                (existingBatch || []).forEach(e => existingFingerprints.add(e.fingerprint));
+            // Process in chunks of 5 simultaneous requests to speed up without overwhelming connection
+            const CONCURRENCY = 5;
+            for (let i = 0; i < batches.length; i += CONCURRENCY) {
+                const currentBatches = batches.slice(i, i + CONCURRENCY);
+                await Promise.all(currentBatches.map(async (batch) => {
+                    const { data: existingBatch, error: batchError } = await supabase
+                        .from('transactions')
+                        .select('fingerprint')
+                        .eq('user_id', userId)
+                        .neq('excluded', true) // Ignore soft-deleted/excluded transactions
+                        .in('fingerprint', batch);
+
+                    if (batchError) throw batchError;
+                    (existingBatch || []).forEach(e => existingFingerprints.add(e.fingerprint));
+                }));
             }
 
             const duplicateTransactions = previewWithFingerprints.filter(p => existingFingerprints.has(p.fingerprint));

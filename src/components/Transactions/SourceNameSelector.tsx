@@ -97,7 +97,6 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
                     disabled={disabled}
                     aria-expanded={open}
                     className={cn("w-full justify-between bg-white font-bold text-blue-600 h-10 border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all", className)}
-                    onFocus={() => setOpen(true)}
                 >
                     <span className="truncate">
                         {value || "Select or search resolved source..."}

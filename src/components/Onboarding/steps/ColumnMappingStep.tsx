@@ -42,8 +42,7 @@ export const ColumnMappingStep: React.FC = () => {
     { value: 'description', label: 'Description', dataType: 'text' },
     { value: 'status', label: 'Status', dataType: 'text' },
     { value: 'budget', label: 'Budget', dataType: 'text' },
-    { value: 'planned', label: 'Unplanned', dataType: 'boolean' },
-    { value: 'recurring', label: 'Recurring', dataType: 'boolean' }
+    { value: 'planned', label: 'Unplanned', dataType: 'boolean' }
   ];
 
   // Get columns that need mapping (excluding mandatory ones that are already mapped)

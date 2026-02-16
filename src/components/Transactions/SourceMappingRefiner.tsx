@@ -6,10 +6,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Search, ArrowRight, Info, Zap, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { formatCurrency } from '@/lib/formatUtils';
+import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { SourceNameSelector } from './SourceNameSelector';
 import { TransactionNote } from './TransactionNote';
 import { useSettings } from '@/hooks/useSettings';
+import { useProfile } from '@/contexts/ProfileContext';
 import { SKIP_PATTERNS } from '@/lib/importBrain';
 
 interface SourceMappingRefinerProps {
@@ -30,6 +31,7 @@ export const SourceMappingRefiner = ({
     onUpdateNote
 }: SourceMappingRefinerProps) => {
     const { settings, saveSettings } = useSettings();
+    const { userProfile } = useProfile();
 
     // Use actual settings noise filters PLUS the hardcoded SKIP_PATTERNS to be robust
     const noiseFilters = useMemo(() => {
@@ -66,7 +68,7 @@ export const SourceMappingRefiner = ({
         return found;
     });
 
-    const [pattern, setPattern] = useState(cleanName);
+    const [pattern, setPattern] = useState(source);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(txs.map(t => t.id)));
 
     // Categorize matches
@@ -129,35 +131,38 @@ export const SourceMappingRefiner = ({
 
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                    <Label className="text-[10px] uppercase font-bold text-slate-500">Source Clean Name (Pill Name)</Label>
-                    <SourceNameSelector
-                        value={cleanName}
-                        hideAddNew={false}
-                        onChange={(v) => {
-                            const oldCleanName = cleanName;
-                            setCleanName(v);
-                            // If pattern is empty, OR it's currently the same as our old default cleanName,
-                            // we update it to the new selection (cleaned of synonyms/suffixes)
-                            const cleanV = v.split(' (')[0].split(' *')[0].split('  ')[0].trim();
-                            if (!pattern || pattern.toUpperCase() === oldCleanName.toUpperCase()) {
-                                setPattern(cleanV);
-                            }
-                        }}
-                    />
-                </div>
-                <div className="space-y-2">
-                    <Label className="text-[10px] uppercase font-bold text-slate-500">Match Pattern (Raw Name Keyword)</Label>
+            <div className="flex flex-col md:flex-row items-center gap-4 p-6 bg-slate-50/50 rounded-2xl border border-slate-100/80 shadow-inner relative">
+                <div className="flex-1 space-y-2 w-full">
+                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Input Name (Bank Reference)</Label>
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <Input
                             value={pattern}
                             onChange={(e) => setPattern(e.target.value)}
                             placeholder="Enter keyword to match..."
-                            className="h-10 pl-9 font-mono text-sm bg-white"
+                            className="h-10 pl-9 font-mono text-sm bg-white rounded-xl border-slate-200/60 shadow-sm"
                         />
                     </div>
+                </div>
+
+                <div className="flex flex-col items-center justify-center mt-4 md:mt-6 shrink-0 px-2 group/maps">
+                    <span className="text-[10px] uppercase font-black text-blue-400 tracking-widest leading-none mb-1.5 group-hover/maps:text-blue-500 transition-colors">Maps To</span>
+                    <div className="w-full flex items-center relative h-1">
+                        <div className="h-[2px] w-full bg-blue-500/60 rounded-full relative shadow-sm">
+                            <div className="absolute -right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 border-t-2 border-r-2 border-blue-500 rotate-45 rounded-tr-[1px]" />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex-1 space-y-2 w-full">
+                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Display Name (Clean Product/Service)</Label>
+                    <SourceNameSelector
+                        value={cleanName}
+                        hideAddNew={false}
+                        onChange={(v) => {
+                            setCleanName(v);
+                        }}
+                    />
                 </div>
             </div>
 
@@ -193,6 +198,7 @@ export const SourceMappingRefiner = ({
                             onToggle={(force) => handleToggle(tx.id, force)}
                             onUpdateNote={onUpdateNote}
                             currency={settings.currency}
+                            userProfile={userProfile}
                         />
                     ))}
                     {filteredTxs.length === 0 && (
@@ -253,12 +259,13 @@ export const SourceMappingRefiner = ({
     );
 };
 
-const ExpandableTransactionRow = ({ tx, isSelected, onToggle, onUpdateNote, currency }: {
+const ExpandableTransactionRow = ({ tx, isSelected, onToggle, onUpdateNote, currency, userProfile }: {
     tx: any,
     isSelected: boolean,
     onToggle: (force?: boolean) => void,
     onUpdateNote?: (id: string, note: string) => void,
-    currency: string
+    currency: string,
+    userProfile: any
 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
 
@@ -287,7 +294,7 @@ const ExpandableTransactionRow = ({ tx, isSelected, onToggle, onUpdateNote, curr
                         </span>
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium uppercase tracking-wider">
-                        <span>{tx.date}</span>
+                        <span>{formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}</span>
                         {tx.description && tx.description !== tx.source && (
                             <>
                                 <span className="text-slate-200">|</span>
@@ -333,7 +340,7 @@ const ExpandableTransactionRow = ({ tx, isSelected, onToggle, onUpdateNote, curr
                         <div className="font-mono font-bold text-slate-900">{formatCurrency(tx.amount, currency)}</div>
 
                         <div className="font-bold text-slate-400 uppercase text-[9px] tracking-wider">Date</div>
-                        <div className="font-mono text-slate-600">{tx.date}</div>
+                        <div className="font-mono text-slate-600">{formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}</div>
 
                         {tx.notes && (
                             <>

@@ -31,6 +31,7 @@ interface TransactionsTableRowProps {
   knownSources?: Set<string>;
   allTransactions?: Transaction[];
   'data-index'?: number; // Add for virtualizer
+  isSaving?: boolean;
 }
 
 export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, TransactionsTableRowProps>(({
@@ -48,6 +49,7 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
   projections,
   knownSources,
   allTransactions = [],
+  isSaving,
   ...props // Capture other props like data-index
 }, ref) => {
   const isEditing = (field: keyof Transaction) =>
@@ -111,6 +113,7 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
             onBulkEdit={onBulkEdit}
             onStartEdit={onStartEdit}
             onStopEdit={onStopEdit}
+            isSaving={isSaving}
           />
         </td>
         <td className="py-3 px-2">
@@ -266,6 +269,7 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
             onBulkEdit={onBulkEdit}
             onStartEdit={onStartEdit}
             onStopEdit={onStopEdit}
+            isSaving={isSaving}
           />
         </td>
 
@@ -278,6 +282,7 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
             onBulkEdit={onBulkEdit}
             onStartEdit={onStartEdit}
             onStopEdit={onStopEdit}
+            isSaving={isSaving}
           />
         </td>
         <td className="py-3 px-2">
@@ -289,6 +294,7 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
             onBulkEdit={onBulkEdit}
             onStartEdit={onStartEdit}
             onStopEdit={onStopEdit}
+            isSaving={isSaving}
           />
         </td>
         <td className="py-3 px-2">
@@ -300,6 +306,7 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
             onBulkEdit={onBulkEdit}
             onStartEdit={onStartEdit}
             onStopEdit={onStopEdit}
+            isSaving={isSaving}
           />
         </td>
         <td className="py-3 px-2 text-center">
@@ -312,6 +319,7 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
               onBulkEdit={onBulkEdit}
               onStartEdit={onStartEdit}
               onStopEdit={onStopEdit}
+              isSaving={isSaving}
             />
           </div>
         </td>
@@ -325,6 +333,7 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
               onBulkEdit={onBulkEdit}
               onStartEdit={onStartEdit}
               onStopEdit={onStopEdit}
+              isSaving={isSaving}
             />
           </div>
         </td>

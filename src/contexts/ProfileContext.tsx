@@ -13,6 +13,7 @@ export interface UserProfile {
     language: 'en-US' | 'da-DK';
     date_format: 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'YY/MM/DD';
     amount_format: 'comma_decimal' | 'dot_decimal';
+    show_time: boolean;
     role: 'admin' | 'editor' | 'viewer' | 'restrict';
     is_setup_complete: boolean;
     onboarding_status: 'not_started' | 'profile_setup' | 'preferences_configured' | 'categories_added' | 'first_transaction' | 'completed';
@@ -65,6 +66,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     language: 'en-US',
                     date_format: 'YY/MM/DD',
                     amount_format: 'dot_decimal',
+                    show_time: false,
                     role: 'admin',
                     is_setup_complete: true,
                     onboarding_status: 'completed'
@@ -141,6 +143,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 language: 'en-US',
                 date_format: 'YY/MM/DD',
                 amount_format: 'dot_decimal',
+                show_time: false,
                 role: 'admin',
                 is_setup_complete: true,
                 onboarding_status: 'completed',
