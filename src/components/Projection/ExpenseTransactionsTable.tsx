@@ -12,6 +12,7 @@ interface ExpenseTransactionsTableProps {
     onUpdate: (id: string | number, updates: any) => void;
     onAddClick: () => void;
     selectedYear: string;
+    showPastProjections: boolean;
 }
 
 const ExpenseTransactionsTable = ({
@@ -19,10 +20,13 @@ const ExpenseTransactionsTable = ({
     onDelete,
     onUpdate,
     onAddClick,
-    selectedYear
+    selectedYear,
+    showPastProjections
 }: ExpenseTransactionsTableProps) => {
     const [expandedIds, setExpandedIds] = useState<Set<string | number>>(new Set());
     const [editingOccurrence, setEditingOccurrence] = useState<{ id: string | number, monthKey: string, amount: string } | null>(null);
+
+    const todayStr = new Date().toISOString().slice(0, 10);
 
     const toggleExpand = (id: string | number) => {
         const next = new Set(expandedIds);
@@ -83,6 +87,15 @@ const ExpenseTransactionsTable = ({
         onUpdate(id, { overrides: newOverrides });
         setEditingOccurrence(null);
     };
+    // Filter out past projections if not requested
+    const filteredTransactions = transactions.filter(t => {
+        if (showPastProjections) return true;
+        if (t.recurring === 'N/A') {
+            return t.date >= todayStr;
+        }
+        return true;
+    });
+
     return (
         <Card>
             <CardHeader>
@@ -114,7 +127,7 @@ const ExpenseTransactionsTable = ({
                             </tr>
                         </thead>
                         <tbody>
-                            {transactions.length === 0 ? (
+                            {filteredTransactions.length === 0 ? (
                                 <tr>
                                     <td colSpan={6} className="text-center py-8 text-gray-500">
                                         No expense transactions planned. Click + to add one.
@@ -122,7 +135,7 @@ const ExpenseTransactionsTable = ({
                                 </tr>
                             ) : (
                                 Object.entries(
-                                    transactions.reduce((groups, tx) => {
+                                    filteredTransactions.reduce((groups, tx) => {
                                         const stream = tx.stream || 'Other';
                                         if (!groups[stream]) groups[stream] = [];
                                         groups[stream].push(tx);
@@ -147,7 +160,11 @@ const ExpenseTransactionsTable = ({
 
                                                 const isRecurring = transaction.recurring !== 'N/A';
                                                 const isExpanded = expandedIds.has(transaction.id);
-                                                const occurrences = isRecurring ? getOccurrences(transaction, parseInt(selectedYear)) : [];
+                                                let occurrences = isRecurring ? getOccurrences(transaction, parseInt(selectedYear)) : [];
+
+                                                if (!showPastProjections) {
+                                                    occurrences = occurrences.filter(occ => occ.date >= todayStr);
+                                                }
 
                                                 const actual = Math.abs(transaction.actual_amount || 0);
                                                 const deviation = actual - Math.abs(transaction.amount);

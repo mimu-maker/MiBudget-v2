@@ -75,7 +75,6 @@ const ReconciliationBadge = () => {
 };
 
 const navItems = [
-  { to: '/', label: 'Overview', icon: Home },
   { to: '/budget', label: 'Budget', icon: Wallet },
   { to: '/transactions', label: 'Transactions', icon: ArrowRightLeft, restricted: true },
   { to: '/transactions/validation', label: 'Pending Action', icon: Clock, restricted: true },

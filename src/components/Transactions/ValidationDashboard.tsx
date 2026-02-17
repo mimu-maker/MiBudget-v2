@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Check, X, Search, AlertCircle, HelpCircle, Save, ArrowRight, Zap, RefreshCw, Calendar, ExternalLink, MoreVertical, Info, Store, History, ChevronRight, ChevronDown, Edit2, Trash2, AlertTriangle, Split, PlusCircle, Sparkles, PartyPopper, Tag, Settings as SettingsIcon, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -113,7 +114,7 @@ export const ValidationDashboard = () => {
         [transactions, duplicateIds]);
 
     const pendingValidation = useMemo(() =>
-        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && tx.status !== 'Complete' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && tx.status !== 'Complete' && tx.status !== 'Excluded' && tx.status !== 'Pending Reconciliation' && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
     // Group items for rule configuration - SORTED by total amount
@@ -160,7 +161,7 @@ export const ValidationDashboard = () => {
         }).sort((a, b) => b.total - a.total);
     }, [pendingCategorisation]);
 
-    const [categorisationEdits, setCategorisationEdits] = useState<Record<string, { category: string, sub_category: string }>>({});
+    const [categorisationEdits, setCategorisationEdits] = useState<Record<string, { category: string, sub_category: string, status?: string }>>({});
     const [validationEdits, setValidationEdits] = useState<Record<string, { category: string, sub_category: string }>>({});
 
     const handleDeleteAllDuplicates = () => {
@@ -414,23 +415,37 @@ export const ValidationDashboard = () => {
         }
     };
 
-    const handleSaveRule = async () => {
-        if (!selectedSourceRule) return;
+    const handleSaveRule = async (ruleOrStatus?: any, maybeStatus?: string) => {
+        let ruleToUse = selectedSourceRule;
+        let overrideStatus = maybeStatus;
 
-        const isInlineMode = !!expandedSource;
+        if (ruleOrStatus) {
+            if (typeof ruleOrStatus === 'string') {
+                overrideStatus = ruleOrStatus;
+            } else {
+                ruleToUse = ruleOrStatus;
+                if (ruleOrStatus.overrideStatus) {
+                    overrideStatus = ruleOrStatus.overrideStatus;
+                }
+            }
+        }
+
+        if (!ruleToUse) return;
+
+        const isInlineMode = !!expandedSource || (ruleOrStatus && typeof ruleOrStatus === 'object');
         const shouldSaveRule = !isInlineMode;
 
         // 1. Create the rule ONLY if explicitly in Rule Mode (Dialog/Audit) 
         if (shouldSaveRule) {
             try {
                 await createRuleMutation.mutateAsync({
-                    name: selectedSourceRule.name,
-                    clean_source: selectedSourceRule.clean_name,
-                    category: selectedSourceRule.category,
-                    sub_category: selectedSourceRule.sub_category,
-                    auto_recurring: selectedSourceRule.auto_recurring,
-                    auto_planned: selectedSourceRule.auto_planned,
-                    auto_budget: selectedSourceRule.auto_exclude ? 'Exclude' : null,
+                    name: ruleToUse.name,
+                    clean_source: ruleToUse.clean_name,
+                    category: ruleToUse.category,
+                    sub_category: ruleToUse.sub_category,
+                    auto_recurring: ruleToUse.auto_recurring,
+                    auto_planned: ruleToUse.auto_planned,
+                    auto_budget: ruleToUse.auto_exclude ? 'Exclude' : null,
                     skip_triage: false // FORCE DISABLE
                 });
             } catch (error) {
@@ -440,20 +455,20 @@ export const ValidationDashboard = () => {
 
         // 2. Apply to current transactions
         const updates: any = {
-            category: selectedSourceRule.category,
-            sub_category: selectedSourceRule.sub_category,
-            recurring: selectedSourceRule.auto_recurring,
-            planned: selectedSourceRule.auto_planned,
-            excluded: selectedSourceRule.auto_exclude,
-            clean_source: selectedSourceRule.clean_name,
-            // Status is Complete if either excluded or fully categorized
-            status: (selectedSourceRule.auto_exclude || (selectedSourceRule.category && selectedSourceRule.sub_category)) ? 'Complete' : 'Pending Triage',
+            category: ruleToUse.category,
+            sub_category: ruleToUse.sub_category,
+            recurring: ruleToUse.auto_recurring,
+            planned: ruleToUse.auto_planned,
+            excluded: ruleToUse.auto_exclude,
+            clean_source: ruleToUse.clean_name,
+            // Status is Complete if either excluded or fully categorized, unless overridden
+            status: overrideStatus || ((ruleToUse.auto_exclude || (ruleToUse.category && ruleToUse.sub_category)) ? 'Complete' : 'Pending Triage'),
             confidence: 1
         };
 
         // Use bulkUpdate mutation for proper invalidation and state management
         bulkUpdate({
-            ids: selectedSourceRule.transactionIds,
+            ids: ruleToUse.transactionIds,
             updates: updates
         });
 
@@ -664,17 +679,37 @@ export const ValidationDashboard = () => {
                                         <Check className="w-4.5 h-4.5 text-emerald-500" />
                                     </div>
                                 ) : (
-                                    <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-8 w-8 p-0 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-all"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleVerifySingle(tx);
-                                        }}
-                                    >
-                                        <Check className="w-5 h-5" />
-                                    </Button>
+                                    <div className="flex items-center gap-1">
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-8 w-8 p-0 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-all"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleVerifySingle(tx);
+                                            }}
+                                        >
+                                            <Check className="w-5 h-5" />
+                                        </Button>
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-blue-500 rounded-lg">
+                                                    <MoreVertical className="w-4 h-4" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end">
+                                                <DropdownMenuItem onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    bulkUpdate({
+                                                        ids: [tx.id],
+                                                        updates: { status: 'Pending Reconciliation', confidence: 1 }
+                                                    });
+                                                }}>
+                                                    Mark Pending Reconciliation
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -702,7 +737,7 @@ export const ValidationDashboard = () => {
     const RuleForm = ({ rule, setRule, onSave, onCancel, budget, isInline = false }: {
         rule: SelectedRule | null,
         setRule: (rule: any) => void,
-        onSave: () => void,
+        onSave: (status?: string) => void,
         onCancel: () => void,
         budget: any,
         isInline?: boolean
@@ -710,14 +745,14 @@ export const ValidationDashboard = () => {
         const [showErrors, setShowErrors] = useState(false);
         if (!rule) return null;
 
-        const validateAndSave = () => {
+        const validateAndSave = (status?: string) => {
             if (!rule.auto_exclude) {
                 if (!rule.category || !rule.sub_category) {
                     setShowErrors(true);
                     return;
                 }
             }
-            onSave();
+            onSave(status);
         };
 
         const subCats = getSubCategoryList(rule.category);
@@ -908,8 +943,17 @@ export const ValidationDashboard = () => {
                     >
                         Cancel
                     </Button>
+                    {isInline && (
+                        <Button
+                            onClick={() => validateAndSave('Pending Reconciliation')}
+                            className="bg-white border-blue-200 text-blue-700 hover:bg-blue-50 font-black uppercase text-[10px] tracking-widest px-6 h-10 shadow-sm transition-all"
+                        >
+                            <History className="w-4 h-4 mr-2" />
+                            Mark Pending Recon
+                        </Button>
+                    )}
                     <Button
-                        onClick={validateAndSave}
+                        onClick={() => validateAndSave()}
                         className="bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-[10px] tracking-widest px-6 h-10 shadow-lg shadow-blue-200/50"
                     >
                         {isInline ? 'Confirm Changes & Mark Complete' : 'Save Automation Rule'}
@@ -922,778 +966,817 @@ export const ValidationDashboard = () => {
     return (
         <div className="h-full p-2 space-y-6">
             {duplicateGroups.length === 0 && pendingValidation.length === 0 && pendingSourceMapping.length === 0 && pendingCategorisation.length === 0 && (
-                <Card className="border-2 border-emerald-100 bg-emerald-50/50 shadow-xl shadow-emerald-900/5 animate-in fade-in zoom-in duration-500 overflow-hidden relative">
-                    <div className="absolute top-0 right-0 p-8 opacity-10 rotate-12">
-                        <PartyPopper className="w-48 h-48 text-emerald-600" />
+                <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-2 duration-500">
+                    <div className="flex items-center gap-4">
+                        <div className="bg-emerald-100/80 p-2.5 rounded-xl shadow-inner">
+                            <Sparkles className="w-5 h-5 text-emerald-600" />
+                        </div>
+                        <div>
+                            <h2 className="text-sm font-black text-emerald-900 uppercase tracking-tight">Triage Complete</h2>
+                            <p className="text-xs text-emerald-700/70 font-bold uppercase tracking-tighter">Every transaction has been verified and categorised</p>
+                        </div>
                     </div>
-                    <CardContent className="pt-12 pb-16 flex flex-col items-center text-center relative z-10">
-                        <div className="bg-emerald-100 p-6 rounded-full mb-8 shadow-inner">
-                            <Sparkles className="w-16 h-16 text-emerald-600 animate-pulse" />
-                        </div>
-                        <h2 className="text-4xl font-black text-emerald-900 mb-4 tracking-tight uppercase">Perfect Clarity!</h2>
-                        <p className="text-xl text-emerald-700/80 font-medium max-w-md mx-auto leading-relaxed">
-                            Every transaction has been verified, mapped, and categorised. Your finances are in a <span className="text-emerald-600 font-black">Happy Place</span>.
-                        </p>
-                        <div className="mt-12 flex items-center gap-4 text-emerald-600 font-bold bg-white px-6 py-3 rounded-full shadow-sm border border-emerald-100">
-                            <Check className="w-5 h-5" />
-                            <span>All Lists Processing Complete</span>
-                        </div>
-                    </CardContent>
-                </Card>
+                    <div className="flex items-center gap-2.5 bg-white px-4 py-2 rounded-xl shadow-sm border border-emerald-100 text-emerald-600">
+                        <Check className="w-4 h-4" />
+                        <span className="text-[11px] font-black uppercase tracking-widest">Perfect Clarity</span>
+                    </div>
+                </div>
             )}
 
             <Accordion type="single" collapsible value={currentBucket} onValueChange={setCurrentBucket} className="w-full space-y-4">
                 {/* 1. Potential Duplicates - TOP PRIORITY */}
-                <AccordionItem value="potential-duplicates" className="border rounded-xl bg-card shadow-sm overflow-hidden border-rose-200">
-                    <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-rose-50/50 transition-colors">
-                        <div className="flex items-center justify-between w-full pr-4 text-rose-900">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-rose-100 p-2 rounded-lg">
-                                    <AlertTriangle className="w-5 h-5 text-rose-600" />
+                {duplicateGroups.length > 0 && (
+                    <AccordionItem value="potential-duplicates" className="border rounded-xl bg-card shadow-sm overflow-hidden border-rose-200">
+                        <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-rose-50/50 transition-colors">
+                            <div className="flex items-center justify-between w-full pr-4 text-rose-900">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-rose-100 p-2 rounded-lg">
+                                        <AlertTriangle className="w-5 h-5 text-rose-600" />
+                                    </div>
+                                    <div className="text-left">
+                                        <h3 className="text-lg font-bold text-rose-900">Potential Duplicates</h3>
+                                        <p className="text-xs text-rose-600/70 font-medium italic">Clear duplicates first to ensure accurate data</p>
+                                    </div>
                                 </div>
-                                <div className="text-left">
-                                    <h3 className="text-lg font-bold text-rose-900">Potential Duplicates</h3>
-                                    <p className="text-xs text-rose-600/70 font-medium italic">Clear duplicates first to ensure accurate data</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {duplicateGroups.length > 0 && (
-                                    <Button
-                                        size="sm"
-                                        variant={confirmingDeleteAllDuplicates ? "destructive" : "outline"}
-                                        className={cn(
-                                            "h-7 px-3 text-[10px] font-black tracking-tighter transition-all",
-                                            !confirmingDeleteAllDuplicates && "text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-                                        )}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (confirmingDeleteAllDuplicates) {
-                                                handleDeleteAllDuplicates();
-                                            } else {
-                                                setConfirmingDeleteAllDuplicates(true);
-                                                setTimeout(() => setConfirmingDeleteAllDuplicates(false), 3000);
-                                            }
-                                        }}
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5 mr-2" />
-                                        {confirmingDeleteAllDuplicates ? "CONFIRM DELETE EXTRA COPIES" : "CLEAN ALL DUPLICATES"}
-                                    </Button>
-                                )}
-                                <Badge variant="secondary" className="bg-rose-600 text-white font-black px-3 py-1 text-sm">
-                                    {duplicateGroups.length} Groups
-                                </Badge>
-                            </div>
-                        </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-6 pb-6 pt-4">
-                        <div className="space-y-6">
-                            {duplicateGroups.map((group, idx) => (
-                                <div key={idx} className="border rounded-xl overflow-hidden border-slate-200 bg-white shadow-sm">
-                                    <div className="bg-slate-50 border-b border-slate-100 px-4 py-2 flex justify-between items-center text-[10px] uppercase font-black text-slate-400 tracking-wider">
-                                        <div className="flex items-center gap-3">
-                                            <span>Group {idx + 1} - Exact Matches</span>
-                                            <span className="text-rose-600 italic">Review before deleting</span>
-                                        </div>
+                                <div className="flex items-center gap-2">
+                                    {duplicateGroups.length > 0 && (
                                         <Button
                                             size="sm"
-                                            variant={confirmingKeepGroupId === `group-${idx}` ? "default" : "ghost"}
+                                            variant={confirmingDeleteAllDuplicates ? "destructive" : "outline"}
                                             className={cn(
-                                                "h-7 px-3 text-[10px] font-bold transition-all",
-                                                confirmingKeepGroupId === `group-${idx}`
-                                                    ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                                                    : "text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                                                "h-7 px-3 text-[10px] font-black tracking-tighter transition-all",
+                                                !confirmingDeleteAllDuplicates && "text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700"
                                             )}
-                                            onClick={async (e) => {
+                                            onClick={(e) => {
                                                 e.stopPropagation();
-                                                if (confirmingKeepGroupId === `group-${idx}`) {
-                                                    // Permanently differentiate transactions in this group
-                                                    // We skip the first one (keep original time) and shift others by 1, 2, 3... hours
-                                                    for (let i = 1; i < group.length; i++) {
-                                                        await differentiateTransaction(group[i].id, i);
-                                                    }
-                                                    setConfirmingKeepGroupId(null);
+                                                if (confirmingDeleteAllDuplicates) {
+                                                    handleDeleteAllDuplicates();
                                                 } else {
-                                                    setConfirmingKeepGroupId(`group-${idx}`);
-                                                    setTimeout(() => setConfirmingKeepGroupId(prev => prev === `group-${idx}` ? null : prev), 3000);
+                                                    setConfirmingDeleteAllDuplicates(true);
+                                                    setTimeout(() => setConfirmingDeleteAllDuplicates(false), 3000);
                                                 }
                                             }}
                                         >
-                                            <PlusCircle className="w-3.5 h-3.5 mr-2" />
-                                            {confirmingKeepGroupId === `group-${idx}`
-                                                ? (group.length > 2 ? "CONFIRM KEEP ALL" : "CONFIRM KEEP BOTH")
-                                                : (group.length > 2 ? "KEEP ALL" : "KEEP BOTH")}
+                                            <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                            {confirmingDeleteAllDuplicates ? "CONFIRM DELETE EXTRA COPIES" : "CLEAN ALL DUPLICATES"}
                                         </Button>
-                                    </div>
-                                    <div className="divide-y divide-slate-50">
-                                        {group.map(tx => (
-                                            <div key={tx.id} className="flex items-center p-3 hover:bg-rose-50/80 group/row transition-all duration-200 hover:rounded-xl hover:mx-1 hover:shadow-sm border-b border-transparent last:border-0 border-slate-50">
-                                                <div className="flex-1 flex items-center gap-4">
-                                                    <span className="w-[80px] text-[11px] font-mono text-slate-400 shrink-0">
-                                                        {formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}
-                                                    </span>
-
-                                                    <div className="flex-1 min-w-0 pr-4">
-                                                        <div className="flex items-center gap-2 mb-0.5">
-                                                            {tx.clean_source ? (
-                                                                <Badge variant="secondary" className="bg-blue-600 text-white border-blue-400 font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-tight shrink-0 shadow-sm shadow-blue-200">
-                                                                    {tx.clean_source}
-                                                                </Badge>
-                                                            ) : (
-                                                                <span className="text-sm font-bold text-slate-900 truncate block">{tx.source}</span>
-                                                            )}
-                                                            <TransactionNote
-                                                                transaction={tx}
-                                                                onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
-                                                            />
-                                                        </div>
-                                                        {tx.clean_source && tx.clean_source !== tx.source && (
-                                                            <span className="text-[10px] text-slate-400 italic block mt-0.5 ml-1">Original: {tx.source}</span>
-                                                        )}
-                                                        <div className="flex items-center gap-2">
-                                                            <Badge variant="secondary" className="text-[9px] h-4 py-0 bg-slate-100 text-slate-500">
-                                                                {tx.status}
-                                                            </Badge>
-                                                            {tx.category && (
-                                                                <span className="text-[10px] text-slate-400 truncate">
-                                                                    {tx.category} {'>'} {tx.sub_category}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-4 w-[200px] justify-end">
-                                                    <span className={cn("font-black font-mono tabular-nums text-sm", tx.amount < 0 ? "text-slate-900" : "text-emerald-600")}>
-                                                        {formatCurrency(tx.amount, settings.currency)}
-                                                    </span>
-                                                    <div className="flex items-center gap-1">
-                                                        {tx.status === 'Complete' ? (
-                                                            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none px-2 py-0.5 h-6 text-[10px] font-bold">KEEPING</Badge>
-                                                        ) : (
-                                                            <div className="flex items-center gap-1">
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant={confirmingDeleteId === tx.id ? "destructive" : "ghost"}
-                                                                    className={cn(
-                                                                        confirmingDeleteId === tx.id ? "h-8 px-3 w-auto text-[10px] font-bold" : "h-8 w-8 p-0 text-slate-400 hover:text-rose-600 transition-colors"
-                                                                    )}
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        if (confirmingDeleteId === tx.id) {
-                                                                            deleteTransaction(tx.id);
-                                                                            setConfirmingDeleteId(null);
-                                                                        } else {
-                                                                            setConfirmingDeleteId(tx.id);
-                                                                            setTimeout(() => setConfirmingDeleteId(prev => prev === tx.id ? null : prev), 3000);
-                                                                        }
-                                                                    }}
-                                                                    title={confirmingDeleteId === tx.id ? "Click again to confirm" : "Delete Transaction"}
-                                                                >
-                                                                    {confirmingDeleteId === tx.id ? "CONFIRM" : <Trash2 className="w-4 h-4" />}
-                                                                </Button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                    )}
+                                    <Badge variant="secondary" className="bg-rose-600 text-white font-black px-3 py-1 text-sm">
+                                        {duplicateGroups.length} Groups
+                                    </Badge>
                                 </div>
-                            ))}
-                            {
-                                duplicateGroups.length === 0 && (
-                                    <div className="py-12 flex flex-col items-center justify-center text-slate-400 italic">
-                                        <Check className="w-12 h-12 mb-3 opacity-20" />
-                                        <p>No potential duplicates found</p>
+                            </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-6 pb-6 pt-4">
+                            <div className="space-y-6">
+                                {duplicateGroups.map((group, idx) => (
+                                    <div key={idx} className="border rounded-xl overflow-hidden border-slate-200 bg-white shadow-sm">
+                                        <div className="bg-slate-50 border-b border-slate-100 px-4 py-2 flex justify-between items-center text-[10px] uppercase font-black text-slate-400 tracking-wider">
+                                            <div className="flex items-center gap-3">
+                                                <span>Group {idx + 1} - Exact Matches</span>
+                                                <span className="text-rose-600 italic">Review before deleting</span>
+                                            </div>
+                                            <Button
+                                                size="sm"
+                                                variant={confirmingKeepGroupId === `group-${idx}` ? "default" : "ghost"}
+                                                className={cn(
+                                                    "h-7 px-3 text-[10px] font-bold transition-all",
+                                                    confirmingKeepGroupId === `group-${idx}`
+                                                        ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                                                        : "text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                                                )}
+                                                onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    if (confirmingKeepGroupId === `group-${idx}`) {
+                                                        // Permanently differentiate transactions in this group
+                                                        // We skip the first one (keep original time) and shift others by 1, 2, 3... hours
+                                                        for (let i = 1; i < group.length; i++) {
+                                                            await differentiateTransaction(group[i].id, i);
+                                                        }
+                                                        setConfirmingKeepGroupId(null);
+                                                    } else {
+                                                        setConfirmingKeepGroupId(`group-${idx}`);
+                                                        setTimeout(() => setConfirmingKeepGroupId(prev => prev === `group-${idx}` ? null : prev), 3000);
+                                                    }
+                                                }}
+                                            >
+                                                <PlusCircle className="w-3.5 h-3.5 mr-2" />
+                                                {confirmingKeepGroupId === `group-${idx}`
+                                                    ? (group.length > 2 ? "CONFIRM KEEP ALL" : "CONFIRM KEEP BOTH")
+                                                    : (group.length > 2 ? "KEEP ALL" : "KEEP BOTH")}
+                                            </Button>
+                                        </div>
+                                        <div className="divide-y divide-slate-50">
+                                            {group.map(tx => (
+                                                <div key={tx.id} className="flex items-center p-3 hover:bg-rose-50/80 group/row transition-all duration-200 hover:rounded-xl hover:mx-1 hover:shadow-sm border-b border-transparent last:border-0 border-slate-50">
+                                                    <div className="flex-1 flex items-center gap-4">
+                                                        <span className="w-[80px] text-[11px] font-mono text-slate-400 shrink-0">
+                                                            {formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}
+                                                        </span>
+
+                                                        <div className="flex-1 min-w-0 pr-4">
+                                                            <div className="flex items-center gap-2 mb-0.5">
+                                                                {tx.clean_source ? (
+                                                                    <Badge variant="secondary" className="bg-blue-600 text-white border-blue-400 font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-tight shrink-0 shadow-sm shadow-blue-200">
+                                                                        {tx.clean_source}
+                                                                    </Badge>
+                                                                ) : (
+                                                                    <span className="text-sm font-bold text-slate-900 truncate block">{tx.source}</span>
+                                                                )}
+                                                                <TransactionNote
+                                                                    transaction={tx}
+                                                                    onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
+                                                                />
+                                                            </div>
+                                                            {tx.clean_source && tx.clean_source !== tx.source && (
+                                                                <span className="text-[10px] text-slate-400 italic block mt-0.5 ml-1">Original: {tx.source}</span>
+                                                            )}
+                                                            <div className="flex items-center gap-2">
+                                                                <Badge variant="secondary" className="text-[9px] h-4 py-0 bg-slate-100 text-slate-500">
+                                                                    {tx.status}
+                                                                </Badge>
+                                                                {tx.category && (
+                                                                    <span className="text-[10px] text-slate-400 truncate">
+                                                                        {tx.category} {'>'} {tx.sub_category}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-4 w-[200px] justify-end">
+                                                        <span className={cn("font-black font-mono tabular-nums text-sm", tx.amount < 0 ? "text-slate-900" : "text-emerald-600")}>
+                                                            {formatCurrency(tx.amount, settings.currency)}
+                                                        </span>
+                                                        <div className="flex items-center gap-1">
+                                                            {tx.status === 'Complete' ? (
+                                                                <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none px-2 py-0.5 h-6 text-[10px] font-bold">KEEPING</Badge>
+                                                            ) : (
+                                                                <div className="flex items-center gap-1">
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant={confirmingDeleteId === tx.id ? "destructive" : "ghost"}
+                                                                        className={cn(
+                                                                            confirmingDeleteId === tx.id ? "h-8 px-3 w-auto text-[10px] font-bold" : "h-8 w-8 p-0 text-slate-400 hover:text-rose-600 transition-colors"
+                                                                        )}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (confirmingDeleteId === tx.id) {
+                                                                                deleteTransaction(tx.id);
+                                                                                setConfirmingDeleteId(null);
+                                                                            } else {
+                                                                                setConfirmingDeleteId(tx.id);
+                                                                                setTimeout(() => setConfirmingDeleteId(prev => prev === tx.id ? null : prev), 3000);
+                                                                            }
+                                                                        }}
+                                                                        title={confirmingDeleteId === tx.id ? "Click again to confirm" : "Delete Transaction"}
+                                                                    >
+                                                                        {confirmingDeleteId === tx.id ? "CONFIRM" : <Trash2 className="w-4 h-4" />}
+                                                                    </Button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                )
-                            }
-                        </div>
-                    </AccordionContent>
-                </AccordionItem>
+                                ))}
+                                {
+                                    duplicateGroups.length === 0 && (
+                                        <div className="py-12 flex flex-col items-center justify-center text-slate-400 italic">
+                                            <Check className="w-12 h-12 mb-3 opacity-20" />
+                                            <p>No potential duplicates found</p>
+                                        </div>
+                                    )
+                                }
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                )}
 
                 {/* 2. Source Mapping (Unmapped Sources) */}
-                <AccordionItem value="pending-source" className="border rounded-xl bg-card shadow-sm overflow-hidden border-orange-200">
-                    <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-orange-50/50 transition-colors">
-                        <div className="flex items-center justify-between w-full pr-4 text-orange-900">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-orange-100 p-2 rounded-lg">
-                                    <HelpCircle className="w-5 h-5 text-orange-600" />
-                                </div>
-                                <div className="text-left">
-                                    <h3 className="text-lg font-bold">Pending Source Mapping</h3>
-                                    <p className="text-xs text-orange-600/70 font-medium">Transactions with missing source rules</p>
-                                </div>
-                            </div>
-                            <Badge variant="secondary" className="bg-orange-600 text-white font-black px-3 py-1 text-sm">
-                                {pendingSourceMapping.length} {pendingSourceMapping.length === 1 ? 'Item' : 'Items'} Pending
-                            </Badge>
-                        </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-6 pb-6 pt-4">
-                        <div className="space-y-4">
-                            {groupedSourceMapping.map(({ source, txs, total }) => (
-                                <div key={source} className="space-y-3 p-4 bg-white border rounded-xl shadow-sm border-slate-200">
-                                    <div className="flex justify-between items-start">
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <h4 className="font-black text-slate-900 leading-none">Input: {source}</h4>
-                                                <Badge variant="outline" className="h-4 px-1 text-[9px] font-bold border-slate-200 bg-slate-50">{txs.length} {txs.length === 1 ? 'tx' : 'txs'}</Badge>
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="h-6 text-[9px] font-bold text-slate-400 hover:text-blue-600 gap-1.5 p-0 px-1 bg-transparent"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        navigate(`/settings?tab=sources&search=${encodeURIComponent(source)}`);
-                                                    }}
-                                                >
-                                                    <SettingsIcon className="w-2.5 h-2.5" />
-                                                    Edit Rules
-                                                </Button>
-                                                <span className="text-xs font-bold text-slate-400 ml-2">Total: {formatCurrency(total, settings.currency)}</span>
-                                            </div>
-                                            <SearchLink name={source} txs={txs} />
-                                        </div>
-                                        <Button
-                                            size="sm"
-                                            className={cn(
-                                                "h-8 font-bold gap-2 shadow-lg",
-                                                expandedSource === source
-                                                    ? "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                                    : "bg-orange-600 text-white hover:bg-orange-700 shadow-orange-100"
-                                            )}
-                                            onClick={() => {
-                                                if (expandedSource === source) setExpandedSource(null);
-                                                else {
-                                                    // Initialize selection with just this source's current group
-                                                    const ruleData: SelectedRule = {
-                                                        name: source,
-                                                        clean_name: source,
-                                                        category: '',
-                                                        sub_category: '',
-                                                        auto_recurring: 'N/A',
-                                                        auto_planned: true,
-                                                        auto_exclude: false,
-                                                        skip_triage: false,
-                                                        transactionIds: txs.map(t => t.id)
-                                                    };
-                                                    setSelectedSourceRule(ruleData);
-                                                    setExpandedSource(source);
-                                                }
-                                            }}
-                                        >
-                                            {expandedSource === source ? 'Cancel' : <><Store className="w-4 h-4" /> Map Source</>}
-                                        </Button>
+                {pendingSourceMapping.length > 0 && (
+                    <AccordionItem value="pending-source" className="border rounded-xl bg-card shadow-sm overflow-hidden border-orange-200">
+                        <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-orange-50/50 transition-colors">
+                            <div className="flex items-center justify-between w-full pr-4 text-orange-900">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-orange-100 p-2 rounded-lg">
+                                        <HelpCircle className="w-5 h-5 text-orange-600" />
                                     </div>
-
-                                    {expandedSource === source && (
-                                        <div className="mt-4 p-5 bg-slate-50 border-2 border-orange-100 rounded-2xl animate-in zoom-in-95 duration-300">
-                                            <SourceMappingRefiner
-                                                source={source}
-                                                txs={txs}
-                                                allPendingTxs={transactions.filter(t => t.status !== 'Complete' && !duplicateIds.has(t.id))}
-                                                onSave={handleSaveSourceMapping}
-                                                onCancel={() => setExpandedSource(null)}
-                                                onUpdateNote={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
-                                            />
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-0.5 pt-2 border-t border-slate-50">
-                                        <div className="flex items-center px-4 py-1.5 text-[10px] uppercase font-black text-slate-400 tracking-wider bg-slate-50/30">
-                                            <span className="w-[100px]">Date</span>
-                                            <span className="flex-1">Source (Raw)</span>
-                                            <span className="w-[120px] text-right">Amount</span>
-                                        </div>
-                                        {txs.map(tx => (
-                                            <div key={tx.id} className="flex items-center p-1 px-4 hover:bg-orange-50/80 rounded-lg group/row text-[11px] transition-all duration-200 hover:shadow-sm mx-1">
-                                                <span className="w-[100px] text-slate-400 font-mono shrink-0">{formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}</span>
-                                                <div className="flex-1 flex items-center gap-2 min-w-0">
-                                                    <span className="text-slate-600 truncate font-medium">{tx.source}</span>
-                                                    <TransactionNote
-                                                        transaction={tx}
-                                                        onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
-                                                    />
-                                                </div>
-                                                <span className={cn("w-[120px] text-right font-black font-mono tabular-nums", tx.amount < 0 ? "text-slate-700" : "text-emerald-600")}>
-                                                    {formatCurrency(tx.amount, settings.currency)}
-                                                </span>
-                                                <div className="w-[40px] flex justify-end opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                    <div className="text-left">
+                                        <h3 className="text-lg font-bold">Pending Source Mapping</h3>
+                                        <p className="text-xs text-orange-600/70 font-medium">Transactions with missing source rules</p>
+                                    </div>
+                                </div>
+                                <Badge variant="secondary" className="bg-orange-600 text-white font-black px-3 py-1 text-sm">
+                                    {pendingSourceMapping.length} {pendingSourceMapping.length === 1 ? 'Item' : 'Items'} Pending
+                                </Badge>
+                            </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-6 pb-6 pt-4">
+                            <div className="space-y-4">
+                                {groupedSourceMapping.map(({ source, txs, total }) => (
+                                    <div key={source} className="space-y-3 p-4 bg-white border rounded-xl shadow-sm border-slate-200">
+                                        <div className="flex justify-between items-start">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <h4 className="font-black text-slate-900 leading-none">Input: {source}</h4>
+                                                    <Badge variant="outline" className="h-4 px-1 text-[9px] font-bold border-slate-200 bg-slate-50">{txs.length} {txs.length === 1 ? 'tx' : 'txs'}</Badge>
                                                     <Button
                                                         size="sm"
                                                         variant="ghost"
-                                                        className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-500"
-                                                        onClick={() => {
-                                                            setTransactionToSplit(tx);
-                                                            setSplitModalOpen(true);
-                                                        }}
-                                                        title="Split / Itemize Transaction"
-                                                    >
-                                                        <Split className="w-3.5 h-3.5" />
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                            {groupedSourceMapping.length === 0 && (
-                                <div className="flex flex-col items-center justify-center py-12 text-slate-400 italic">
-                                    <Check className="w-12 h-12 mb-3 opacity-20" />
-                                    <p>All sources are mapped</p>
-                                </div>
-                            )}
-                        </div>
-                    </AccordionContent>
-                </AccordionItem>
-
-                {/* 3. Pending Categorisation */}
-                <AccordionItem value="pending-categorisation" className="border rounded-xl bg-card shadow-sm overflow-hidden border-amber-200">
-                    <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-amber-50/50 transition-colors">
-                        <div className="flex items-center justify-between w-full pr-4 text-amber-900">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-amber-100 p-2 rounded-lg">
-                                    <Store className="w-5 h-5 text-amber-600" />
-                                </div>
-                                <div className="text-left">
-                                    <h3 className="text-lg font-bold">Pending Categorisation</h3>
-                                    <p className="text-xs text-amber-600/70 font-medium">Mapped sources waiting for category/sub-category</p>
-                                </div>
-                            </div>
-                            <Badge variant="secondary" className="bg-amber-600 text-white font-black px-3 py-1 text-sm">
-                                {pendingCategorisation.length} Pending
-                            </Badge>
-                        </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-6 pb-6 pt-4">
-                        <div className="space-y-3">
-                            {groupedCategorisation.map(({ source, txs, total, avgAmount }) => {
-                                const edit = categorisationEdits[source] || { category: '', sub_category: '' };
-
-                                // Get categories for this source using the improved robust lists
-                                const sourceCategories = categoryList;
-                                const sourceSubCats = getSubCategoryList(edit.category || "");
-
-                                const handleSave = () => {
-                                    if (!edit.category || !edit.sub_category) return;
-
-                                    // Get all unique raw sources in this clean group to ensure complete automation
-                                    const uniqueRawSources = Array.from(new Set(txs.map(t => t.source)));
-
-                                    uniqueRawSources.forEach(rawName => {
-                                        createRuleMutation.mutate({
-                                            name: rawName,
-                                            clean_source: source,
-                                            category: edit.category,
-                                            sub_category: edit.sub_category,
-                                            auto_recurring: 'Monthly',
-                                            auto_planned: true,
-                                            skip_triage: true
-                                        });
-                                    });
-
-                                    // Direct bulk update for current items
-                                    bulkUpdate({
-                                        ids: txs.map(t => t.id),
-                                        updates: {
-                                            category: edit.category,
-                                            sub_category: edit.sub_category,
-                                            confidence: 1,
-                                            status: (edit.category && edit.sub_category) ? 'Complete' : 'Pending Triage'
-                                        }
-                                    });
-                                };
-
-                                return (
-                                    <div key={source} className="flex flex-col border rounded-2xl overflow-hidden border-slate-200 bg-white hover:border-amber-300 transition-all duration-300 shadow-sm hover:shadow-md">
-                                        <div className="flex items-center px-4 py-2 bg-slate-50/50">
-                                            <div className="w-[200px] pr-4 flex flex-col min-w-0 shrink-0">
-                                                <div className="flex items-center gap-2">
-                                                    <Store className="w-4 h-4 text-amber-400 shrink-0" />
-                                                    <Badge variant="secondary" className="bg-blue-600 text-white border-blue-400 font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-tight shrink-0 shadow-sm shadow-blue-200">
-                                                        {source}
-                                                    </Badge>
-                                                </div>
-                                                <div className="flex items-center gap-2 mt-0.5 pl-6">
-                                                    <Badge variant="outline" className="text-[9px] font-bold h-4 bg-white px-1">{txs.length} tx</Badge>
-                                                    <span className="text-[10px] font-black text-slate-900 font-mono tabular-nums">{formatCurrency(total, settings.currency)}</span>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        className="h-6 text-[9px] font-bold text-slate-400 hover:text-blue-600 gap-1.5 p-0 bg-transparent"
+                                                        className="h-6 text-[9px] font-bold text-slate-400 hover:text-blue-600 gap-1.5 p-0 px-1 bg-transparent"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             navigate(`/settings?tab=sources&search=${encodeURIComponent(source)}`);
                                                         }}
                                                     >
                                                         <SettingsIcon className="w-2.5 h-2.5" />
-                                                        Edit
+                                                        Edit Rules
                                                     </Button>
+                                                    <span className="text-xs font-bold text-slate-400 ml-2">Total: {formatCurrency(total, settings.currency)}</span>
                                                 </div>
+                                                <SearchLink name={source} txs={txs} />
                                             </div>
-
-                                            <div className="flex-1 grid grid-cols-2 gap-2">
-                                                <CategorySelector
-                                                    value={edit.category || ""}
-                                                    onValueChange={(v) => {
-                                                        if (v.includes(':')) {
-                                                            const [cat, sub] = v.split(':');
-                                                            setCategorisationEdits(p => ({ ...p, [source]: { ...edit, category: cat, sub_category: sub } }));
-                                                        } else {
-                                                            setCategorisationEdits(p => ({ ...p, [source]: { ...edit, category: v, sub_category: '' } }));
-                                                        }
-                                                    }}
-                                                    type="all"
-                                                    suggestionLimit={3}
-                                                    placeholder="Select Category"
-                                                />
-
-                                                <Select
-                                                    value={edit.sub_category || ""}
-                                                    onValueChange={(v) => setCategorisationEdits(p => ({ ...p, [source]: { ...edit, sub_category: v } }))}
-                                                    disabled={!edit.category}
-                                                >
-                                                    <SelectTrigger className="h-9 text-xs bg-white border-slate-200 shadow-sm">
-                                                        <SelectValue placeholder="Sub-category" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {sourceSubCats.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-
-                                            <div className="flex items-center gap-1 ml-4 shadow-sm border rounded-md overflow-hidden bg-white shrink-0">
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="h-8 w-8 p-0 text-emerald-600 hover:bg-emerald-50 rounded-none disabled:opacity-30"
-                                                    onClick={handleSave}
-                                                    disabled={!edit.category || !edit.sub_category}
-                                                >
-                                                    <Check className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="h-8 w-8 p-0 text-slate-400 hover:bg-slate-100 rounded-none"
-                                                    onClick={() => setCategorisationEdits(p => {
-                                                        const next = { ...p };
-                                                        delete next[source];
-                                                        return next;
-                                                    })}
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </Button>
-                                            </div>
+                                            <Button
+                                                size="sm"
+                                                className={cn(
+                                                    "h-8 font-bold gap-2 shadow-lg",
+                                                    expandedSource === source
+                                                        ? "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                                        : "bg-orange-600 text-white hover:bg-orange-700 shadow-orange-100"
+                                                )}
+                                                onClick={() => {
+                                                    if (expandedSource === source) setExpandedSource(null);
+                                                    else {
+                                                        // Initialize selection with just this source's current group
+                                                        const ruleData: SelectedRule = {
+                                                            name: source,
+                                                            clean_name: source,
+                                                            category: '',
+                                                            sub_category: '',
+                                                            auto_recurring: 'N/A',
+                                                            auto_planned: true,
+                                                            auto_exclude: false,
+                                                            skip_triage: false,
+                                                            transactionIds: txs.map(t => t.id)
+                                                        };
+                                                        setSelectedSourceRule(ruleData);
+                                                        setExpandedSource(source);
+                                                    }
+                                                }}
+                                            >
+                                                {expandedSource === source ? 'Cancel' : <><Store className="w-4 h-4" /> Map Source</>}
+                                            </Button>
                                         </div>
 
-                                        {/* List of transactions in this group */}
-                                        <div className="divide-y divide-slate-50 bg-white border-t border-slate-100">
-                                            <div className="flex items-center px-12 py-1.5 text-[9px] uppercase font-black text-slate-400 tracking-wider">
+                                        {expandedSource === source && (
+                                            <div className="mt-4 p-5 bg-slate-50 border-2 border-orange-100 rounded-2xl animate-in zoom-in-95 duration-300">
+                                                <SourceMappingRefiner
+                                                    source={source}
+                                                    txs={txs}
+                                                    allPendingTxs={transactions.filter(t => t.status !== 'Complete' && !duplicateIds.has(t.id))}
+                                                    onSave={handleSaveSourceMapping}
+                                                    onCancel={() => setExpandedSource(null)}
+                                                    onUpdateNote={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
+                                                />
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-0.5 pt-2 border-t border-slate-50">
+                                            <div className="flex items-center px-4 py-1.5 text-[10px] uppercase font-black text-slate-400 tracking-wider bg-slate-50/30">
                                                 <span className="w-[100px]">Date</span>
                                                 <span className="flex-1">Source (Raw)</span>
                                                 <span className="w-[120px] text-right">Amount</span>
                                             </div>
-                                            {txs.map(tx => {
-                                                const absAmount = Math.abs(tx.amount);
-                                                const diffPercent = avgAmount > 0
-                                                    ? Math.abs(absAmount - avgAmount) / avgAmount
-                                                    : 0;
-                                                const isSignificant = diffPercent >= 0.05;
-
-                                                return (
-                                                    <div key={tx.id} className="flex items-center text-[11px] px-12 py-1.5 hover:bg-amber-50/80 group/row transition-all duration-200 hover:rounded-lg mx-2">
-                                                        <span className="text-slate-400 font-mono w-[100px] shrink-0">{formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}</span>
-                                                        <div className="flex-1 flex items-center gap-2 min-w-0 pr-4">
-                                                            <span className="text-slate-600 truncate font-medium">{tx.source}</span>
-                                                            <TransactionNote
-                                                                transaction={tx}
-                                                                onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
-                                                            />
-                                                            {tx.description && tx.description !== tx.source && (
-                                                                <span className="text-[10px] text-slate-300 italic truncate ml-2">[{tx.description}]</span>
-                                                            )}
-                                                        </div>
-                                                        <div className={cn(
-                                                            "w-[120px] text-right font-bold font-mono tabular-nums flex items-center justify-end gap-1.5",
-                                                            tx.amount < 0 ? "text-slate-700" : "text-emerald-600",
-                                                            isSignificant && "text-amber-600 bg-amber-50 rounded px-1"
-                                                        )}>
-                                                            {isSignificant && (
-                                                                <span title={`Significant difference (${Math.round(diffPercent * 100)}%) from average`}>
-                                                                    <AlertTriangle className="w-3 h-3 text-amber-500" />
-                                                                </span>
-                                                            )}
-                                                            {formatCurrency(tx.amount, settings.currency)}
-                                                        </div>
-                                                        <div className="w-[40px] flex justify-end opacity-0 group-hover/row:opacity-100 transition-opacity">
-                                                            <Button
-                                                                size="sm"
-                                                                variant="ghost"
-                                                                className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-500"
-                                                                onClick={() => {
-                                                                    setTransactionToSplit(tx);
-                                                                    setSplitModalOpen(true);
-                                                                }}
-                                                                title="Split / Itemize Transaction"
-                                                            >
-                                                                <Split className="w-3.5 h-3.5" />
-                                                            </Button>
-                                                        </div>
+                                            {txs.map(tx => (
+                                                <div key={tx.id} className="flex items-center p-1 px-4 hover:bg-orange-50/80 rounded-lg group/row text-[11px] transition-all duration-200 hover:shadow-sm mx-1">
+                                                    <span className="w-[100px] text-slate-400 font-mono shrink-0">{formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}</span>
+                                                    <div className="flex-1 flex items-center gap-2 min-w-0">
+                                                        <span className="text-slate-600 truncate font-medium">{tx.source}</span>
+                                                        <TransactionNote
+                                                            transaction={tx}
+                                                            onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
+                                                        />
                                                     </div>
-                                                );
-                                            })}
+                                                    <span className={cn("w-[120px] text-right font-black font-mono tabular-nums", tx.amount < 0 ? "text-slate-700" : "text-emerald-600")}>
+                                                        {formatCurrency(tx.amount, settings.currency)}
+                                                    </span>
+                                                    <div className="w-[40px] flex justify-end opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-500"
+                                                            onClick={() => {
+                                                                setTransactionToSplit(tx);
+                                                                setSplitModalOpen(true);
+                                                            }}
+                                                            title="Split / Itemize Transaction"
+                                                        >
+                                                            <Split className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
-                                );
-                            })}
-                            {groupedCategorisation.length === 0 && (
-                                <div className="flex flex-col items-center justify-center py-12 text-slate-400 italic">
-                                    <Check className="w-12 h-12 mb-3 opacity-20" />
-                                    <p>All mapped sources are categorised</p>
-                                </div>
-                            )}
-                        </div>
-                    </AccordionContent>
-                </AccordionItem>
-
-                {/* 4. Pending Action - Pending Validation */}
-                <AccordionItem value="pending-validation" className="border rounded-xl bg-card shadow-sm overflow-hidden border-lime-200">
-                    <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-lime-50/50 transition-colors">
-                        <div className="flex items-center justify-between w-full pr-4 text-lime-900">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-lime-100 p-2 rounded-lg">
-                                    <AlertTriangle className="w-5 h-5 text-lime-600" />
-                                </div>
-                                <div className="text-left">
-                                    <h3 className="text-lg font-bold">Pending Action - Pending Validation</h3>
-                                    <p className="text-xs text-lime-600/70 font-medium">Transactions needing review or confirmation</p>
-                                </div>
+                                ))}
+                                {groupedSourceMapping.length === 0 && (
+                                    <div className="flex flex-col items-center justify-center py-12 text-slate-400 italic">
+                                        <Check className="w-12 h-12 mb-3 opacity-20" />
+                                        <p>All sources are mapped</p>
+                                    </div>
+                                )}
                             </div>
-                            <div className="flex gap-2">
-                                <Badge variant="secondary" className="bg-lime-600 text-white font-black px-3 py-1 text-sm">
-                                    {pendingValidation.length} Pending
+                        </AccordionContent>
+                    </AccordionItem>
+                )}
+
+                {/* 3. Pending Categorisation */}
+                {pendingCategorisation.length > 0 && (
+                    <AccordionItem value="pending-categorisation" className="border rounded-xl bg-card shadow-sm overflow-hidden border-amber-200">
+                        <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-amber-50/50 transition-colors">
+                            <div className="flex items-center justify-between w-full pr-4 text-amber-900">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-amber-100 p-2 rounded-lg">
+                                        <Store className="w-5 h-5 text-amber-600" />
+                                    </div>
+                                    <div className="text-left">
+                                        <h3 className="text-lg font-bold">Pending Categorisation</h3>
+                                        <p className="text-xs text-amber-600/70 font-medium">Mapped sources waiting for category/sub-category</p>
+                                    </div>
+                                </div>
+                                <Badge variant="secondary" className="bg-amber-600 text-white font-black px-3 py-1 text-sm">
+                                    {pendingCategorisation.length} Pending
                                 </Badge>
                             </div>
-                        </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-6 pb-6 pt-4">
-                        <div className="space-y-6">
-                            {/* Group by Source for easier review */}
-                            {Object.entries(groupedValidation).map(([key, group]) => (
-                                <div key={key} className="space-y-3">
-                                    <div className="flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur z-10 py-2 border-b border-lime-100">
-                                        <div className="flex items-center gap-2">
-                                            <h4 className="font-bold text-slate-700">{group.displayName}</h4>
-                                            <Badge variant="outline" className="text-[10px]">{group.txs.length} {group.txs.length === 1 ? 'item' : 'items'}</Badge>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-6 pb-6 pt-4">
+                            <div className="space-y-3">
+                                {groupedCategorisation.map(({ source, txs, total, avgAmount }) => {
+                                    const edit = categorisationEdits[source] || { category: '', sub_category: '', status: 'Complete' };
+
+                                    // Get categories for this source using the improved robust lists
+                                    const sourceCategories = categoryList;
+                                    const sourceSubCats = getSubCategoryList(edit.category || "");
+
+                                    const handleSave = () => {
+                                        if (!edit.category || !edit.sub_category) return;
+
+                                        // Get all unique raw sources in this clean group to ensure complete automation
+                                        const uniqueRawSources = Array.from(new Set(txs.map(t => t.source)));
+
+                                        uniqueRawSources.forEach(rawName => {
+                                            createRuleMutation.mutate({
+                                                name: rawName,
+                                                clean_source: source,
+                                                category: edit.category,
+                                                sub_category: edit.sub_category,
+                                                auto_recurring: 'Monthly',
+                                                auto_planned: true,
+                                                skip_triage: true
+                                            });
+                                        });
+
+                                        // Direct bulk update for current items
+                                        bulkUpdate({
+                                            ids: txs.map(t => t.id),
+                                            updates: {
+                                                category: edit.category,
+                                                sub_category: edit.sub_category,
+                                                confidence: 1,
+                                                status: (edit.category && edit.sub_category) ? (edit.status || 'Complete') : 'Pending Triage'
+                                            }
+                                        });
+                                    };
+
+                                    return (
+                                        <div key={source} className="flex flex-col border rounded-2xl overflow-hidden border-slate-200 bg-white hover:border-amber-300 transition-all duration-300 shadow-sm hover:shadow-md">
+                                            <div className="flex items-center px-4 py-2 bg-slate-50/50">
+                                                <div className="w-[200px] pr-4 flex flex-col min-w-0 shrink-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <Store className="w-4 h-4 text-amber-400 shrink-0" />
+                                                        <Badge variant="secondary" className="bg-blue-600 text-white border-blue-400 font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-tight shrink-0 shadow-sm shadow-blue-200">
+                                                            {source}
+                                                        </Badge>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-0.5 pl-6">
+                                                        <Badge variant="outline" className="text-[9px] font-bold h-4 bg-white px-1">{txs.length} tx</Badge>
+                                                        <span className="text-[10px] font-black text-slate-900 font-mono tabular-nums">{formatCurrency(total, settings.currency)}</span>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="h-6 text-[9px] font-bold text-slate-400 hover:text-blue-600 gap-1.5 p-0 bg-transparent"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                navigate(`/settings?tab=sources&search=${encodeURIComponent(source)}`);
+                                                            }}
+                                                        >
+                                                            <SettingsIcon className="w-2.5 h-2.5" />
+                                                            Edit
+                                                        </Button>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex-1 grid grid-cols-2 gap-2">
+                                                    <CategorySelector
+                                                        value={edit.category || ""}
+                                                        onValueChange={(v) => {
+                                                            if (v.includes(':')) {
+                                                                const [cat, sub] = v.split(':');
+                                                                setCategorisationEdits(p => ({ ...p, [source]: { ...edit, category: cat, sub_category: sub } }));
+                                                            } else {
+                                                                setCategorisationEdits(p => ({ ...p, [source]: { ...edit, category: v, sub_category: '' } }));
+                                                            }
+                                                        }}
+                                                        type="all"
+                                                        suggestionLimit={3}
+                                                        placeholder="Select Category"
+                                                    />
+
+                                                    <Select
+                                                        value={edit.sub_category || ""}
+                                                        onValueChange={(v) => setCategorisationEdits(p => ({ ...p, [source]: { ...edit, sub_category: v } }))}
+                                                        disabled={!edit.category}
+                                                    >
+                                                        <SelectTrigger className="h-9 text-xs bg-white border-slate-200 shadow-sm">
+                                                            <SelectValue placeholder="Sub-category" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {sourceSubCats.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                <Select
+                                                    value={edit.status || ""}
+                                                    onValueChange={(v) => setCategorisationEdits(p => ({ ...p, [source]: { ...edit, status: v } }))}
+                                                >
+                                                    <SelectTrigger className="h-9 w-[140px] text-xs bg-white border-slate-200 shadow-sm">
+                                                        <SelectValue placeholder="Status" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="Complete">Complete</SelectItem>
+                                                        <SelectItem value="Pending Reconciliation">Pending Reconciliation</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+
+                                                <div className="flex items-center gap-1 ml-4 shadow-sm border rounded-md overflow-hidden bg-white shrink-0">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-8 w-8 p-0 text-emerald-600 hover:bg-emerald-50 rounded-none disabled:opacity-30"
+                                                        onClick={handleSave}
+                                                        disabled={!edit.category || !edit.sub_category}
+                                                    >
+                                                        <Check className="w-4 h-4" />
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-8 w-8 p-0 text-slate-400 hover:bg-slate-100 rounded-none"
+                                                        onClick={() => setCategorisationEdits(p => {
+                                                            const next = { ...p };
+                                                            delete next[source];
+                                                            return next;
+                                                        })}
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+
+                                            {/* List of transactions in this group */}
+                                            <div className="divide-y divide-slate-50 bg-white border-t border-slate-100">
+                                                <div className="flex items-center px-12 py-1.5 text-[9px] uppercase font-black text-slate-400 tracking-wider">
+                                                    <span className="w-[100px]">Date</span>
+                                                    <span className="flex-1">Source (Raw)</span>
+                                                    <span className="w-[120px] text-right">Amount</span>
+                                                </div>
+                                                {txs.map(tx => {
+                                                    const absAmount = Math.abs(tx.amount);
+                                                    const diffPercent = avgAmount > 0
+                                                        ? Math.abs(absAmount - avgAmount) / avgAmount
+                                                        : 0;
+                                                    const isSignificant = diffPercent >= 0.05;
+
+                                                    return (
+                                                        <div key={tx.id} className="flex items-center text-[11px] px-12 py-1.5 hover:bg-amber-50/80 group/row transition-all duration-200 hover:rounded-lg mx-2">
+                                                            <span className="text-slate-400 font-mono w-[100px] shrink-0">{formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}</span>
+                                                            <div className="flex-1 flex items-center gap-2 min-w-0 pr-4">
+                                                                <span className="text-slate-600 truncate font-medium">{tx.source}</span>
+                                                                <TransactionNote
+                                                                    transaction={tx}
+                                                                    onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
+                                                                />
+                                                                {tx.description && tx.description !== tx.source && (
+                                                                    <span className="text-[10px] text-slate-300 italic truncate ml-2">[{tx.description}]</span>
+                                                                )}
+                                                            </div>
+                                                            <div className={cn(
+                                                                "w-[120px] text-right font-bold font-mono tabular-nums flex items-center justify-end gap-1.5",
+                                                                tx.amount < 0 ? "text-slate-700" : "text-emerald-600",
+                                                                isSignificant && "text-amber-600 bg-amber-50 rounded px-1"
+                                                            )}>
+                                                                {isSignificant && (
+                                                                    <span title={`Significant difference (${Math.round(diffPercent * 100)}%) from average`}>
+                                                                        <AlertTriangle className="w-3 h-3 text-amber-500" />
+                                                                    </span>
+                                                                )}
+                                                                {formatCurrency(tx.amount, settings.currency)}
+                                                            </div>
+                                                            <div className="w-[40px] flex justify-end opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-500"
+                                                                    onClick={() => {
+                                                                        setTransactionToSplit(tx);
+                                                                        setSplitModalOpen(true);
+                                                                    }}
+                                                                    title="Split / Itemize Transaction"
+                                                                >
+                                                                    <Split className="w-3.5 h-3.5" />
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {groupedCategorisation.length === 0 && (
+                                    <div className="flex flex-col items-center justify-center py-12 text-slate-400 italic">
+                                        <Check className="w-12 h-12 mb-3 opacity-20" />
+                                        <p>All mapped sources are categorised</p>
+                                    </div>
+                                )}
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                )}
+
+                {/* 4. Pending Action - Pending Validation */}
+                {pendingValidation.length > 0 && (
+                    <AccordionItem value="pending-validation" className="border rounded-xl bg-card shadow-sm overflow-hidden border-lime-200">
+                        <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-lime-50/50 transition-colors">
+                            <div className="flex items-center justify-between w-full pr-4 text-lime-900">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-lime-100 p-2 rounded-lg">
+                                        <AlertTriangle className="w-5 h-5 text-lime-600" />
+                                    </div>
+                                    <div className="text-left">
+                                        <h3 className="text-lg font-bold">Pending Action - Pending Validation</h3>
+                                        <p className="text-xs text-lime-600/70 font-medium">Transactions needing review or confirmation</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Badge variant="secondary" className="bg-lime-600 text-white font-black px-3 py-1 text-sm">
+                                        {pendingValidation.length} Pending
+                                    </Badge>
+                                </div>
+                            </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-6 pb-6 pt-4">
+                            <div className="space-y-6">
+                                {/* Group by Source for easier review */}
+                                {Object.entries(groupedValidation).map(([key, group]) => (
+                                    <div key={key} className="space-y-3">
+                                        <div className="flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur z-10 py-2 border-b border-lime-100">
+                                            <div className="flex items-center gap-2">
+                                                <h4 className="font-bold text-slate-700">{group.displayName}</h4>
+                                                <Badge variant="outline" className="text-[10px]">{group.txs.length} {group.txs.length === 1 ? 'item' : 'items'}</Badge>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="h-7 text-[10px] font-bold text-slate-400 hover:text-blue-600 gap-1.5"
+                                                    onClick={() => navigate(`/settings?tab=sources&search=${encodeURIComponent(group.displayName)}`)}
+                                                >
+                                                    <SettingsIcon className="w-3 h-3" />
+                                                    Edit Rules
+                                                </Button>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-7 text-xs border-lime-200 text-lime-700 hover:bg-lime-50"
+                                                    onClick={() => {
+                                                        // Bulk confirm all in this group
+                                                        const ids = group.txs.map(t => t.id);
+                                                        bulkUpdate({
+                                                            ids,
+                                                            updates: { status: 'Complete', confidence: 1 }
+                                                        });
+                                                    }}
+                                                >
+                                                    <Check className="w-3 h-3 mr-1" />
+                                                    Confirm All
+                                                </Button>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="outline" size="sm" className="h-7 w-7 p-0 border-lime-200 text-lime-700">
+                                                            <MoreVertical className="w-3 h-3" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        <DropdownMenuItem onClick={() => {
+                                                            const ids = group.txs.map(t => t.id);
+                                                            bulkUpdate({
+                                                                ids,
+                                                                updates: { status: 'Pending Reconciliation', confidence: 1 }
+                                                            });
+                                                        }}>
+                                                            Mark Pending Reconciliation
+                                                        </DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </div>
+                                        </div>
+                                        <div className="grid gap-2">
+                                            {group.txs.map(tx => (
+                                                <TransactionCard key={tx.id} tx={tx} type="review" variant="lime" />
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                )}
+
+                {/* 5. Complete Transactions */}
+                {auditLog.length > 0 && (
+                    <AccordionItem value="audit-log" className="border rounded-xl bg-card shadow-sm overflow-hidden border-emerald-200">
+                        <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-emerald-50/50 transition-colors">
+                            <div className="flex items-center justify-between w-full pr-4 text-emerald-900">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-emerald-100 p-2 rounded-lg">
+                                        <History className="w-5 h-5 text-emerald-600" />
+                                    </div>
+                                    <div className="text-left">
+                                        <h3 className="text-lg font-bold">Validated Transactions</h3>
+                                        <p className="text-xs text-emerald-600/70 font-medium">Recently completed and verified transactions</p>
+                                    </div>
+                                </div>
+                                <Badge variant="secondary" className="bg-emerald-600 text-white font-black px-3 py-1 text-sm">
+                                    {auditLog.length} Completed
+                                </Badge>
+                            </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-6 pb-6 pt-4">
+                            <div className="divide-y border rounded-lg bg-white overflow-hidden border-slate-200">
+                                <div className="flex items-center px-4 py-2 border-b bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                    <span className="w-[100px]">Date</span>
+                                    <span className="flex-1">Source</span>
+                                    <span className="w-[30%]">Categorisation</span>
+                                    <span className="w-[120px] text-right">Amount</span>
+                                </div>
+                                {(showAllAudit ? auditLog : auditLog.slice(0, 10)).map(tx => (
+                                    <div key={tx.id} className="flex items-center py-2.5 px-4 hover:bg-emerald-50/80 text-xs group transition-all duration-200 hover:rounded-xl mx-2 hover:shadow-sm">
+                                        <span className="text-[11px] font-mono text-slate-400 w-[100px] shrink-0">{tx.date}</span>
+                                        <div className="flex-1 min-w-0 pr-4 flex items-center gap-2">
+                                            <Badge variant="secondary" className="bg-blue-600 text-white border-blue-400 font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-tight shrink-0 shadow-sm shadow-blue-200">
+                                                {tx.clean_source}
+                                            </Badge>
+                                            <TransactionNote
+                                                transaction={tx}
+                                                onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
+                                            />
+                                            {tx.source && tx.source !== tx.clean_source && (
+                                                <span className="text-[10px] text-slate-400 italic truncate block">({tx.source})</span>
+                                            )}
+                                        </div>
+                                        <div className="w-[30%] min-w-0 pr-4">
+                                            <Badge variant="secondary" className="bg-slate-100 text-slate-600 text-[10px] font-bold py-0 h-4 truncate max-w-full">
+                                                {tx.category} {'>'} {tx.sub_category}
+                                            </Badge>
+                                        </div>
+                                        <div className="flex items-center gap-4 w-[120px] justify-end">
+                                            <span className={cn("font-black font-mono tabular-nums", tx.amount < 0 ? "text-slate-900" : "text-emerald-600")}>
+                                                {formatCurrency(tx.amount, settings.currency)}
+                                            </span>
+                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="h-7 w-7 p-0 text-blue-400 hover:text-blue-600 hover:bg-blue-50"
+                                                    onClick={() => {
+                                                        openRuleDialog(tx.clean_source || tx.source, [tx]);
+                                                    }}
+                                                    title="Create Automation Rule"
+                                                >
+                                                    <Zap className="w-3.5 h-3.5" />
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-500"
+                                                    onClick={() => {
+                                                        setTransactionToSplit(tx);
+                                                        setSplitModalOpen(true);
+                                                    }}
+                                                    title="Split / Itemize Transaction"
+                                                >
+                                                    <Split className="w-3.5 h-3.5" />
+                                                </Button>
+                                                <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {auditLog.length > 10 && !showAllAudit && (
+                                    <div className="p-4 flex justify-center border-t bg-slate-50/30">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setShowAllAudit(true)}
+                                            className="text-[10px] text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 h-8 font-black uppercase"
+                                        >
+                                            ... and {auditLog.length - 10} more items (Click to expand)
+                                        </Button>
+                                    </div>
+                                )}
+                                {auditLog.length === 0 && (
+                                    <div className="py-12 flex flex-col items-center justify-center text-slate-400 italic">
+                                        <Check className="w-12 h-12 mb-3 opacity-20" />
+                                        <p>No completed transactions found</p>
+                                    </div>
+                                )}
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                )}
+
+                {/* 6. Excluded / Deleted - SOFT DELETE BUCKET */}
+                {excludedTransactions.length > 0 && (
+                    <AccordionItem value="excluded" className="border rounded-xl bg-card shadow-sm overflow-hidden border-slate-200">
+                        <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-slate-100/50 transition-colors">
+                            <div className="flex items-center justify-between w-full pr-4 text-slate-600">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-slate-200 p-2 rounded-lg">
+                                        <EyeOff className="w-5 h-5 text-slate-500" />
+                                    </div>
+                                    <div className="text-left">
+                                        <h3 className="text-lg font-bold">Excluded Transactions</h3>
+                                        <p className="text-xs text-slate-500 font-medium italic">Deleted and ignored items (Soft Delete)</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Badge variant="secondary" className="bg-slate-400 text-white font-black px-3 py-1 text-sm">
+                                        {excludedTransactions.length} Items
+                                    </Badge>
+                                </div>
+                            </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-6 pb-6 pt-4">
+                            <div className="space-y-3">
+                                {excludedTransactions.map(tx => (
+                                    <div key={tx.id} className="flex items-center p-3 hover:bg-white transition-colors group/row border-b last:border-b-0 border-slate-200/60 opacity-60 hover:opacity-100">
+                                        <div className="flex-1 flex items-center gap-4">
+                                            <span className="w-[80px] text-[11px] font-mono text-slate-400 shrink-0">{tx.date}</span>
+                                            <div className="flex-1 min-w-0 pr-4">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-bold text-slate-700 truncate block line-through decoration-slate-400">{tx.source}</span>
+                                                    <TransactionNote
+                                                        transaction={tx}
+                                                        onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
+                                                    />
+                                                </div>
+                                                <span className="text-[10px] text-slate-400 uppercase font-black">Manually Excluded</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-4 w-[200px] justify-end">
+                                            <span className="font-bold font-mono tabular-nums text-sm text-slate-400">
+                                                {formatCurrency(tx.amount, settings.currency)}
+                                            </span>
                                             <Button
                                                 size="sm"
                                                 variant="ghost"
-                                                className="h-7 text-[10px] font-bold text-slate-400 hover:text-blue-600 gap-1.5"
-                                                onClick={() => navigate(`/settings?tab=sources&search=${encodeURIComponent(group.displayName)}`)}
-                                            >
-                                                <SettingsIcon className="w-3 h-3" />
-                                                Edit Rules
-                                            </Button>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                className="h-7 text-xs border-lime-200 text-lime-700 hover:bg-lime-50"
+                                                className="h-8 text-[10px] font-bold text-blue-600 hover:bg-blue-50 gap-1.5"
                                                 onClick={() => {
-                                                    // Bulk confirm all in this group
-                                                    const ids = group.txs.map(t => t.id);
                                                     bulkUpdate({
-                                                        ids,
-                                                        updates: { status: 'Complete', confidence: 1 }
+                                                        ids: [tx.id],
+                                                        updates: { status: 'Pending Triage', excluded: false, confidence: 0 }
                                                     });
                                                 }}
                                             >
-                                                <Check className="w-3 h-3 mr-1" />
-                                                Confirm All
+                                                <RefreshCw className="w-3 h-3" />
+                                                Restore
                                             </Button>
                                         </div>
                                     </div>
-                                    <div className="grid gap-2">
-                                        {group.txs.map(tx => (
-                                            <TransactionCard key={tx.id} tx={tx} type="review" variant="lime" />
-                                        ))}
+                                ))}
+                                {excludedTransactions.length === 0 && (
+                                    <div className="py-12 flex flex-col items-center justify-center text-slate-400 italic">
+                                        <EyeOff className="w-12 h-12 mb-3 opacity-10" />
+                                        <p>No excluded transactions found</p>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
-                    </AccordionContent>
-                </AccordionItem>
-
-                {/* 5. Complete Transactions */}
-                <AccordionItem value="audit-log" className="border rounded-xl bg-card shadow-sm overflow-hidden border-emerald-200">
-                    <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-emerald-50/50 transition-colors">
-                        <div className="flex items-center justify-between w-full pr-4 text-emerald-900">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-emerald-100 p-2 rounded-lg">
-                                    <History className="w-5 h-5 text-emerald-600" />
-                                </div>
-                                <div className="text-left">
-                                    <h3 className="text-lg font-bold">Validated Transactions</h3>
-                                    <p className="text-xs text-emerald-600/70 font-medium">Recently completed and verified transactions</p>
-                                </div>
+                                )}
                             </div>
-                            <Badge variant="secondary" className="bg-emerald-600 text-white font-black px-3 py-1 text-sm">
-                                {auditLog.length} Completed
-                            </Badge>
-                        </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-6 pb-6 pt-4">
-                        <div className="divide-y border rounded-lg bg-white overflow-hidden border-slate-200">
-                            <div className="flex items-center px-4 py-2 border-b bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                                <span className="w-[100px]">Date</span>
-                                <span className="flex-1">Source</span>
-                                <span className="w-[30%]">Categorisation</span>
-                                <span className="w-[120px] text-right">Amount</span>
-                            </div>
-                            {(showAllAudit ? auditLog : auditLog.slice(0, 10)).map(tx => (
-                                <div key={tx.id} className="flex items-center py-2.5 px-4 hover:bg-emerald-50/80 text-xs group transition-all duration-200 hover:rounded-xl mx-2 hover:shadow-sm">
-                                    <span className="text-[11px] font-mono text-slate-400 w-[100px] shrink-0">{tx.date}</span>
-                                    <div className="flex-1 min-w-0 pr-4 flex items-center gap-2">
-                                        <Badge variant="secondary" className="bg-blue-600 text-white border-blue-400 font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-tight shrink-0 shadow-sm shadow-blue-200">
-                                            {tx.clean_source}
-                                        </Badge>
-                                        <TransactionNote
-                                            transaction={tx}
-                                            onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
-                                        />
-                                        {tx.source && tx.source !== tx.clean_source && (
-                                            <span className="text-[10px] text-slate-400 italic truncate block">({tx.source})</span>
-                                        )}
-                                    </div>
-                                    <div className="w-[30%] min-w-0 pr-4">
-                                        <Badge variant="secondary" className="bg-slate-100 text-slate-600 text-[10px] font-bold py-0 h-4 truncate max-w-full">
-                                            {tx.category} {'>'} {tx.sub_category}
-                                        </Badge>
-                                    </div>
-                                    <div className="flex items-center gap-4 w-[120px] justify-end">
-                                        <span className={cn("font-black font-mono tabular-nums", tx.amount < 0 ? "text-slate-900" : "text-emerald-600")}>
-                                            {formatCurrency(tx.amount, settings.currency)}
-                                        </span>
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                className="h-7 w-7 p-0 text-blue-400 hover:text-blue-600 hover:bg-blue-50"
-                                                onClick={() => {
-                                                    openRuleDialog(tx.clean_source || tx.source, [tx]);
-                                                }}
-                                                title="Create Automation Rule"
-                                            >
-                                                <Zap className="w-3.5 h-3.5" />
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-500"
-                                                onClick={() => {
-                                                    setTransactionToSplit(tx);
-                                                    setSplitModalOpen(true);
-                                                }}
-                                                title="Split / Itemize Transaction"
-                                            >
-                                                <Split className="w-3.5 h-3.5" />
-                                            </Button>
-                                            <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                            {auditLog.length > 10 && !showAllAudit && (
-                                <div className="p-4 flex justify-center border-t bg-slate-50/30">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setShowAllAudit(true)}
-                                        className="text-[10px] text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 h-8 font-black uppercase"
-                                    >
-                                        ... and {auditLog.length - 10} more items (Click to expand)
-                                    </Button>
-                                </div>
-                            )}
-                            {auditLog.length === 0 && (
-                                <div className="py-12 flex flex-col items-center justify-center text-slate-400 italic">
-                                    <Check className="w-12 h-12 mb-3 opacity-20" />
-                                    <p>No completed transactions found</p>
-                                </div>
-                            )}
-                        </div>
-                    </AccordionContent>
-                </AccordionItem>
-
-                {/* 6. Excluded / Deleted - SOFT DELETE BUCKET */}
-                <AccordionItem value="excluded" className="border rounded-xl bg-slate-50/50 shadow-sm overflow-hidden border-slate-200">
-                    <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-slate-100/50 transition-colors">
-                        <div className="flex items-center justify-between w-full pr-4 text-slate-600">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-slate-200 p-2 rounded-lg">
-                                    <EyeOff className="w-5 h-5 text-slate-500" />
-                                </div>
-                                <div className="text-left">
-                                    <h3 className="text-lg font-bold">Excluded Transactions</h3>
-                                    <p className="text-xs text-slate-500 font-medium italic">Deleted and ignored items (Soft Delete)</p>
-                                </div>
-                            </div>
-                            <div className="flex gap-2">
-                                <Badge variant="secondary" className="bg-slate-400 text-white font-black px-3 py-1 text-sm">
-                                    {excludedTransactions.length} Items
-                                </Badge>
-                            </div>
-                        </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-6 pb-6 pt-4">
-                        <div className="space-y-3">
-                            {excludedTransactions.map(tx => (
-                                <div key={tx.id} className="flex items-center p-3 hover:bg-white transition-colors group/row border-b last:border-b-0 border-slate-200/60 opacity-60 hover:opacity-100">
-                                    <div className="flex-1 flex items-center gap-4">
-                                        <span className="w-[80px] text-[11px] font-mono text-slate-400 shrink-0">{tx.date}</span>
-                                        <div className="flex-1 min-w-0 pr-4">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-sm font-bold text-slate-700 truncate block line-through decoration-slate-400">{tx.source}</span>
-                                                <TransactionNote
-                                                    transaction={tx}
-                                                    onSave={(id, note) => updateTransaction({ id, field: 'notes', value: note })}
-                                                />
-                                            </div>
-                                            <span className="text-[10px] text-slate-400 uppercase font-black">Manually Excluded</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-4 w-[200px] justify-end">
-                                        <span className="font-bold font-mono tabular-nums text-sm text-slate-400">
-                                            {formatCurrency(tx.amount, settings.currency)}
-                                        </span>
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="h-8 text-[10px] font-bold text-blue-600 hover:bg-blue-50 gap-1.5"
-                                            onClick={() => {
-                                                bulkUpdate({
-                                                    ids: [tx.id],
-                                                    updates: { status: 'Pending Triage', excluded: false, confidence: 0 }
-                                                });
-                                            }}
-                                        >
-                                            <RefreshCw className="w-3 h-3" />
-                                            Restore
-                                        </Button>
-                                    </div>
-                                </div>
-                            ))}
-                            {excludedTransactions.length === 0 && (
-                                <div className="py-12 flex flex-col items-center justify-center text-slate-400 italic">
-                                    <EyeOff className="w-12 h-12 mb-3 opacity-10" />
-                                    <p>No excluded transactions found</p>
-                                </div>
-                            )}
-                        </div>
-                    </AccordionContent>
-                </AccordionItem>
+                        </AccordionContent>
+                    </AccordionItem>
+                )}
             </Accordion>
 
             {/* Rule Configuration Dialog */}
@@ -1735,7 +1818,7 @@ export const ValidationDashboard = () => {
                     />
                 )
             }
-        </div>
+        </div >
     );
 };
 

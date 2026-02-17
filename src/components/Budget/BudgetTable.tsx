@@ -221,12 +221,19 @@ export const BudgetTable = ({
                         {(!isFutureYear || (subcat.spent !== 0)) && formatCurrency((subcat.budget_amount || 0) * elapsedMonths, currency)}
                     </td>
                     <td className="py-2 px-6 text-right font-bold text-foreground/70 whitespace-nowrap">{formatCurrency(subcat.spent, currency)}</td>
-                    <td className={`py-2 px-6 text-right font-mono text-[10px] whitespace-nowrap ${((subcat.budget_amount || 0) * elapsedMonths) >= subcat.spent ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    <td className={`py-2 px-6 text-right font-mono text-[10px] whitespace-nowrap ${type === 'income'
+                            ? (subcat.spent >= ((subcat.budget_amount || 0) * elapsedMonths) ? 'text-emerald-600' : 'text-rose-600')
+                            : (((subcat.budget_amount || 0) * elapsedMonths) >= subcat.spent ? 'text-emerald-600' : 'text-rose-600')
+                        }`}>
                         {(!isFutureYear || (subcat.spent !== 0)) && (
                             <div className="flex flex-col items-end whitespace-nowrap">
                                 {((subcat.budget_amount || 0) * elapsedMonths) > 0 && (
                                     <span className="text-xs font-black leading-none mb-1">
-                                        {Math.round((subcat.spent / ((subcat.budget_amount || 0) * elapsedMonths)) * 100)}%
+                                        {(() => {
+                                            const budgetYtd = (subcat.budget_amount || 0) * elapsedMonths;
+                                            const variance = Math.round(((subcat.spent / budgetYtd) - 1) * 100);
+                                            return variance > 0 ? `+${variance}%` : `${variance}%`;
+                                        })()}
                                     </span>
                                 )}
                                 <div className="flex items-center justify-end gap-1 opacity-60 text-[9px]">
@@ -348,17 +355,27 @@ export const BudgetTable = ({
                                         {(!isFutureYear || (item.spent !== 0)) && formatCurrency(item.budget_amount * elapsedMonths, currency)}
                                     </td>
                                     <td className="py-3 px-6 text-right font-black text-foreground whitespace-nowrap">{formatCurrency(item.spent, currency)}</td>
-                                    <td className={`py-3 px-6 text-right transition-all duration-300 whitespace-nowrap ${(item.budget_amount * elapsedMonths) >= item.spent ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    <td className={`py-3 px-6 text-right transition-all duration-300 whitespace-nowrap ${type === 'income'
+                                            ? (item.spent >= (item.budget_amount * elapsedMonths) ? 'text-emerald-500' : 'text-rose-500')
+                                            : ((item.budget_amount * elapsedMonths) >= item.spent ? 'text-emerald-500' : 'text-rose-500')
+                                        }`}>
                                         {(!isFutureYear || (item.spent !== 0)) && (
                                             <div className="flex flex-col items-end whitespace-nowrap">
                                                 {(item.budget_amount * elapsedMonths) > 0 && (
                                                     <span className="text-lg font-black leading-none mb-1">
-                                                        {Math.round((item.spent / (item.budget_amount * elapsedMonths)) * 100)}%
+                                                        {(() => {
+                                                            const budgetYtd = item.budget_amount * elapsedMonths;
+                                                            const variance = Math.round(((item.spent / budgetYtd) - 1) * 100);
+                                                            return variance > 0 ? `+${variance}%` : `${variance}%`;
+                                                        })()}
                                                     </span>
                                                 )}
                                                 <div className="flex items-center gap-2 whitespace-nowrap opacity-60 text-[10px] font-bold">
-                                                    {(item.budget_amount * elapsedMonths) < item.spent && <span className="bg-rose-500 text-white px-1 rounded-sm tracking-tighter text-[9px]">OVER</span>}
-                                                    {(item.budget_amount * elapsedMonths) > item.spent && <span className="bg-emerald-500 text-white px-1 rounded-sm tracking-tighter text-[9px]">UNDER</span>}
+                                                    {type === 'income' ? (
+                                                        item.spent < (item.budget_amount * elapsedMonths) ? <span className="bg-rose-500 text-white px-1 rounded-sm tracking-tighter text-[9px]">UNDER</span> : <span className="bg-emerald-500 text-white px-1 rounded-sm tracking-tighter text-[9px]">OVER</span>
+                                                    ) : (
+                                                        (item.budget_amount * elapsedMonths) < item.spent ? <span className="bg-rose-500 text-white px-1 rounded-sm tracking-tighter text-[9px]">OVER</span> : <span className="bg-emerald-500 text-white px-1 rounded-sm tracking-tighter text-[9px]">UNDER</span>
+                                                    )}
                                                     <span className="font-mono">{formatCurrency(Math.abs((item.budget_amount * elapsedMonths) - item.spent), currency)}</span>
                                                 </div>
                                             </div>

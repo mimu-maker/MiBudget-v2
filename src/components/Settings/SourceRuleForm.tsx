@@ -66,8 +66,10 @@ export const SourceRuleForm = ({
 
     // --- Logic for Matching ---
     const similarTransactions = useMemo(() => {
-        const currentTxMock: any = { id: 'current', source: rule.raw_name, clean_source: rule.name, amount: 0 };
-        return findSimilarTransactions(currentTxMock, transactions, rule.name || rule.raw_name, rule.match_mode);
+        return [];
+        // Disabled for performance
+        // const currentTxMock: any = { id: 'current', source: rule.raw_name, clean_source: rule.name, amount: 0 };
+        // return findSimilarTransactions(currentTxMock, transactions, rule.name || rule.raw_name, rule.match_mode);
     }, [transactions, rule.name, rule.raw_name, rule.match_mode]);
 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());

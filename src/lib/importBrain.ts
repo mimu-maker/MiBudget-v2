@@ -2,7 +2,7 @@ import { Tables } from "@/integrations/supabase/types";
 
 export type SourceRule = Tables<"source_rules">;
 
-export const SKIP_PATTERNS = ['MC/VISA', 'VISA/DANKORT', 'DANKORT', 'NETBANK', 'VISA', 'MASTERCARD', 'OVERFØRSEL', 'DEPOT', 'DK', 'K', 'CARD', 'KØB', 'AUT.', 'ONLINE', 'WWW.', 'PAYPAL', 'SUMUP', 'IZATTLE', 'GOOGLE', 'APPLE.COM', 'BILL', 'PAY', 'FORRETNING:'];
+export const SKIP_PATTERNS = ['MC/VISA', 'VISA/DANKORT', 'DANKORT', 'NETBANK', 'VISA', 'MASTERCARD', 'OVERFØRSEL', 'DEPOT', 'DK', 'K', 'CARD', 'KØB', 'AUT.', 'ONLINE', 'WWW.', 'PAYPAL', 'SUMUP', 'IZATTLE', 'GOOGLE', 'APPLE.COM', 'BILL', 'PAY', 'FORRETNING:', 'BS', 'BS '];
 
 export const cleanSource = (source: string, noiseFilters: string[] = []): string => {
     if (!source) return "";

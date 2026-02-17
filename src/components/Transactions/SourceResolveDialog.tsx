@@ -138,8 +138,11 @@ export const SourceResolveDialog = ({
 
             if (ruleError) throw ruleError;
 
-            // 3. Apply to selected transactions
-            if (selectedIds.length > 0) {
+            // 3. Apply to selected transactions + Current Transaction
+            // Ensure we at least update the current transaction, even if no history matches were selected
+            const allIdsToUpdate = Array.from(new Set([...selectedIds, transaction.id]));
+
+            if (allIdsToUpdate.length > 0) {
                 const updates: any = {
                     // Always standardize names
                     clean_source: rule.name,
@@ -165,7 +168,7 @@ export const SourceResolveDialog = ({
                 let { error: updateError } = await (supabase as any)
                     .from('transactions')
                     .update(updates)
-                    .in('id', selectedIds);
+                    .in('id', allIdsToUpdate);
 
                 if (updateError && (updateError.code === '42703' || updateError.message?.includes('column') || updateError.message?.includes('does not exist'))) {
                     // Fallback for legacy schema
@@ -178,7 +181,7 @@ export const SourceResolveDialog = ({
                     const { error: retryError } = await (supabase as any)
                         .from('transactions')
                         .update(legacyUpdates)
-                        .in('id', selectedIds);
+                        .in('id', allIdsToUpdate);
                     updateError = retryError;
                 }
 

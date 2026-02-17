@@ -4,8 +4,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useTransactionTable, Transaction } from '@/components/Transactions/hooks/useTransactionTable';
-import { usePeriod } from '@/contexts/PeriodContext';
-import { filterByPeriod } from '@/lib/dateUtils';
 import { formatCurrency } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
 import { EditableCell } from '@/components/Transactions/EditableCell';
@@ -13,28 +11,49 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { TransactionDetailDialog } from '@/components/Transactions/TransactionDetailDialog';
 
 export const ReconciliationOverview = () => {
-  const { transactions, handleCellEdit, handleBulkCellEdit } = useTransactionTable();
-  const { selectedPeriod, customDateRange, includeSpecial, includeKlintemarken } = usePeriod();
+  const { transactions, handleCellEdit, handleBulkCellEdit, isSaving } = useTransactionTable({ mode: 'all' });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<keyof Transaction | null>(null);
+
+  const handleStartEdit = (id: string, field: keyof Transaction) => {
+    setEditingId(id);
+    setEditingField(field);
+  };
+
+  const handleStopEdit = () => {
+    setEditingId(null);
+    setEditingField(null);
+  };
+
+  const handleLocalEdit = (id: string, field: keyof Transaction, value: any) => {
+    handleCellEdit(id, field, value);
+    // Don't stop edit immediately for status to allow secondary dropdown
+    if (field !== 'status') {
+      // handleStopEdit(); // Let EditableCell decide when to stop via onStopEdit
+    }
+  };
   const { settings } = useSettings();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [detailTx, setDetailTx] = useState<Transaction | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  // Filter for 'Pending' status transactions for the selected period
+  // Filter for 'Pending' status transactions
   const pendingTransactions = useMemo(() => {
-    const periodFiltered = filterByPeriod(transactions, selectedPeriod, customDateRange);
-    return periodFiltered.filter(t => {
-      const isPending = t.status && (t.status === 'Pending' || t.status === 'Pending Reconciliation' || t.status.startsWith('Pending: ') || t.entity);
-      const isNotExcluded = !t.excluded && t.budget !== 'Exclude';
+    return transactions.filter(t => {
+      const status = t.status || '';
+      const isPendingStatus = status === 'Pending Reconciliation' ||
+        status.startsWith('Pending: ') ||
+        (status.startsWith('Pending ') && !['Pending Triage', 'Pending Categorisation', 'Pending Mapping', 'Pending Validation'].includes(status));
+      const hasEntity = !!t.entity;
 
-      let isAllowed = true;
-      if (t.budget === 'Special' && !includeSpecial) isAllowed = false;
-      if (t.budget === 'Klintemarken' && !includeKlintemarken) isAllowed = false;
+      const isPending = isPendingStatus || hasEntity;
+      // Show regardless of budget category, but respect the explicit 'excluded' flag
+      const isNotExcluded = !t.excluded && status !== 'Reconciled';
 
-      return isPending && isNotExcluded && isAllowed;
+      return isPending && isNotExcluded;
     });
-  }, [transactions, selectedPeriod, customDateRange, includeSpecial, includeKlintemarken]);
+  }, [transactions]);
 
   // Default select all pending transactions when they change
   useEffect(() => {
@@ -58,6 +77,9 @@ export const ReconciliationOverview = () => {
         group = item.entity;
       } else if (item.status && item.status.startsWith('Pending: ')) {
         group = item.status.replace('Pending: ', '');
+      } else if (item.status && item.status.startsWith('Pending ') &&
+        !['Pending Triage', 'Pending Categorisation', 'Pending Mapping', 'Pending Validation', 'Pending Reconciliation'].includes(item.status)) {
+        group = item.status.replace('Pending ', '');
       }
 
       if (!acc[group]) acc[group] = [];
@@ -162,11 +184,12 @@ export const ReconciliationOverview = () => {
                       <EditableCell
                         transaction={item}
                         field="status"
-                        isEditing={true} // Always usable here
-                        onEdit={handleCellEdit}
+                        isEditing={editingId === item.id && editingField === 'status'}
+                        onEdit={handleLocalEdit}
                         onBulkEdit={handleBulkCellEdit}
-                        onStartEdit={() => { }}
-                        onStopEdit={() => { }}
+                        onStartEdit={handleStartEdit}
+                        onStopEdit={handleStopEdit}
+                        isSaving={isSaving(item.id)}
                       />
                     </div>
 

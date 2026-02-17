@@ -4,36 +4,83 @@ import ProjectionChart from '@/components/Projection/ProjectionChart';
 import AddTransactionFormV2 from '@/components/Projection/AddTransactionFormV2';
 import IncomeTransactionsTable from '@/components/Projection/IncomeTransactionsTable';
 import ExpenseTransactionsTable from '@/components/Projection/ExpenseTransactionsTable';
+import SlushFundTransactionsTable from '@/components/Projection/SlushFundTransactionsTable';
 import PasteDataDialog from '@/components/Projection/PasteDataDialog';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, ChevronDown, ChevronUp, Clock, History, TrendingUp, TrendingDown, Scale, ArrowUpRight, ArrowDownRight, Wallet, PieChart, Plus, Trash2 } from 'lucide-react';
+import CreateScenarioDialog from '@/components/Projection/CreateScenarioDialog';
 import SuggestProjectionsWizard from '@/components/Projection/SuggestProjectionsWizard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import { Link } from 'react-router-dom';
+import { useAnnualBudget, BudgetCategory, BudgetSubCategory } from '@/hooks/useAnnualBudget';
+import { useBudgetCategoryActionsForBudget } from '@/hooks/useBudgetCategories';
+import { useSettings } from '@/hooks/useSettings';
+import { Card, CardContent, CardTitle } from '@/components/ui/card';
+import { BudgetTable } from '@/components/Budget/BudgetTable';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 const Projection = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { settings } = useSettings();
   const [showAddForm, setShowAddForm] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [transactionType, setTransactionType] = useState<'income' | 'expense'>('income');
   const [showPasteDialog, setShowPasteDialog] = useState(false);
   const [pasteDialogType, setPasteDialogType] = useState<'income' | 'expense'>('income');
+  const [showLegacy, setShowLegacy] = useState(false);
+  const [showPastProjections, setShowPastProjections] = useState(false);
+  const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
+  const [showCreateScenario, setShowCreateScenario] = useState(false);
 
   const currentYear = new Date().getFullYear();
-  const availableYears = [currentYear, currentYear + 1, currentYear + 2];
+  const availableYearsList = [currentYear, currentYear + 1, currentYear + 2];
   const [selectedYear, setSelectedYear] = useState<string>(currentYear.toString());
 
-  // 1. Fetch Projections from Supabase
-  const { data: projections = [], isLoading: isLoadingProjections } = useQuery({
-    queryKey: ['projections'],
+  // Budget Hooks
+  const { budget, loading: budgetLoading, refreshBudget } = useAnnualBudget(parseInt(selectedYear));
+  const { updateSubCategoryBudget: updateSubCategoryBudgetMutation } = useBudgetCategoryActionsForBudget(budget?.id);
+  const [editingBudget, setEditingBudget] = useState<string | null>(null);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  // 1. Fetch ALL Projections (including Master)
+  const { data: allProjections = [], isLoading: isLoadingProjections } = useQuery({
+    queryKey: ['projections', 'all'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('projections' as any)
         .select('*')
         .order('date', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    }
+  });
+
+  const projections = useMemo(() => {
+    if (activeScenarioId) {
+      return allProjections.filter(p => p.scenario_id === activeScenarioId);
+    }
+    return allProjections.filter(p => !p.scenario_id);
+  }, [allProjections, activeScenarioId]);
+
+  const masterProjectionsRaw = useMemo(() =>
+    allProjections.filter(p => !p.scenario_id),
+    [allProjections]
+  );
+
+  // 1.1 Fetch Scenarios
+  const { data: scenarios = [] } = useQuery({
+    queryKey: ['scenarios'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('scenarios')
+        .select('*')
+        .order('created_at', { ascending: true });
       if (error) throw error;
       return data || [];
     }
@@ -64,27 +111,101 @@ const Projection = () => {
     description: ''
   });
 
+  const toggleCategory = (cat: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
+  const expandAll = (categories: string[]) => setExpandedCategories(new Set(categories));
+  const collapseAll = () => setExpandedCategories(new Set());
+
+  const handleUpdateBudget = async (parentCategory: BudgetCategory, subCategory: BudgetSubCategory, value: string, type: 'annual' | 'monthly' | 'percent', currentKey: string) => {
+    try {
+      const numValue = parseFloat(value) || 0;
+      let newMonthlyAmount = subCategory.budget_amount || 0;
+      const totalIncome = budget?.category_groups?.income?.reduce((sum, item) => sum + item.budget_amount, 0) || 0;
+
+      switch (type) {
+        case 'annual': newMonthlyAmount = numValue / 12; break;
+        case 'monthly': newMonthlyAmount = numValue; break;
+        case 'percent': {
+          const effectiveIncome = totalIncome > 0 ? totalIncome : 0.01;
+          newMonthlyAmount = (numValue / 100) * effectiveIncome;
+          break;
+        }
+      }
+
+      const roundedMonthly = Number(newMonthlyAmount.toFixed(2));
+
+      if (activeScenarioId) {
+        // SCENARIO MODE: Update or Create a Projection instead of changing the real budget
+        const existingProj = projections.find(p => p.category === parentCategory.name && p.stream === subCategory.name);
+
+        if (existingProj) {
+          await updateProjectionMutation.mutateAsync({
+            id: existingProj.id,
+            updates: { amount: roundedMonthly }
+          });
+        } else {
+          await addProjectionMutation.mutateAsync({
+            category: parentCategory.name,
+            stream: subCategory.name,
+            amount: roundedMonthly,
+            date: new Date(parseInt(selectedYear), 0, 1).toISOString().slice(0, 10),
+            recurring: 'Monthly',
+            planned: true,
+            source: subCategory.name,
+            description: `Scenario override for ${subCategory.name}`
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: ['projections'] });
+      } else {
+        // MASTER MODE: Standard budget update
+        if (updateSubCategoryBudgetMutation) {
+          await updateSubCategoryBudgetMutation.mutateAsync({
+            subCategoryId: subCategory.id || null,
+            categoryId: parentCategory.id,
+            amount: roundedMonthly,
+            targetBudgetId: budget?.id,
+            year: parseInt(selectedYear)
+          });
+          await refreshBudget();
+        }
+      }
+    } catch (e) {
+      console.error('Failed to update budget', e);
+    } finally {
+      setEditingBudget(prev => prev === currentKey ? null : prev);
+    }
+  };
+
   // Matching Logic: For each projection in the selected year, find matching actual transactions
   const matchProjectionsToActuals = (projList: any[], actualList: any[]) => {
     return projList.map(p => {
-      // Find actuals that match this projection:
-      // Simple heuristic: same category/merchant within the same month
-      const projMonth = p.date.slice(0, 7);
-      const matches = actualList.filter(tx => {
-        // Priority 1: Explicit ID matching
-        if (tx.projection_id === p.id) return true;
+      const pSource = (p.source || p.merchant || '').toLowerCase();
+      const projMonth = p.date?.slice(0, 7);
 
-        // Priority 2: Heuristic matching (only if transaction isn't linked to something else)
+      const matches = actualList.filter(tx => {
+        if (tx.projection_id === p.id) return true;
         if (tx.projection_id) return false;
 
-        const txMonth = tx.date.slice(0, 7);
-        const nameMatch = tx.clean_source?.toLowerCase() === p.source.toLowerCase() ||
-          tx.source.toLowerCase() === p.source.toLowerCase();
-        return txMonth === projMonth && nameMatch;
+        const txMonth = tx.date?.slice(0, 7);
+        if (txMonth !== projMonth) return false;
+
+        // Ensure category and stream (sub_category) match if specified
+        if (tx.category !== p.category) return false;
+        if (p.stream && tx.sub_category !== p.stream) return false;
+
+        const txSource = (tx.source || tx.merchant || '').toLowerCase();
+        const txCleanSource = (tx.clean_source || tx.clean_merchant || '').toLowerCase();
+
+        return (txCleanSource && txCleanSource === pSource) || (txSource && txSource === pSource);
       });
-
-      const actualAmount = matches.reduce((sum, tx) => sum + tx.amount, 0);
-
+      const actualAmount = matches.reduce((sum, tx) => sum + (tx.amount || 0), 0);
       return {
         ...p,
         actual_amount: actualAmount,
@@ -104,152 +225,208 @@ const Projection = () => {
       const { data: userData } = await supabase.auth.getUser();
       const { error } = await supabase
         .from('projections' as any)
-        .insert([{ ...newP, user_id: userData.user?.id }]);
+        .insert([{ ...newP, user_id: userData.user?.id, scenario_id: activeScenarioId }]);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projections'] });
-      toast({
-        title: "Success",
-        description: "Projection added successfully",
-      });
+      toast({ title: "Success", description: "Projection added successfully" });
     },
     onError: (error) => {
       console.error('Add Projection error:', error);
-      toast({
-        title: "Error",
-        description: "Failed to add projection. Please check the console.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to add projection", variant: "destructive" });
     }
   });
 
   const deleteProjectionMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('projections' as any)
-        .delete()
-        .eq('id', id);
+    mutationFn: async (id: string | number) => {
+      const { error } = await supabase.from('projections' as any).delete().eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projections'] });
-      toast({
-        title: "Deleted",
-        description: "Projection removed",
-      });
+      toast({ title: "Deleted", description: "Projection removed" });
     },
     onError: (error) => {
       console.error('Delete Projection error:', error);
-      toast({
-        title: "Error",
-        description: "Failed to delete projection",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to delete projection", variant: "destructive" });
     }
   });
 
   const updateProjectionMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string | number, updates: any }) => {
-      const { error } = await supabase
-        .from('projections' as any)
-        .update(updates)
-        .eq('id', id);
+      const { error } = await supabase.from('projections' as any).update(updates).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projections'] });
-      toast({
-        title: "Updated",
-        description: "Projection changes saved",
-      });
+      toast({ title: "Updated", description: "Projection changes saved" });
     },
     onError: (error) => {
       console.error('Update Projection error:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update projection",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to update projection", variant: "destructive" });
     }
   });
 
   // Derived Data
+  const incomeData = budget?.category_groups?.income || [];
+  const klintemarkenData = budget?.category_groups?.klintemarken || [];
+
+  const specialCategoryNames = useMemo(() => {
+    if (!budget?.category_groups?.special) return ['Slush Fund'];
+    return [
+      ...budget.category_groups.special.map(c => c.name),
+      'Slush Fund' // Always include as fallback
+    ];
+  }, [budget]);
+
   const incomeTransactions = useMemo(() =>
-    futureTransactions.filter(t => t.amount >= 0 && (t.recurring !== 'N/A' || t.date.startsWith(selectedYear))),
+    (futureTransactions as any[]).filter(t => t.amount >= 0 && (t.recurring !== 'N/A' || t.date?.startsWith(selectedYear))),
     [futureTransactions, selectedYear]
   );
 
   const expenseTransactions = useMemo(() =>
-    futureTransactions.filter(t => t.amount < 0 && (t.recurring !== 'N/A' || t.date.startsWith(selectedYear))),
-    [futureTransactions, selectedYear]
+    (futureTransactions as any[]).filter(t =>
+      t.amount < 0 &&
+      !specialCategoryNames.includes(t.category) &&
+      (t.recurring !== 'N/A' || t.date?.startsWith(selectedYear))
+    ),
+    [futureTransactions, selectedYear, specialCategoryNames]
   );
 
+  const slushFundTransactions = useMemo(() =>
+    (futureTransactions as any[]).filter(t =>
+      t.amount < 0 &&
+      specialCategoryNames.includes(t.category) &&
+      (t.recurring !== 'N/A' || t.date?.startsWith(selectedYear))
+    ),
+    [futureTransactions, selectedYear, specialCategoryNames]
+  );
+
+  const stats = useMemo(() => {
+    const sumAnnual = (txs: FutureTransaction[]) => {
+      return txs.reduce((sum, t) => {
+        let count = 0;
+        if (t.recurring === 'Monthly') count = 12;
+        else if (t.recurring === 'Quarterly') count = 4;
+        else if (t.recurring === 'Annually') count = 1;
+        else if (t.recurring === 'Bi-annually') count = 2;
+        else count = 1; // N/A
+        return sum + (t.amount * count);
+      }, 0);
+    };
+
+    const yearIncome = sumAnnual(incomeTransactions);
+    const yearExpenses = Math.abs(sumAnnual(expenseTransactions));
+    const yearSlush = Math.abs(sumAnnual(slushFundTransactions));
+    const feederTotal = klintemarkenData.reduce((sum, item) => sum + item.budget_amount, 0) * 12;
+
+    return {
+      income: yearIncome,
+      expenses: yearExpenses,
+      slush: yearSlush,
+      feeder: feederTotal,
+      pl: yearIncome - yearExpenses - yearSlush
+    };
+  }, [incomeTransactions, expenseTransactions, slushFundTransactions, klintemarkenData]);
+
   const projectionData = useMemo(() => {
-    const data: ProjectionData[] = [];
-    const yearNum = parseInt(selectedYear);
-
-    for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
-      const monthDate = new Date(yearNum, monthIdx, 1);
-      const monthKey = monthDate.toISOString().slice(0, 7);
-
-      let monthTotal = 0;
-
-      futureTransactions.forEach(t => {
-        const transDate = new Date(t.date);
-        const transMonthKey = t.date.slice(0, 7);
-
-        // Handle override for current month processing
-        const monthOverride = t.overrides?.[monthKey];
-        const effectiveAmount = monthOverride?.amount ?? t.amount;
-
-        // Logic for taking Actual if it exists, otherwise Projected
-        const amountToUse = (t.actual_amount !== undefined && t.actual_amount !== 0 && transMonthKey === monthKey)
-          ? t.actual_amount
-          : effectiveAmount;
-
-        if (t.recurring === 'N/A') {
-          if (transMonthKey === monthKey) {
-            monthTotal += amountToUse;
+    const calculateData = (txs: any[]) => {
+      const data: ProjectionData[] = [];
+      const yearNum = parseInt(selectedYear);
+      for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
+        const monthDate = new Date(yearNum, monthIdx, 1);
+        const monthKey = monthDate.toISOString().slice(0, 7);
+        let monthTotal = 0;
+        txs.forEach(t => {
+          if (!t.date) return;
+          const transDate = new Date(t.date);
+          const transMonthKey = t.date.slice(0, 7);
+          const monthOverride = t.overrides?.[monthKey];
+          const effectiveAmount = monthOverride?.amount ?? t.amount;
+          const amountToUse = (t.actual_amount !== undefined && t.actual_amount !== 0 && transMonthKey === monthKey)
+            ? t.actual_amount
+            : effectiveAmount;
+          if (t.recurring === 'N/A') {
+            if (transMonthKey === monthKey) monthTotal += amountToUse;
+          } else if (t.recurring === 'Monthly') {
+            if (new Date(t.date) <= new Date(yearNum, monthIdx, 28)) monthTotal += amountToUse;
+          } else if (t.recurring === 'Annually') {
+            if (transDate.getMonth() === monthIdx) monthTotal += amountToUse;
+          } else if (t.recurring === 'Bi-annually') {
+            const firstMonth = transDate.getMonth();
+            const secondMonth = (firstMonth + 6) % 12;
+            if (monthIdx === firstMonth || monthIdx === secondMonth) monthTotal += amountToUse;
+          } else if (t.recurring === 'Quarterly') {
+            const startMonth = transDate.getMonth();
+            if ((monthIdx - startMonth) % 3 === 0) monthTotal += amountToUse;
           }
-        } else if (t.recurring === 'Monthly') {
-          // If transaction started before or during this month
-          if (new Date(t.date) <= new Date(yearNum, monthIdx, 28)) {
-            monthTotal += amountToUse;
-          }
-        } else if (t.recurring === 'Annually') {
-          if (transDate.getMonth() === monthIdx) {
-            monthTotal += amountToUse;
-          }
-        } else if (t.recurring === 'Bi-annually') {
-          const firstMonth = transDate.getMonth();
-          const secondMonth = (firstMonth + 6) % 12;
-          if (monthIdx === firstMonth || monthIdx === secondMonth) {
-            monthTotal += amountToUse;
-          }
-        } else if (t.recurring === 'Quarterly') {
-          const startMonth = transDate.getMonth();
-          if ((monthIdx - startMonth) % 3 === 0) {
-            monthTotal += amountToUse;
-          }
-        }
-      });
+        });
+        data.push({
+          month: monthDate.toLocaleDateString('en-US', { month: 'short' }),
+          value: monthTotal,
+          date: monthKey
+        });
+      }
+      return data;
+    };
 
-      data.push({
-        month: monthDate.toLocaleDateString('en-US', { month: 'short' }),
-        value: monthTotal,
-        date: monthKey
-      });
-    }
-    return data;
+    return calculateData(futureTransactions);
   }, [futureTransactions, selectedYear]);
 
-  const handleAddTransaction = () => {
-    // Loosened validation: allow source OR stream
-    if ((!newTransaction.source && !newTransaction.stream) || !newTransaction.amount) {
-      return;
-    }
+  const masterProjectionData = useMemo(() => {
+    if (!activeScenarioId) return undefined;
 
+    // For master comparison, we need to match master projections to actuals too
+    const matchedMaster = matchProjectionsToActuals(masterProjectionsRaw, transactions);
+
+    const calculateData = (txs: any[]) => {
+      const data: ProjectionData[] = [];
+      const yearNum = parseInt(selectedYear);
+      for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
+        const monthDate = new Date(yearNum, monthIdx, 1);
+        const monthKey = monthDate.toISOString().slice(0, 7);
+        let monthTotal = 0;
+        txs.forEach(t => {
+          if (!t.date) return;
+          const transMonthKey = t.date.slice(0, 7);
+          const monthOverride = t.overrides?.[monthKey];
+          const effectiveAmount = monthOverride?.amount ?? t.amount;
+          const amountToUse = (t.actual_amount !== undefined && t.actual_amount !== 0 && transMonthKey === monthKey)
+            ? t.actual_amount
+            : effectiveAmount;
+
+          if (t.recurring === 'N/A') {
+            if (transMonthKey === monthKey) monthTotal += amountToUse;
+          } else if (t.recurring === 'Monthly' || t.recurring === 'Annually' || t.recurring === 'Bi-annually' || t.recurring === 'Quarterly') {
+            // Re-use logic or simplify for comparison
+            if (t.recurring === 'Monthly') {
+              if (new Date(t.date) <= new Date(yearNum, monthIdx, 28)) monthTotal += amountToUse;
+            } else if (t.recurring === 'Annually' && new Date(t.date).getMonth() === monthIdx) {
+              monthTotal += amountToUse;
+            } else if (t.recurring === 'Bi-annually') {
+              const start = new Date(t.date).getMonth();
+              if (monthIdx === start || monthIdx === (start + 6) % 12) monthTotal += amountToUse;
+            } else if (t.recurring === 'Quarterly') {
+              const start = new Date(t.date).getMonth();
+              if ((monthIdx - start) % 3 === 0) monthTotal += amountToUse;
+            }
+          }
+        });
+        data.push({
+          month: monthDate.toLocaleDateString('en-US', { month: 'short' }),
+          value: monthTotal,
+          date: monthKey
+        });
+      }
+      return data;
+    };
+
+    return calculateData(matchedMaster);
+  }, [masterProjectionsRaw, transactions, selectedYear, activeScenarioId]);
+
+  const handleAddTransaction = () => {
+    if ((!newTransaction.source && !newTransaction.stream) || !newTransaction.amount) return;
     addProjectionMutation.mutate({
       ...newTransaction,
       amount: parseFloat(newTransaction.amount) || 0,
@@ -272,13 +449,8 @@ const Projection = () => {
     setShowAddForm(false);
   };
 
-  const handleDeleteTransaction = (id: any) => {
-    deleteProjectionMutation.mutate(id);
-  };
-
-  const handleTransactionChange = (updates: Partial<NewTransactionForm>) => {
-    setNewTransaction(prev => ({ ...prev, ...updates }));
-  };
+  const handleDeleteTransaction = (id: string | number) => deleteProjectionMutation.mutate(id);
+  const handleTransactionChange = (updates: Partial<NewTransactionForm>) => setNewTransaction(prev => ({ ...prev, ...updates }));
 
   const handleAddClick = (type: 'income' | 'expense') => {
     setTransactionType(type);
@@ -310,33 +482,304 @@ const Projection = () => {
     });
   };
 
+  const totalBudgetedIncome = Math.max(incomeData.reduce((sum, item) => sum + item.budget_amount, 0), 0.01);
+
+  const deleteScenarioMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('scenarios').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scenarios'] });
+      setActiveScenarioId(null);
+      toast({ title: "Deleted", description: "Scenario removed" });
+    },
+    onError: (error) => {
+      console.error('Delete Scenario error:', error);
+      toast({ title: "Error", description: "Failed to delete scenario", variant: "destructive" });
+    }
+  });
+
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-gray-900">Financial Projection</h1>
-          <Button
-            variant="outline"
-            onClick={() => setShowWizard(true)}
-            className="gap-2 text-primary border-primary hover:bg-primary/10"
-          >
-            <Sparkles className="w-4 h-4" />
-            Suggest Projections
-          </Button>
+      <div className="flex flex-col gap-4 mb-6">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link to="/budget">Budget</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Projections</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-3xl font-black text-gray-900 tracking-tight">
+              {activeScenarioId ? `Scenario: ${scenarios.find(s => s.id === activeScenarioId)?.name}` : 'Master Projections'}
+            </h1>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+              {activeScenarioId ? 'What-if playground • Edits do not affect Master' : 'Production Budget • Feeders & Core Income'}
+            </p>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100">
+              <Switch
+                id="past-projections"
+                checked={showPastProjections}
+                onCheckedChange={setShowPastProjections}
+              />
+              <Label htmlFor="past-projections" className="text-xs font-bold uppercase tracking-wider text-gray-500 cursor-pointer flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5" />
+                Show Past Projections
+              </Label>
+            </div>
+            <Tabs value={selectedYear} onValueChange={setSelectedYear} className="w-[300px]">
+              <TabsList className="grid w-full grid-cols-3">
+                {availableYearsList.map(year => (
+                  <TabsTrigger key={year} value={year.toString()}>
+                    {year}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
         </div>
+      </div>
 
-        <Tabs value={selectedYear} onValueChange={setSelectedYear} className="w-[400px]">
-          <TabsList className="grid w-full grid-cols-3">
-            {availableYears.map(year => (
-              <TabsTrigger key={year} value={year.toString()}>
-                {year}
+      {/* Scenario Navigation Tabs */}
+      <div className="mb-8 flex items-center justify-between gap-4 overflow-x-auto pb-2 scrollbar-hide">
+        <Tabs value={activeScenarioId || 'master'} onValueChange={(val) => setActiveScenarioId(val === 'master' ? null : val)} className="flex-1">
+          <TabsList className="bg-gray-100/50 p-1 h-12 gap-1 inline-flex w-auto">
+            <TabsTrigger
+              value="master"
+              className="px-6 h-10 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg font-bold uppercase tracking-wider text-[10px]"
+            >
+              Master
+            </TabsTrigger>
+            {scenarios.map(scenario => (
+              <TabsTrigger
+                key={scenario.id}
+                value={scenario.id}
+                className="px-6 h-10 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg font-bold uppercase tracking-wider text-[10px] group flex items-center gap-2"
+              >
+                {scenario.name}
+                {activeScenarioId === scenario.id && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="w-4 h-4 text-rose-400 hover:text-rose-600 p-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm('Delete this scenario? All its data will be lost.')) {
+                        deleteScenarioMutation.mutate(scenario.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                )}
               </TabsTrigger>
             ))}
           </TabsList>
         </Tabs>
+        <Button
+          onClick={() => setShowCreateScenario(true)}
+          className="bg-primary hover:bg-primary/90 text-white gap-2 font-bold uppercase tracking-tighter h-10 px-4 whitespace-nowrap"
+        >
+          <Plus className="w-4 h-4" />
+          New Scenario
+        </Button>
       </div>
 
-      <ProjectionChart data={projectionData} title={`Projection for ${selectedYear}`} />
+      {/* Summary Tiles */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <Card className="border-emerald-100 bg-white shadow-sm overflow-hidden relative group transition-all hover:shadow-md">
+          <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity">
+            <TrendingUp className="w-16 h-16 text-emerald-600" />
+          </div>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 bg-emerald-50 rounded-lg">
+                <ArrowUpRight className="w-4 h-4 text-emerald-600" />
+              </div>
+              <p className="text-xs font-black uppercase tracking-widest text-emerald-600/80">Projected Income</p>
+            </div>
+            <div className="flex flex-col">
+              <h2 className="text-3xl font-black text-emerald-950 flex items-baseline gap-2">
+                <span className="text-sm font-bold text-emerald-600/40">DKK</span>
+                {stats.income.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </h2>
+              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-emerald-50/50">
+                <span className="text-[10px] font-black text-emerald-600/50 uppercase tracking-tighter">Budgeted Feeders</span>
+                <span className="text-sm font-bold text-emerald-700">DKK {stats.feeder.toLocaleString()}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-rose-100 bg-white shadow-sm overflow-hidden relative group transition-all hover:shadow-md">
+          <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity">
+            <TrendingDown className="w-16 h-16 text-rose-600" />
+          </div>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 bg-rose-50 rounded-lg">
+                <ArrowDownRight className="w-4 h-4 text-rose-600" />
+              </div>
+              <p className="text-xs font-black uppercase tracking-widest text-rose-600/80">Primary Expenses</p>
+            </div>
+            <div className="flex flex-col">
+              <h2 className="text-3xl font-black text-rose-950 flex items-baseline gap-2">
+                <span className="text-sm font-bold text-rose-600/40">DKK</span>
+                {stats.expenses.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </h2>
+              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-rose-50/50">
+                <span className="text-[10px] font-black text-rose-600/50 uppercase tracking-tighter">Excl. Slush Fund</span>
+                <span className="text-sm font-bold text-rose-700">DKK {stats.slush.toLocaleString()} Planned</span>
+              </div>
+            </div>
+
+          </CardContent>
+        </Card>
+
+        <Card className={`border-purple-100 bg-white shadow-sm overflow-hidden relative group transition-all hover:shadow-md`}>
+          <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity">
+            <Scale className="w-16 h-16 text-purple-600" />
+          </div>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 bg-purple-50 rounded-lg">
+                <Wallet className="w-4 h-4 text-purple-600" />
+              </div>
+              <p className="text-xs font-black uppercase tracking-widest text-purple-600/80">Net Profit / Loss</p>
+            </div>
+            <div className="flex flex-col">
+              <h2 className={`text-3xl font-black flex items-baseline gap-2 ${stats.pl >= 0 ? 'text-purple-950' : 'text-rose-950'}`}>
+                <span className="text-sm font-bold opacity-40">DKK</span>
+                {stats.pl.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </h2>
+              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-purple-50/50">
+                <span className="text-[10px] font-black text-purple-600/50 uppercase tracking-tighter">Annual Forecast</span>
+                <span className={`text-sm font-bold ${stats.pl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {stats.pl >= 0 ? '+ On Track' : '- Over Budget'}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <ProjectionChart
+        data={projectionData}
+        comparisonData={masterProjectionData}
+        title={activeScenarioId ? `Simulation: ${scenarios.find(s => s.id === activeScenarioId)?.name} vs Master` : `Projection for ${selectedYear}`}
+        activeLabel={activeScenarioId ? "Scenario" : "Projected"}
+        comparisonLabel="Master"
+      />
+
+      <div className="space-y-6">
+        {/* Income Sources Card */}
+        {incomeData.length > 0 && (
+          <Card key="income" className="shadow-sm border-emerald-100 bg-emerald-50/10 overflow-hidden rounded-3xl animate-in fade-in duration-500">
+            <div className="bg-emerald-50/50 border-b border-emerald-100 py-4 px-6 flex justify-between items-center">
+              <CardTitle className="text-xl text-emerald-800 flex items-center gap-2 font-bold">Projected Income</CardTitle>
+            </div>
+            <CardContent className="p-0">
+              <BudgetTable
+                data={incomeData as any}
+                type="income"
+                expandedCategories={expandedCategories}
+                toggleCategory={toggleCategory}
+                editingBudget={editingBudget}
+                setEditingBudget={setEditingBudget}
+                handleUpdateBudget={handleUpdateBudget}
+                totalIncome={totalBudgetedIncome}
+                currency={settings.currency}
+                selectedYear={parseInt(selectedYear)}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Feeder Budgets */}
+        {klintemarkenData.length > 0 && (
+          <Card key="klintemarken" className="shadow-sm border-blue-100 bg-blue-50/10 overflow-hidden rounded-3xl animate-in fade-in duration-500 delay-100">
+            <div className="bg-blue-50/50 border-b border-blue-100 py-4 px-6 flex justify-between items-center">
+              <CardTitle className="text-xl text-blue-800 flex items-center gap-2 font-bold">Projected Feeder</CardTitle>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => expandAll(klintemarkenData.map(d => d.name))} className="h-8 text-[10px] uppercase tracking-wider font-bold">Expand All</Button>
+                <Button variant="outline" size="sm" onClick={collapseAll} className="h-8 text-[10px] uppercase tracking-wider font-bold">Collapse All</Button>
+              </div>
+            </div>
+            <CardContent className="p-0">
+              <BudgetTable
+                data={klintemarkenData as any}
+                type="klintemarken"
+                hideHeader={true}
+                expandedCategories={expandedCategories}
+                toggleCategory={toggleCategory}
+                editingBudget={editingBudget}
+                setEditingBudget={setEditingBudget}
+                handleUpdateBudget={handleUpdateBudget}
+                totalIncome={totalBudgetedIncome}
+                currency={settings.currency}
+                selectedYear={parseInt(selectedYear)}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Primary Expenses Section (Only in Scenarios) */}
+        {activeScenarioId && budget?.category_groups?.expenditure && (
+          <Card key="expenses-top" className="shadow-sm border-rose-100 bg-rose-50/10 overflow-hidden rounded-3xl animate-in fade-in duration-500 delay-150">
+            <div className="bg-rose-50/50 border-b border-rose-100 py-4 px-6 flex justify-between items-center">
+              <CardTitle className="text-xl text-rose-800 flex items-center gap-2 font-bold">What-if: Primary Expenses</CardTitle>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => expandAll(budget.category_groups.expenditure.map(d => d.name))} className="h-8 text-[10px] uppercase tracking-wider font-bold">Expand All</Button>
+                <Button variant="outline" size="sm" onClick={collapseAll} className="h-8 text-[10px] uppercase tracking-wider font-bold">Collapse All</Button>
+              </div>
+            </div>
+            <CardContent className="p-0">
+              <BudgetTable
+                data={budget.category_groups.expenditure.map(cat => ({
+                  ...cat,
+                  // In scenario, show the projection value instead of budget if available
+                  sub_categories: cat.sub_categories.map(sub => {
+                    const proj = projections.find(p => p.category === cat.name && p.stream === sub.name);
+                    return proj ? { ...sub, budget_amount: proj.amount } : sub;
+                  })
+                })) as any}
+                type="expense"
+                hideHeader={true}
+                expandedCategories={expandedCategories}
+                toggleCategory={toggleCategory}
+                editingBudget={editingBudget}
+                setEditingBudget={setEditingBudget}
+                handleUpdateBudget={handleUpdateBudget}
+                totalIncome={totalBudgetedIncome}
+                currency={settings.currency}
+                selectedYear={parseInt(selectedYear)}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Slush Fund Section */}
+        <div key="slush-fund" className="animate-in fade-in duration-500 delay-200">
+          <SlushFundTransactionsTable
+            transactions={slushFundTransactions}
+            onDelete={handleDeleteTransaction}
+            onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
+            onAddClick={() => handleAddClick('expense')}
+            selectedYear={selectedYear}
+            showPastProjections={showPastProjections}
+          />
+        </div>
+      </div>
 
       <AddTransactionFormV2
         showForm={showAddForm}
@@ -348,22 +791,54 @@ const Projection = () => {
         onPasteClick={() => handlePasteClick(transactionType)}
       />
 
-      <div className="space-y-6 mt-6">
-        <IncomeTransactionsTable
-          transactions={incomeTransactions}
-          onDelete={handleDeleteTransaction}
-          onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
-          onAddClick={() => handleAddClick('income')}
-          selectedYear={selectedYear}
-        />
+      {/* Legacy Section */}
+      <div className="mt-12 pt-8 border-t border-gray-100">
+        <button
+          onClick={() => setShowLegacy(!showLegacy)}
+          className="flex items-center gap-2 text-gray-400 hover:text-gray-600 transition-colors mb-4 group"
+        >
+          {showLegacy ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          <span className="text-sm font-medium uppercase tracking-widest">Legacy Projections (Experimental)</span>
+        </button>
 
-        <ExpenseTransactionsTable
-          transactions={expenseTransactions}
-          onDelete={handleDeleteTransaction}
-          onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
-          onAddClick={() => handleAddClick('expense')}
-          selectedYear={selectedYear}
-        />
+        {showLegacy && (
+          <div className="space-y-6 animate-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500 max-w-2xl">
+                These are automated projections based on historical data. This feature is currently in preview and may not reflect manual budget adjustments.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => setShowWizard(true)}
+                className="gap-2 text-primary border-primary hover:bg-primary/10"
+              >
+                <Sparkles className="w-4 h-4" />
+                Suggest Projections
+              </Button>
+            </div>
+
+
+            <div className="space-y-6">
+              <IncomeTransactionsTable
+                transactions={incomeTransactions}
+                onDelete={handleDeleteTransaction}
+                onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
+                onAddClick={() => handleAddClick('income')}
+                selectedYear={selectedYear}
+                showPastProjections={showPastProjections}
+              />
+
+              <ExpenseTransactionsTable
+                transactions={expenseTransactions}
+                onDelete={handleDeleteTransaction}
+                onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
+                onAddClick={() => handleAddClick('expense')}
+                selectedYear={selectedYear}
+                showPastProjections={showPastProjections}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <PasteDataDialog
@@ -381,7 +856,13 @@ const Projection = () => {
           setShowWizard(false);
         }}
       />
-    </div>
+
+      <CreateScenarioDialog
+        open={showCreateScenario}
+        onOpenChange={setShowCreateScenario}
+        onSuccess={(id) => setActiveScenarioId(id)}
+      />
+    </div >
   );
 };
 

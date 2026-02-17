@@ -135,11 +135,15 @@ export const SourceApplyDialog = ({
         }
     }, [combinedData]);
 
-    // Find similar transactions
+    // Find similar transactions - DISABLED for performance (User Request)
+    // This was causing "Aw Snap" on large datasets. Similar transactions will be caught by "Pending Action" logic later.
     const similarMatches = useMemo(() => {
+        return [];
+        /* 
         if (!open) return [];
         const currentTxMock: any = { id: transaction.id, source: transaction.source, clean_source: transaction.clean_source, amount: transaction.amount };
         return findSimilarTransactions(currentTxMock, allTransactions, transaction.source);
+        */
     }, [open, transaction, allTransactions]);
 
     // Initialize selectedIds when similarMatches changes

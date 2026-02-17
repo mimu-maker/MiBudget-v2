@@ -54,7 +54,7 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
         try {
             const { data: transactions, error } = await supabase
                 .from('transactions')
-                .select('source, clean_source, amount, date, category, sub_category')
+                .select('merchant, clean_merchant, amount, date, category, sub_category')
                 .order('date', { ascending: false });
 
             if (error) throw error;
@@ -62,8 +62,8 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
             const groupsMap: Record<string, { source: string; rawSource: string; amount: number; dates: string[]; category: string; subCategory: string }> = {};
 
             transactions?.forEach(t => {
-                const cleanName = t.clean_source || '';
-                const rawName = t.source;
+                const cleanName = (t as any).clean_merchant || '';
+                const rawName = (t as any).merchant || '';
                 const displayName = cleanName || rawName;
 
                 const key = `${displayName}_${Math.round(t.amount)}`;

@@ -577,7 +577,7 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                     clean_source: rule.clean_name,
                     category: rule.category,
                     sub_category: rule.sub_category,
-                    status: canComplete ? 'Complete' : 'Pending Triage',
+                    status: rule.overrideStatus || (canComplete ? 'Complete' : 'Pending Triage'),
                     confidence: 1,
                     planned: rule.auto_planned ?? row.planned,
                     excluded: isExcluded

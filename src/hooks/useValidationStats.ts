@@ -42,11 +42,14 @@ export const useValidationStats = () => {
     // Reconciliation Logic
     // Filter for Pending Reconciliation items
     const pendingReconciliationItems = useMemo(() => {
-        return transactions.filter(t =>
-            (t.status === 'Pending Reconciliation' ||
-                t.status.startsWith('Pending: ') ||
-                !!t.entity) && !t.excluded && t.status !== 'Reconciled'
-        );
+        return transactions.filter(t => {
+            const status = t.status || '';
+            const isPending = status === 'Pending Reconciliation' ||
+                status.startsWith('Pending: ') ||
+                (status.startsWith('Pending ') && !['Pending Triage', 'Pending Categorisation', 'Pending Mapping', 'Pending Validation'].includes(status)) ||
+                !!t.entity;
+            return isPending && !t.excluded && status !== 'Reconciled';
+        });
     }, [transactions]);
 
     const reconciliationTotal = useMemo(() => {

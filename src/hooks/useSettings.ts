@@ -49,7 +49,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     budgetTypes: ['Budgeted', 'Special', 'Klintemarken', 'Exclude'],
     currency: 'DKK',
     darkMode: false,
-    noiseFilters: ['MC/VISA', 'VISA/DANKORT', 'DANKORT', 'NETBANK', 'VISA', 'MASTERCARD', 'OVERFØRSEL', 'DEPOT', 'DK', 'K', 'CARD', 'KØB', 'AUT.', 'ONLINE', 'WWW.', 'DK-NOTA', 'MobilePay:', 'SUMUP *', 'IZ *', 'SQUARE *', 'NETS', 'DANKORT-NOTA', 'BETALING', ' Dankort', 'Forretning:', 'FORRETNING:'],
+    noiseFilters: ['MC/VISA', 'VISA/DANKORT', 'DANKORT', 'NETBANK', 'VISA', 'MASTERCARD', 'OVERFØRSEL', 'DEPOT', 'DK', 'K', 'CARD', 'KØB', 'AUT.', 'ONLINE', 'WWW.', 'DK-NOTA', 'SUMUP *', 'IZ *', 'SQUARE *', 'NETS', 'DANKORT-NOTA', 'BETALING', ' Dankort', 'Forretning:', 'FORRETNING:'],
     updatedAt: new Date().toISOString()
 };
 

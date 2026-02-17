@@ -1,12 +1,13 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Sparkles, ChevronDown, ChevronRight, Edit3, Save, X } from 'lucide-react';
+import { Plus, Sparkles, ChevronDown, ChevronRight, Edit3, Save, X, Lightbulb } from 'lucide-react';
 import { FutureTransaction } from '@/types/projection';
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
+import { format } from 'date-fns';
 
-interface IncomeTransactionsTableProps {
+interface SlushFundTransactionsTableProps {
     transactions: FutureTransaction[];
     onDelete: (id: string | number) => void;
     onUpdate: (id: string | number, updates: any) => void;
@@ -15,18 +16,18 @@ interface IncomeTransactionsTableProps {
     showPastProjections: boolean;
 }
 
-const IncomeTransactionsTable = ({
+const SlushFundTransactionsTable = ({
     transactions,
     onDelete,
     onUpdate,
     onAddClick,
     selectedYear,
     showPastProjections
-}: IncomeTransactionsTableProps) => {
+}: SlushFundTransactionsTableProps) => {
     const [expandedIds, setExpandedIds] = useState<Set<string | number>>(new Set());
     const [editingOccurrence, setEditingOccurrence] = useState<{ id: string | number, monthKey: string, amount: string } | null>(null);
 
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
 
     const toggleExpand = (id: string | number) => {
         const next = new Set(expandedIds);
@@ -78,7 +79,7 @@ const IncomeTransactionsTable = ({
         if (!t) return;
 
         const newOverrides = { ...(t.overrides || {}) };
-        const numAmount = parseFloat(amount);
+        const numAmount = -Math.abs(parseFloat(amount));
 
         if (isNaN(numAmount)) return;
 
@@ -86,9 +87,12 @@ const IncomeTransactionsTable = ({
         onUpdate(id, { overrides: newOverrides });
         setEditingOccurrence(null);
     };
+
     // Filter out past projections if not requested
     const filteredTransactions = transactions.filter(t => {
         if (showPastProjections) return true;
+        // If it's recurring, we don't hide the "template" row based on date, we hide occurrences
+        // But for single transactions (recurring === 'N/A'), we hide based on date
         if (t.recurring === 'N/A') {
             return t.date >= todayStr;
         }
@@ -96,55 +100,60 @@ const IncomeTransactionsTable = ({
     });
 
     return (
-        <Card>
-            <CardHeader>
+        <Card className="border-purple-100 bg-purple-50/10 shadow-sm overflow-hidden rounded-2xl">
+            <CardHeader className="bg-purple-50/50 border-b border-purple-100 py-4 px-6">
                 <div className="flex items-center justify-between">
-                    <CardTitle>Projected Income</CardTitle>
+                    <div className="flex items-center gap-2">
+                        <div className="p-2 bg-purple-100 rounded-lg">
+                            <Lightbulb className="w-5 h-5 text-purple-600" />
+                        </div>
+                        <CardTitle className="text-purple-900 font-bold">Planned Slush Fund Expenses</CardTitle>
+                    </div>
                     <div className="flex gap-2">
                         <Button
                             variant="ghost"
                             size="sm"
                             onClick={onAddClick}
-                            className="h-8 w-8 p-0"
+                            className="h-8 w-8 p-0 text-purple-600 hover:bg-purple-100"
                         >
                             <Plus className="h-4 w-4" />
                         </Button>
                     </div>
                 </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
-                            <tr className="border-b-2 border-gray-400 bg-gray-200">
-                                <th className="text-left py-3 px-4 font-bold text-gray-900">Date</th>
-                                <th className="text-left py-3 px-4 font-bold text-gray-900">Stream</th>
-                                <th className="text-right py-3 px-4 font-bold text-gray-900">Projected</th>
-                                <th className="text-right py-3 px-4 font-bold text-gray-900">Actual</th>
-                                <th className="text-right py-3 px-4 font-bold text-gray-900">Deviation</th>
-                                <th className="text-center py-3 px-4 font-bold text-gray-900">Actions</th>
+                            <tr className="border-b-2 border-purple-200 bg-purple-50/50">
+                                <th className="text-left py-3 px-6 font-bold text-purple-900 text-xs uppercase tracking-wider">Date</th>
+                                <th className="text-left py-3 px-4 font-bold text-purple-900 text-xs uppercase tracking-wider">Stream</th>
+                                <th className="text-right py-3 px-4 font-bold text-purple-900 text-xs uppercase tracking-wider">Projected</th>
+                                <th className="text-right py-3 px-4 font-bold text-purple-900 text-xs uppercase tracking-wider">Actual</th>
+                                <th className="text-right py-3 px-4 font-bold text-purple-900 text-xs uppercase tracking-wider">Deviation</th>
+                                <th className="text-center py-3 px-4 font-bold text-purple-900 text-xs uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredTransactions.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="text-center py-8 text-gray-500">
-                                        No income transactions planned. Click + to add one.
+                                    <td colSpan={6} className="text-center py-12 text-purple-400 italic">
+                                        No slush fund expenses planned. Click + to add one.
                                     </td>
                                 </tr>
                             ) : (
                                 Object.entries(
                                     filteredTransactions.reduce((groups, tx) => {
-                                        const stream = tx.stream || 'Other';
+                                        const stream = tx.stream || tx.category || 'Other';
                                         if (!groups[stream]) groups[stream] = [];
                                         groups[stream].push(tx);
                                         return groups;
                                     }, {} as Record<string, FutureTransaction[]>)
                                 ).map(([stream, streamTxs]) => (
                                     <React.Fragment key={stream}>
-                                        <tr className="bg-gray-50/50">
-                                            <td colSpan={6} className="py-2 px-4 text-xs font-black uppercase tracking-wider text-gray-500 border-b border-gray-200">
-                                                Stream: {stream}
+                                        <tr className="bg-purple-50/30">
+                                            <td colSpan={6} className="py-2 px-6 text-[10px] font-black uppercase tracking-widest text-purple-500 border-b border-purple-100">
+                                                Category: {stream}
                                             </td>
                                         </tr>
                                         {streamTxs
@@ -165,36 +174,36 @@ const IncomeTransactionsTable = ({
                                                     occurrences = occurrences.filter(occ => occ.date >= todayStr);
                                                 }
 
-                                                const actual = transaction.actual_amount || 0;
-                                                const deviation = actual - transaction.amount;
+                                                const actual = Math.abs(transaction.actual_amount || 0);
+                                                const deviation = actual - Math.abs(transaction.amount);
 
                                                 return (
                                                     <React.Fragment key={transaction.id}>
-                                                        <tr className="border-b border-gray-200 hover:bg-gray-50 group">
-                                                            <td className="py-3 px-4 text-sm font-semibold flex items-center gap-1">
+                                                        <tr className="border-b border-purple-50 hover:bg-purple-50/50 group transition-colors">
+                                                            <td className="py-3 px-6 text-sm font-semibold flex items-center gap-2">
                                                                 {isRecurring && (
-                                                                    <button onClick={() => toggleExpand(transaction.id)} className="p-1 hover:bg-gray-200 rounded">
+                                                                    <button onClick={() => toggleExpand(transaction.id)} className="p-1 hover:bg-purple-100 rounded text-purple-600 transition-colors">
                                                                         {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                                                                     </button>
                                                                 )}
-                                                                {dateDisplay}
+                                                                <span className="text-purple-900">{dateDisplay}</span>
                                                             </td>
                                                             <td className="py-3 px-4">
                                                                 <div className="font-medium flex items-center gap-2">
-                                                                    {transaction.source || transaction.stream || 'Unknown'}
+                                                                    <span className="text-purple-900">{transaction.source || transaction.stream || 'Unknown'}</span>
                                                                     {transaction.is_matched && (
                                                                         <Sparkles className="w-3 h-3 text-amber-500" />
                                                                     )}
-                                                                    {isRecurring && <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded font-bold uppercase">{transaction.recurring}</span>}
+                                                                    {isRecurring && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">{transaction.recurring}</span>}
                                                                 </div>
                                                             </td>
-                                                            <td className="py-3 px-4 text-right font-semibold">
-                                                                DKK {transaction.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                            <td className="py-3 px-4 text-right font-bold text-purple-900">
+                                                                DKK {Math.abs(transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                             </td>
-                                                            <td className="py-3 px-4 text-right font-semibold text-green-600">
+                                                            <td className="py-3 px-4 text-right font-bold text-emerald-600">
                                                                 {actual !== 0 ? `DKK ${actual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
                                                             </td>
-                                                            <td className={`py-3 px-4 text-right font-semibold ${deviation > 0 ? 'text-green-600' : deviation < 0 ? 'text-red-600' : ''
+                                                            <td className={`py-3 px-4 text-right font-bold ${deviation > 0 ? 'text-emerald-600' : deviation < 0 ? 'text-rose-600' : 'text-purple-300'
                                                                 }`}>
                                                                 {actual !== 0 ? `${deviation >= 0 ? '' : '-'}DKK ${Math.abs(deviation).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
                                                             </td>
@@ -203,7 +212,7 @@ const IncomeTransactionsTable = ({
                                                                     variant="ghost"
                                                                     size="sm"
                                                                     onClick={() => onDelete(transaction.id)}
-                                                                    className="text-red-600 hover:bg-red-50 text-xs"
+                                                                    className="text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-colors h-8 px-3 rounded-lg"
                                                                 >
                                                                     Delete
                                                                 </Button>
@@ -214,30 +223,30 @@ const IncomeTransactionsTable = ({
                                                             const isEditing = editingOccurrence?.id === transaction.id && editingOccurrence?.monthKey === occ.monthKey;
 
                                                             return (
-                                                                <tr key={`${transaction.id}-${occ.monthKey}`} className="bg-gray-50/30 border-b border-gray-100 italic text-xs">
-                                                                    <td className="py-2 px-8 text-gray-500">{occ.date}</td>
-                                                                    <td className="py-2 px-4 text-gray-500 flex items-center gap-2">
+                                                                <tr key={`${transaction.id}-${occ.monthKey}`} className="bg-purple-50/20 border-b border-purple-50/50 italic text-xs">
+                                                                    <td className="py-2 px-10 text-purple-400">{occ.date}</td>
+                                                                    <td className="py-2 px-4 text-purple-400 flex items-center gap-2">
                                                                         Occurrence
-                                                                        {override && <span className="text-[10px] bg-amber-100 text-amber-700 px-1 rounded font-bold">AMENDED</span>}
+                                                                        {override && <span className="text-[9px] bg-amber-100 text-amber-700 px-1 rounded font-bold uppercase">Amended</span>}
                                                                     </td>
                                                                     <td className="py-2 px-4 text-right">
                                                                         {isEditing ? (
                                                                             <div className="flex items-center justify-end gap-1">
                                                                                 <Input
-                                                                                    className="h-6 w-24 text-xs py-0"
+                                                                                    className="h-7 w-24 text-[10px] py-0 border-purple-200 focus-visible:ring-purple-500"
                                                                                     value={editingOccurrence.amount}
                                                                                     onChange={(e) => setEditingOccurrence({ ...editingOccurrence, amount: e.target.value })}
                                                                                     autoFocus
                                                                                 />
-                                                                                <button onClick={() => handleSaveOverride(transaction.id, occ.monthKey, editingOccurrence.amount)} className="text-green-600"><Save className="w-3 h-3" /></button>
-                                                                                <button onClick={() => setEditingOccurrence(null)} className="text-gray-400"><X className="w-3 h-3" /></button>
+                                                                                <button onClick={() => handleSaveOverride(transaction.id, occ.monthKey, editingOccurrence.amount)} className="text-emerald-600 p-1 hover:bg-emerald-50 rounded"><Save className="w-3.5 h-3.5" /></button>
+                                                                                <button onClick={() => setEditingOccurrence(null)} className="text-purple-300 p-1 hover:bg-purple-50 rounded"><X className="w-3.5 h-3.5" /></button>
                                                                             </div>
                                                                         ) : (
                                                                             <div className="flex items-center justify-end gap-2 group/row">
-                                                                                <span>DKK {(override?.amount ?? transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                                                                <span className="font-semibold text-purple-700">DKK {Math.abs(override?.amount ?? transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                                                 <button
-                                                                                    onClick={() => setEditingOccurrence({ id: transaction.id, monthKey: occ.monthKey, amount: (override?.amount ?? transaction.amount).toString() })}
-                                                                                    className="opacity-0 group-hover/row:opacity-100 text-primary p-0.5 hover:bg-primary/10 rounded"
+                                                                                    onClick={() => setEditingOccurrence({ id: transaction.id, monthKey: occ.monthKey, amount: Math.abs(override?.amount ?? transaction.amount).toString() })}
+                                                                                    className="opacity-0 group-hover/row:opacity-100 text-purple-500 p-1 hover:bg-purple-100 rounded transition-all"
                                                                                 >
                                                                                     <Edit3 className="w-3 h-3" />
                                                                                 </button>
@@ -262,4 +271,4 @@ const IncomeTransactionsTable = ({
     );
 };
 
-export default IncomeTransactionsTable;
+export default SlushFundTransactionsTable;

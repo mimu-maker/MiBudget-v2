@@ -214,7 +214,7 @@ const useInfiniteTransactions = (sortBy: keyof Transaction, sortOrder: 'asc' | '
           const hasPendingRecon = filterValue.includes('Pending Reconciliation');
           if (hasPendingRecon) {
             const safeValues = filterValue.map(v => `"${v}"`).join(',');
-            query = query.or(`status.in.(${safeValues}),status.ilike."Pending: %"`);
+            query = query.or(`status.in.(${safeValues}),status.ilike.Pending %`);
             return;
           }
         }
@@ -336,7 +336,7 @@ const useTransactionCounts = (filters: Record<string, any>) => {
           const hasPendingRecon = filterValue.includes('Pending Reconciliation');
           if (hasPendingRecon) {
             const safeValues = filterValue.map(v => `"${v}"`).join(',');
-            filteredQuery = filteredQuery.or(`status.in.(${safeValues}),status.ilike."Pending: %"`);
+            filteredQuery = filteredQuery.or(`status.in.(${safeValues}),status.ilike.Pending %`);
             return;
           }
         }
@@ -390,9 +390,18 @@ const useTransactionCounts = (filters: Record<string, any>) => {
 
       if (filteredError) throw filteredError;
 
+      // 3. Filtered Sum (using a separate query to get all amounts for summation)
+      // We don't use RPC here to avoid database-side changes, and we select ONLY the amount column to keep it light.
+      const { data: sumData, error: sumError } = await filteredQuery.select('amount');
+
+      if (sumError) throw sumError;
+
+      const filteredSum = (sumData || []).reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
+
       return {
         total: totalCount || 0,
-        filtered: filteredCount || 0
+        filtered: filteredCount || 0,
+        filteredSum
       };
     },
     staleTime: 30000,
@@ -942,6 +951,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
     filters,
     totalCount,
     filteredCount,
+    filteredSum: counts?.filteredSum || 0,
     hasActiveFilters: Object.keys(filters).length > 0,
     editingCell,
     setEditingCell,

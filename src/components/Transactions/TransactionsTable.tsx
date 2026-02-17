@@ -25,6 +25,7 @@ import {
 import { useSettings, APP_STATUSES } from '@/hooks/useSettings';
 import { useGroupedCategories } from '@/hooks/useBudgetCategories'; // Import the hook
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { formatCurrency } from '@/lib/formatUtils';
 
 export const TransactionsTable = () => {
   const {
@@ -60,6 +61,7 @@ export const TransactionsTable = () => {
     isFetchingNextPage,
     totalCount,
     filteredCount,
+    filteredSum,
     hasActiveFilters,
     isSaving
   } = useTransactionTable();
@@ -183,6 +185,11 @@ export const TransactionsTable = () => {
         <CardHeader className="py-6 px-6 shrink-0 flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-2xl font-bold text-foreground">
             All Transactions ({hasActiveFilters ? `${filteredCount} of ${totalCount}` : totalCount})
+            {hasActiveFilters && (
+              <span className="ml-2 text-muted-foreground font-medium text-lg">
+                → {formatCurrency(filteredSum, settings.currency)}
+              </span>
+            )}
           </CardTitle>
           <Button
             size="lg"

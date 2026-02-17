@@ -129,7 +129,7 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
             const subcategorySums: Record<string, number> = {};
             monthTransactions.forEach(t => {
                 if (t.amount < 0) {
-                    const sub = t.subCategory || t.category || 'Other';
+                    const sub = t.sub_category || t.category || 'Other';
                     subcategorySums[sub] = (subcategorySums[sub] || 0) + Math.abs(t.amount);
                 }
             });

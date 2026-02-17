@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -15,7 +15,8 @@ import { cn } from '@/lib/utils';
 import { useProfile } from '@/contexts/ProfileContext';
 
 export const SpecialOverview = () => {
-  const { transactions } = useTransactionTable();
+  // Use mode: 'all' to ensure we get ALL transactions for correct totals and analytics
+  const { transactions } = useTransactionTable({ mode: 'all' });
   const { settings } = useSettings();
   const { selectedPeriod, customDateRange, includeSpecial } = usePeriod();
   const { userProfile } = useProfile();
@@ -24,7 +25,9 @@ export const SpecialOverview = () => {
   const amountFormat = userProfile?.amount_format || 'dot_decimal';
 
   // Filter for 'Special' budget type
-  const { budget: budgetData } = useAnnualBudget(new Date().getFullYear()); // Use current year for category mapping
+  const currentYear = new Date().getFullYear();
+  const budgetYear = selectedPeriod === 'Last Year' ? currentYear - 1 : currentYear;
+  const { budget: budgetData } = useAnnualBudget(budgetYear);
 
   // Filter for 'Special' budget type OR categories in the 'special' group
   const specialTransactions = useMemo(() => {
@@ -63,9 +66,17 @@ export const SpecialOverview = () => {
         name: subName,
         amount: subData.amount,
         transactions: subData.count
-      }))
+      })).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
     })).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
   }, [specialTransactions]);
+
+  // Default expansion logic
+  useEffect(() => {
+    if (categories.length > 0) {
+      // Expand all categories by default as per requirement
+      setExpandedCategories(new Set(categories.map(c => c.name)));
+    }
+  }, [categories.length]); // Only run when category count changes (initial load/filter change)
 
   // Special trend - group by month
   const trendData = useMemo(() => {
@@ -118,7 +129,7 @@ export const SpecialOverview = () => {
 
   // Adjust total period budget based on selected period
   const periodBudget = useMemo(() => {
-    if (selectedPeriod === 'All') return slushBudgetAccount * 12;
+    if (selectedPeriod === 'All' || selectedPeriod === 'Last Year') return slushBudgetAccount * 12;
     if (selectedPeriod === 'Year to Date') {
       const months = new Date().getMonth() + 1;
       return slushBudgetAccount * months;
@@ -132,56 +143,25 @@ export const SpecialOverview = () => {
     return slushBudgetAccount; // Default to monthly
   }, [slushBudgetAccount, selectedPeriod, customDateRange]);
 
+  const periodSpent = useMemo(() => {
+    return Math.abs(specialTransactions.filter(t => t.amount < 0).reduce((sum, t) => sum + t.amount, 0));
+  }, [specialTransactions]);
+
+  const periodDiff = periodBudget - periodSpent;
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-purple-500/10 to-purple-500/5 group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <PiggyBank className="w-16 h-16 text-purple-500" />
-          </div>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-black text-purple-600/70 uppercase tracking-[0.2em]">Slush Fund Net</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className={cn("text-3xl font-black tracking-tight", totalAmount >= 0 ? "text-emerald-500" : "text-rose-500")}>
-              {totalAmount >= 0 ? '+' : ''}{formatCurrency(totalAmount, settings.currency, amountFormat)}
-            </div>
-            <div className="mt-2 text-[10px] font-bold text-purple-600/60 uppercase">
-              Balance change this period
-            </div>
-          </CardContent>
-        </Card>
-
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-indigo-500/10 to-indigo-500/5 group">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <Star className="w-16 h-16 text-indigo-500" />
           </div>
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-black text-indigo-600/70 uppercase tracking-[0.2em]">Fund Budget</CardTitle>
+            <CardTitle className="text-xs font-black text-indigo-600/70 uppercase tracking-[0.2em]">Budgeted ({selectedPeriod})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-black text-indigo-500 tracking-tight">
               {formatCurrency(periodBudget, settings.currency, amountFormat)}
-            </div>
-            <div className="mt-2 text-[10px] font-bold text-indigo-600/60 uppercase">
-              Budgeted for this period
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-amber-500/10 to-amber-500/5 group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <TrendingUp className="w-16 h-16 text-amber-500" />
-          </div>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-black text-amber-600/70 uppercase tracking-[0.2em]">Total Inflow</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-black text-emerald-500 tracking-tight">
-              {formatCurrency(specialTransactions.filter(t => t.amount > 0).reduce((sum, t) => sum + t.amount, 0), settings.currency, amountFormat)}
-            </div>
-            <div className="mt-2 text-[10px] font-bold text-amber-600/60 uppercase">
-              Slush Fund Income / Transfers In
             </div>
           </CardContent>
         </Card>
@@ -191,14 +171,28 @@ export const SpecialOverview = () => {
             <TrendingDown className="w-16 h-16 text-rose-500" />
           </div>
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-black text-rose-600/70 uppercase tracking-[0.2em]">Total Outflow</CardTitle>
+            <CardTitle className="text-xs font-black text-rose-600/70 uppercase tracking-[0.2em]">Spent ({selectedPeriod})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-black text-rose-500 tracking-tight">
-              {formatCurrency(specialTransactions.filter(t => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0), settings.currency, amountFormat)}
+              {formatCurrency(periodSpent, settings.currency, amountFormat)}
             </div>
-            <div className="mt-2 text-[10px] font-bold text-rose-600/60 uppercase">
-              Slush Fund Expenses / Transfers Out
+          </CardContent>
+        </Card>
+
+        <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-purple-500/10 to-purple-500/5 group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <PiggyBank className="w-16 h-16 text-purple-500" />
+          </div>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-black text-purple-600/70 uppercase tracking-[0.2em]">Difference</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className={cn("text-3xl font-black tracking-tight", periodDiff >= 0 ? "text-emerald-500" : "text-rose-500")}>
+              {periodDiff >= 0 ? '+' : ''}{formatCurrency(periodDiff, settings.currency, amountFormat)}
+            </div>
+            <div className="mt-2 text-[10px] font-bold text-purple-600/60 uppercase">
+              {periodDiff >= 0 ? 'Under Budget' : 'Over Budget'}
             </div>
           </CardContent>
         </Card>
@@ -235,7 +229,7 @@ export const SpecialOverview = () => {
                     <div className="px-4 pb-4 mt-2 animate-in slide-in-from-top-2 duration-300">
                       <div className="space-y-2 border-t border-border/30 pt-4">
                         {category.subcategories.map((subcat) => (
-                          <div key={subcat.name} className="flex items-center justify-between py-3 px-5 bg-background/80 rounded-xl border border-border/50 shadow-sm hover:border-purple-500/30 transition-colors">
+                          <div key={subcat.name} className="relative flex items-center justify-between py-3 px-5 bg-background/80 rounded-xl border border-border/50 shadow-sm hover:border-purple-500/30 transition-colors overflow-hidden">
                             <div className="flex items-center gap-3">
                               <Star className="w-3 h-3 text-purple-400" />
                               <div>
@@ -245,6 +239,14 @@ export const SpecialOverview = () => {
                             </div>
                             <div className={`font-black text-sm ${subcat.amount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                               {subcat.amount >= 0 ? '+' : ''}{formatCurrency(subcat.amount, settings.currency, amountFormat)}
+                            </div>
+
+                            {/* Progress Bar for Spend Percentage (relative to category total) */}
+                            <div className="absolute bottom-0 left-0 h-1 bg-purple-500/20 w-full overflow-hidden rounded-b-xl">
+                              <div
+                                className="h-full bg-purple-500/60"
+                                style={{ width: `${category.total !== 0 ? Math.min(100, Math.abs((subcat.amount / category.total) * 100)) : 0}%` }}
+                              />
                             </div>
                           </div>
                         ))}
@@ -272,12 +274,19 @@ export const SpecialOverview = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={trendData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartColors.grid} />
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: chartColors.text, fontSize: 12, fontWeight: 'bold' }} />
+                  <XAxis
+                    dataKey="month"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: chartColors.text, fontSize: 12, fontWeight: 'bold' }}
+                    label={{ value: 'Month', position: 'insideBottom', offset: -10, fill: chartColors.text, fontSize: 10, fontWeight: 'bold' }}
+                  />
                   <YAxis
                     axisLine={false}
                     tickLine={false}
                     tick={{ fill: chartColors.text, fontSize: 10, fontWeight: 'bold' }}
                     tickFormatter={(val) => !val ? '0' : formatCurrency(val, settings.currency).split(' ')[0].split('.')[0].split(',')[0]}
+                    label={{ value: 'Amount', angle: -90, position: 'insideLeft', fill: chartColors.text, fontSize: 10, fontWeight: 'bold' }}
                   />
                   <Tooltip
                     contentStyle={{
@@ -297,8 +306,8 @@ export const SpecialOverview = () => {
                       dataKey={cat}
                       stroke={['#a855f7', '#3b82f6', '#10b981', '#f59e0b', '#f43f5e'][i % 5]}
                       strokeWidth={4}
-                      dot={{ r: 4, strokeWidth: 2, stroke: settings.darkMode ? '#0f172a' : '#fff' }}
-                      activeDot={{ r: 6, strokeWidth: 2, stroke: settings.darkMode ? '#0f172a' : '#fff' }}
+                      dot={{ r: 4, strokeWidth: 2, stroke: settings.darkMode ? '#fff' : '#000', fill: ['#a855f7', '#3b82f6', '#10b981', '#f59e0b', '#f43f5e'][i % 5] }}
+                      activeDot={{ r: 6, strokeWidth: 2, stroke: settings.darkMode ? '#fff' : '#000', fill: ['#a855f7', '#3b82f6', '#10b981', '#f59e0b', '#f43f5e'][i % 5] }}
                       connectNulls
                     />
                   ))}

@@ -9,26 +9,23 @@ import { cn } from '@/lib/utils';
 import BudgetSankey from '@/components/Budget/BudgetSankey';
 
 export const MainOverview = () => {
-  const [localIncludeCore, setLocalIncludeCore] = useState(true);
-  const [localIncludeSpecial, setLocalIncludeSpecial] = useState(false);
-  const [localIncludeKlintemarken, setLocalIncludeKlintemarken] = useState(false);
+  const [localIncludeSpecial, setLocalIncludeSpecial] = useState(true);
+  const [localIncludeKlintemarken, setLocalIncludeKlintemarken] = useState(true);
   const [flowTab, setFlowTab] = useState<'cashflow' | 'categoryflow'>('cashflow');
 
-  const toggleFilter = (type: 'core' | 'special' | 'klintemarken') => {
-    const isCore = type === 'core';
+  const toggleFilter = (type: 'special' | 'klintemarken') => {
     const isSpecial = type === 'special';
     const isKlintemarken = type === 'klintemarken';
 
     // Current state
-    const current = isCore ? localIncludeCore : isSpecial ? localIncludeSpecial : localIncludeKlintemarken;
+    const current = isSpecial ? localIncludeSpecial : localIncludeKlintemarken;
 
     // If turning off, check if it's the last one enabled
     if (current) {
-      const activeCount = (localIncludeCore ? 1 : 0) + (localIncludeSpecial ? 1 : 0) + (localIncludeKlintemarken ? 1 : 0);
+      const activeCount = (localIncludeSpecial ? 1 : 0) + (localIncludeKlintemarken ? 1 : 0);
       if (activeCount <= 1) return; // Prevent disabling the last one
     }
 
-    if (isCore) setLocalIncludeCore(!localIncludeCore);
     if (isSpecial) setLocalIncludeSpecial(!localIncludeSpecial);
     if (isKlintemarken) setLocalIncludeKlintemarken(!localIncludeKlintemarken);
   };
@@ -47,7 +44,7 @@ export const MainOverview = () => {
     budgetData,
     flowFiltered,
   } = useOverviewData({
-    includeCore: localIncludeCore,
+    includeCore: false,
     includeSpecial: localIncludeSpecial,
     includeKlintemarken: localIncludeKlintemarken
   });
@@ -126,9 +123,9 @@ export const MainOverview = () => {
   // Replicating for now as it's specific to Sankey view.
   const categoriesWithActuals = budgetData?.categories
     .filter(cat => {
-      if (!localIncludeCore && (cat.category_group === 'income' || cat.category_group === 'expenditure')) return false;
-      if (!localIncludeSpecial && cat.category_group === 'special') return false;
-      if (!localIncludeKlintemarken && cat.category_group === 'klintemarken') return false;
+      if (cat.category_group === 'special' && !localIncludeSpecial) return false;
+      if (cat.category_group === 'klintemarken' && !localIncludeKlintemarken) return false;
+      if (cat.category_group !== 'special' && cat.category_group !== 'klintemarken') return false;
       return true;
     })
     .map(cat => {
@@ -264,20 +261,7 @@ export const MainOverview = () => {
               </div>
 
               <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => toggleFilter('core')}
-                  className={cn(
-                    "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
-                    localIncludeCore
-                      ? "bg-slate-500/10 border-slate-500/20 text-slate-600 dark:text-slate-400 hover:bg-slate-500/20"
-                      : "bg-background border-border text-muted-foreground hover:bg-accent"
-                  )}
-                >
-                  <LucideIcons.Home className={cn("w-3 h-3", localIncludeCore ? "fill-slate-500/50" : "")} />
-                  CORE
-                </Button>
+
                 <Button
                   variant="outline"
                   size="sm"

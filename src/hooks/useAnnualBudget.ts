@@ -178,23 +178,38 @@ export const useAnnualBudget = (year?: number) => {
       }
 
       // 2.5 FETCH ACTUAL TRANSACTIONS for spent calculation (Frontend Override)
-      // This ensures we use budget_month instead of transaction date
-      const { data: yearTransactions, error: fetchError } = await (supabase as any)
-        .from('transactions')
-        .select('amount, category, sub_category, budget_month, budget, date, status, budget_year')
-        .eq('user_id', user.id)
-        .not('budget', 'eq', 'Exclude')
-        .or(`budget_year.eq.${targetYear},and(budget_month.gte.${targetYear}-01-01,budget_month.lte.${targetYear}-12-31)`);
+      let allYearTransactions: any[] = [];
+      let from = 0;
+      const CHUNK_SIZE = 1000;
+      let hasMore = true;
 
-      if (fetchError) {
-        console.warn('Error fetching budget transactions:', fetchError.message);
+      while (hasMore) {
+        const { data: chunk, error: fetchError } = await (supabase as any)
+          .from('transactions')
+          .select('*')
+          .eq('user_id', user.id)
+          .not('budget', 'eq', 'Exclude')
+          .or(`budget_year.eq.${targetYear},and(budget_month.gte."${targetYear}-01-01",budget_month.lte."${targetYear}-12-31"),and(date.gte."${targetYear}-01-01T00:00:00Z",date.lte."${targetYear}-12-31T23:59:59Z")`)
+          .range(from, from + CHUNK_SIZE - 1);
+
+        if (fetchError) {
+          console.warn('Error fetching budget transactions chunk:', fetchError.message);
+          hasMore = false;
+        } else if (chunk && chunk.length > 0) {
+          allYearTransactions = [...allYearTransactions, ...chunk];
+          if (chunk.length < CHUNK_SIZE) hasMore = false;
+          else from += CHUNK_SIZE;
+        } else {
+          hasMore = false;
+        }
       }
 
-      // Map to standardized Transaction structure (matches useTransactionTable)
-      const transactions = (yearTransactions || []).map((t: any) => {
-        // Compatibility logic
-        const sourceName = t.source || t.merchant || 'Unknown';
+      console.log(`[useAnnualBudget] Total Transactions Fetched for ${targetYear}:`, allYearTransactions.length);
+      const yearTransactions = allYearTransactions;
 
+      // Map to standardized Transaction structure
+      const transactions = (yearTransactions || []).map((t: any) => {
+        const sourceName = t.source || t.merchant || 'Unknown';
         let budget_month = t.budget_month;
         let budget_year = t.budget_year;
 
@@ -211,13 +226,24 @@ export const useAnnualBudget = (year?: number) => {
           source: sourceName,
           budget_month,
           budget_year,
-          category: t.category || 'Uncategorized',
-          subCategory: t.sub_category || '', // Standardize to camelCase
+          category: (t.category || 'Uncategorized').trim(),
+          subCategory: (t.sub_category || '').trim(),
         };
       }).filter((t: any) => {
-        // Double check it's in the target year
-        return t.budget_month && t.budget_month.startsWith(`${targetYear}-`);
+        const isMatch = t.budget_month && t.budget_month.startsWith(`${targetYear}-`);
+        return isMatch;
       });
+
+      if (targetYear === 2025) {
+        const totalAfterFilter = transactions.length;
+        const groceries = transactions.filter(t => t.category === 'Food' && t.subCategory === 'Groceries');
+        console.log('[useAnnualBudget 2025 DEBUG]:', {
+          totalFetched: yearTransactions?.length,
+          totalAfterYearFilter: totalAfterFilter,
+          groceriesCount: groceries.length,
+          groceriesSum: groceries.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+        });
+      }
 
       // Fetch last year hierarchical data if exists
       let lastYearHierarchicalMap: Record<string, any> = {};
@@ -273,15 +299,27 @@ export const useAnnualBudget = (year?: number) => {
             const subBudget = hSub?.budget_amount ?? 0;
 
             // Recalculate spent locally
-            const subSpent = transactions
+            const subNet = transactions
               .filter(t => t.category === cat.name && t.subCategory === sub.name)
-              .reduce((sum, t) => {
-                const amount = Number(t.amount) || 0;
-                if (isIncome) {
-                  return sum + (amount > 0 ? amount : 0);
-                }
-                return sum + (amount < 0 ? Math.abs(amount) : 0);
-              }, 0);
+              .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+            if (sub.name === 'Groceries' && cat.name === 'Food') {
+              const txs = transactions.filter(t => t.category === cat.name && t.subCategory === sub.name);
+              const neg = txs.reduce((s, t) => s + (Number(t.amount) < 0 ? Number(t.amount) : 0), 0);
+              const pos = txs.reduce((s, t) => s + (Number(t.amount) > 0 ? Number(t.amount) : 0), 0);
+              console.log(`[DEBUG GROCERIES ${targetYear}]:`, {
+                count: txs.length,
+                net: subNet,
+                negSum: neg,
+                posSum: pos,
+                oldCalc: Math.abs(neg),
+                newCalc: subNet * -1,
+                isExpenditure: !isIncome,
+                sample: txs.slice(0, 5).map(t => ({ date: t.date, desc: t.description || t.source, amt: t.amount, bm: t.budget_month, by: t.budget_year }))
+              });
+            }
+
+            const subSpent = isIncome ? subNet : (subNet * -1);
 
             const isActive = hSub ? (hSub.is_active !== false) : true;
 
@@ -307,15 +345,11 @@ export const useAnnualBudget = (year?: number) => {
         const subTotalBudget = subCategories.reduce((sum, sub) => sum + sub.budget_amount, 0);
 
         // Recalculate category-level spent locally
-        const catSpent = transactions
+        const catNet = transactions
           .filter(t => t.category === cat.name)
-          .reduce((sum, t) => {
-            const amount = Number(t.amount) || 0;
-            if (isIncome) {
-              return sum + (amount > 0 ? amount : 0);
-            }
-            return sum + (amount < 0 ? Math.abs(amount) : 0);
-          }, 0);
+          .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+        const catSpent = isIncome ? catNet : (catNet * -1);
 
         // Map last year's data for top-level category
         const lastYearCat = lastYearHierarchicalMap[cat.id];

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { VirtualList } from '@/components/ui/virtual-list';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Check, HelpCircle, Zap, Store, History, ChevronRight, ChevronDown, ChevronUp, Edit2, Search, Split, RefreshCw, AlertTriangle, Trash2, PlusCircle, PartyPopper, Sparkles, LayoutGrid, ListFilter, Tag, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatDate } from '@/lib/formatUtils';
@@ -42,8 +43,8 @@ const RuleForm = ({ rule, setRule, onSave, onCancel, getSubCategoryList }: any) 
     const [showErrors, setShowErrors] = useState(false);
     if (!rule) return null;
 
-    const validateAndSave = () => {
-        onSave();
+    const validateAndSave = (status?: string) => {
+        onSave(status);
     };
 
     const subCats = getSubCategoryList(rule.category);
@@ -106,7 +107,14 @@ const RuleForm = ({ rule, setRule, onSave, onCancel, getSubCategoryList }: any) 
 
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                 <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-                <Button onClick={validateAndSave} className="bg-blue-600 hover:bg-blue-700 font-bold">Apply Rule</Button>
+                <Button
+                    onClick={() => validateAndSave('Pending Reconciliation')}
+                    className="bg-white border-blue-200 text-blue-700 hover:bg-blue-50 font-bold h-10 px-6 text-sm flex items-center gap-2"
+                >
+                    <History className="w-4 h-4" />
+                    Recon
+                </Button>
+                <Button onClick={() => validateAndSave()} className="bg-blue-600 hover:bg-blue-700 font-bold">Apply Rule</Button>
             </div>
         </div>
     );
@@ -145,7 +153,7 @@ export const TriageAccordion = ({
     const { userProfile } = useProfile();
     const [expandedSource, setExpandedSource] = useState<string | null>(null);
     const [selectedSourceRule, setSelectedSourceRule] = useState<any | null>(null);
-    const [categorisationEdits, setCategorisationEdits] = useState<Record<string, { category: string, sub_category: string }>>({});
+    const [categorisationEdits, setCategorisationEdits] = useState<Record<string, { category: string, sub_category: string, status?: string }>>({});
     const [showAllAudit, setShowAllAudit] = useState(false);
     const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
     const [confirmingKeepGroupId, setConfirmingKeepGroupId] = useState<string | null>(null);
@@ -216,8 +224,8 @@ export const TriageAccordion = ({
         [transactions, duplicateIds]);
 
     const pendingValidation = useMemo(() =>
-        // confidence > 0 and has cat/subcat
-        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && tx.status !== 'Complete' && !duplicateIds.has(tx.id)),
+        // confidence > 0 and has cat/subcat - hidden if 'Pending Reconciliation' or 'Complete'
+        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && tx.status !== 'Complete' && tx.status !== 'Pending Reconciliation' && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
     const groupedAuditLog = useMemo(() => {
@@ -329,8 +337,12 @@ export const TriageAccordion = ({
         if (inline) setExpandedSource(txs[0].id);
     };
 
-    const handleSaveRuleInternal = () => {
-        onSaveRule(selectedSourceRule);
+    const handleSaveRuleInternal = (status?: string) => {
+        if (typeof status === 'string') {
+            onSaveRule({ ...selectedSourceRule, overrideStatus: status });
+        } else {
+            onSaveRule(selectedSourceRule);
+        }
         setExpandedSource(null);
     };
 
@@ -366,7 +378,7 @@ export const TriageAccordion = ({
         setConfirmingDeleteAllDuplicates(false);
     };
 
-    const handleVerifyAllInGroup = (group: any) => {
+    const handleVerifyAllInGroup = (group: any, targetStatus: string = 'Complete') => {
         const ids: string[] = [];
         Object.values(group.categories).forEach((cat: any) => {
             Object.values(cat.subCategories).forEach((sub: any) => {
@@ -374,7 +386,7 @@ export const TriageAccordion = ({
             });
         });
         if (ids.length > 0) {
-            onBulkUpdate(ids, { status: 'Complete' });
+            onBulkUpdate(ids, { status: targetStatus });
 
             const currentIndex = validationGroups.findIndex(g => g.sourceName === group.sourceName);
             if (currentIndex < validationGroups.length - 1) {
@@ -478,7 +490,7 @@ export const TriageAccordion = ({
                             const firstTx = txs[0];
                             const defaultCat = firstTx?.suggested_category || '';
                             const defaultSub = firstTx?.suggested_sub_category || '';
-                            const edit = categorisationEdits[source] || { category: defaultCat, sub_category: defaultSub };
+                            const edit = categorisationEdits[source] || { category: defaultCat, sub_category: defaultSub, status: 'Complete' };
                             const subCats = getSubCategoryList(edit.category);
                             return (
                                 <div key={source} className="flex flex-col border rounded-lg overflow-hidden border-slate-200 bg-white shadow-sm hover:border-blue-300 transition-colors">
@@ -511,7 +523,19 @@ export const TriageAccordion = ({
                                                 placeholder="Sub-category"
                                                 className="h-10 w-[200px]"
                                             />
-                                            <Button size="sm" className="h-10 bg-blue-600 hover:bg-blue-700 px-8 font-black text-sm uppercase tracking-tight" onClick={() => onBulkUpdate(txs.map(t => t.id), { category: edit.category, sub_category: edit.sub_category, status: (edit.category && edit.sub_category) ? 'Complete' : 'Pending Triage' })}>SAVE ACTIONS</Button>
+                                            <Select
+                                                value={edit.status || 'Complete'}
+                                                onValueChange={v => setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], status: v } }))}
+                                            >
+                                                <SelectTrigger className="h-10 w-[160px] bg-slate-50 border-slate-200">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="Complete">Complete</SelectItem>
+                                                    <SelectItem value="Pending Reconciliation">Pending Reconciliation</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <Button size="sm" className="h-10 bg-blue-600 hover:bg-blue-700 px-8 font-black text-sm uppercase tracking-tight" onClick={() => onBulkUpdate(txs.map(t => t.id), { category: edit.category, sub_category: edit.sub_category, status: (edit.category && edit.sub_category) ? (edit.status || 'Complete') : 'Pending Triage' })}>SAVE ACTIONS</Button>
                                         </div>
                                     </div>
                                 </div>
@@ -573,19 +597,43 @@ export const TriageAccordion = ({
                                         </AccordionTrigger>
                                         <AccordionContent className="p-0">
                                             <div className="p-6 space-y-6 bg-slate-50/20">
-                                                <div className="flex justify-center border-b border-slate-100/50 pb-5 mb-2">
+                                                <div className="flex justify-center items-center gap-3 border-b border-slate-100/50 pb-5 mb-2">
                                                     <Button
                                                         size="sm"
                                                         variant="outline"
-                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm h-11 px-14 shadow-lg shadow-emerald-900/10 border-none tracking-tight rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm h-11 px-10 shadow-lg shadow-emerald-900/10 border-none tracking-tight rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            handleVerifyAllInGroup(group);
+                                                            handleVerifyAllInGroup(group, 'Complete');
                                                         }}
                                                     >
-                                                        <Check className="w-5 h-5 mr-3" />
-                                                        Validate All {group.sourceName} Transactions
+                                                        <Check className="w-5 h-5 mr-2" />
+                                                        Validate All (Complete)
                                                     </Button>
+
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                className="bg-white hover:bg-slate-50 text-slate-600 border-slate-200 font-bold text-sm h-11 w-11 p-0 rounded-xl shadow-sm transition-all"
+                                                            >
+                                                                <ChevronDown className="w-5 h-5" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end" className="w-[240px]">
+                                                            <DropdownMenuItem
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleVerifyAllInGroup(group, 'Pending Reconciliation');
+                                                                }}
+                                                                className="font-bold text-slate-700 py-3"
+                                                            >
+                                                                <History className="w-4 h-4 mr-3" />
+                                                                Mark Pending Reconciliation
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
                                                 </div>
                                                 <div className="space-y-6">
                                                     {(() => {
@@ -1009,18 +1057,19 @@ export const TriageAccordion = ({
     const sortedBuckets = useMemo(() => {
         const completion = completionBucket;
         const dups = duplicateBucket;
+        let list = [];
 
         if (mode === 'import') {
-            const list = [];
-            if (dups.count > 0) list.push(dups);
-            list.push(buckets.find(b => b.id === 'pending-source')!);
-            list.push(buckets.find(b => b.id === 'pending-categorisation')!);
-            list.push(buckets.find(b => b.id === 'pending-validation')!);
-            list.push(completion);
-            return list;
+            list = [
+                dups,
+                ...buckets.filter(b => b.id === 'pending-source' || b.id === 'pending-categorisation' || b.id === 'pending-validation'),
+                completion
+            ];
+        } else {
+            list = [dups, ...buckets, completion];
         }
 
-        return [dups, ...buckets, completion];
+        return list.filter(b => b.count > 0);
     }, [mode, buckets, completionBucket, duplicateBucket]);
 
     const allPendingEmpty = duplicateGroups.length === 0 &&
@@ -1051,24 +1100,21 @@ export const TriageAccordion = ({
     return (
         <div className="space-y-6">
             {allPendingEmpty && (
-                <Card className="border-2 border-emerald-100 bg-emerald-50/50 shadow-xl shadow-emerald-900/5 animate-in fade-in zoom-in duration-500 overflow-hidden relative">
-                    <div className="absolute top-0 right-0 p-8 opacity-10 rotate-12">
-                        <PartyPopper className="w-48 h-48 text-emerald-600" />
+                <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-2 duration-500">
+                    <div className="flex items-center gap-4">
+                        <div className="bg-emerald-100/80 p-2.5 rounded-xl shadow-inner">
+                            <Sparkles className="w-5 h-5 text-emerald-600" />
+                        </div>
+                        <div>
+                            <h2 className="text-sm font-black text-emerald-900 uppercase tracking-tight">Triage Complete</h2>
+                            <p className="text-xs text-emerald-700/70 font-bold uppercase tracking-tighter">Every transaction has been verified and categorised</p>
+                        </div>
                     </div>
-                    <CardContent className="pt-12 pb-16 flex flex-col items-center text-center relative z-10">
-                        <div className="bg-emerald-100 p-6 rounded-full mb-8 shadow-inner">
-                            <Sparkles className="w-16 h-16 text-emerald-600 animate-pulse" />
-                        </div>
-                        <h2 className="text-4xl font-black text-emerald-900 mb-4 tracking-tight uppercase">Perfect Clarity!</h2>
-                        <p className="text-xl text-emerald-700/80 font-medium max-w-md mx-auto leading-relaxed">
-                            Every transaction has been verified, mapped, and categorised. Your finances are in a <span className="text-emerald-600 font-black">Happy Place</span>.
-                        </p>
-                        <div className="mt-12 flex items-center gap-4 text-emerald-600 font-bold bg-white px-6 py-3 rounded-full shadow-sm border border-emerald-100">
-                            <Check className="w-5 h-5" />
-                            <span>Triage Processing Complete</span>
-                        </div>
-                    </CardContent>
-                </Card>
+                    <div className="flex items-center gap-2.5 bg-white px-4 py-2 rounded-xl shadow-sm border border-emerald-100 text-emerald-600">
+                        <Check className="w-4 h-4" />
+                        <span className="text-[11px] font-black uppercase tracking-widest">Perfect Clarity</span>
+                    </div>
+                </div>
             )}
 
             <Accordion type="single" collapsible value={currentBucket} onValueChange={setCurrentBucket} className="w-full space-y-4">

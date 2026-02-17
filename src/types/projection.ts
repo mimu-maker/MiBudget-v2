@@ -16,6 +16,7 @@ export interface FutureTransaction {
   is_matched?: boolean;
   budget_year?: number;
   overrides?: Record<string, { amount?: number; description?: string }>;
+  scenario_id?: string | null;
 }
 
 export interface ProjectionData {
@@ -35,4 +36,5 @@ export interface NewTransactionForm {
   planned: boolean;
   recurring: RecurringInterval;
   description: string;
+  scenario_id?: string | null;
 }

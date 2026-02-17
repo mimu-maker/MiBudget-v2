@@ -6,7 +6,7 @@ import { SpecialOverview } from './SpecialOverview';
 import { KlintemarkenOverview } from './KlintemarkenOverview';
 import { CategoryOverview } from './CategoryOverview';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LayoutDashboard, PiggyBank, Wallet, PieChart } from 'lucide-react';
+import { LayoutDashboard, PiggyBank, Wallet, PieChart, Link, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 

@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Check, ArrowRightLeft, X, Sparkles, Split, History, User, Building, Briefcase, AlertCircle, RefreshCw, Pencil } from 'lucide-react';
-import { ReconciliationOverview } from '@/components/Overview/ReconciliationOverview';
+import { ReconciliationPivot } from '@/components/Reconciliation/ReconciliationPivot';
 import { formatCurrency } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
 import { cn } from '@/lib/utils';
@@ -175,7 +175,7 @@ const EntityRow = ({
 };
 
 const Reconciliation = () => {
-    const { transactions, handleBulkCellEdit, splitTransaction, bulkUpdate, handleCellEdit } = useTransactionTable();
+    const { transactions, handleBulkCellEdit, splitTransaction, bulkUpdate, handleCellEdit } = useTransactionTable({ mode: 'all' });
     const { settings } = useSettings();
     const [ignoredMatches, setIgnoredMatches] = useState<Set<string>>(new Set());
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -205,11 +205,14 @@ const Reconciliation = () => {
 
     // Filter for Pending Reconciliation items
     const pendingItems = useMemo(() => {
-        return transactions.filter(t =>
-            (t.status === 'Pending Reconciliation' ||
-                t.status.startsWith('Pending: ') ||
-                !!t.entity) && !t.excluded
-        );
+        return transactions.filter(t => {
+            const status = t.status || '';
+            const isPending = status === 'Pending Reconciliation' ||
+                status.startsWith('Pending: ') ||
+                (status.startsWith('Pending ') && !['Pending Triage', 'Pending Categorisation', 'Pending Mapping', 'Pending Validation'].includes(status)) ||
+                !!t.entity;
+            return isPending && !t.excluded && status !== 'Reconciled';
+        });
     }, [transactions]);
 
     // Filter for Reconciled items
@@ -237,6 +240,9 @@ const Reconciliation = () => {
                 entity = item.entity;
             } else if (item.status && item.status.startsWith('Pending: ')) {
                 entity = item.status.replace('Pending: ', '');
+            } else if (item.status && item.status.startsWith('Pending ') &&
+                !['Pending Triage', 'Pending Categorisation', 'Pending Mapping', 'Pending Validation', 'Pending Reconciliation'].includes(item.status)) {
+                entity = item.status.replace('Pending ', '');
             }
 
             if (!groups[entity]) groups[entity] = [];
@@ -396,14 +402,8 @@ const Reconciliation = () => {
     };
 
     return (
-        <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-10 animate-in fade-in duration-500 pb-32">
-            <div className="flex flex-col gap-2">
-                <div className="flex items-baseline gap-3">
-                    <h1 className="text-4xl font-black tracking-tighter text-foreground">Reconciliation</h1>
-                    <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">{pendingItems.length} Pending</Badge>
-                </div>
-                <p className="text-muted-foreground text-lg">Grouped by Entity. Select items that offset to zero to reconcile.</p>
-            </div>
+        <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-12 animate-in fade-in duration-500 pb-32">
+            <ReconciliationPivot transactions={transactions} />
 
             {suggestedMatches.length > 0 && (
                 <div className="space-y-4">

@@ -202,58 +202,6 @@ const Budget = () => {
         />
 
         <div className="space-y-6 mt-0 animate-in fade-in duration-500">
-          {/* Income Sources Card */}
-          {incomeData.length > 0 && (
-            <Card key="income" className="shadow-sm border-emerald-100 bg-emerald-50/10 overflow-hidden rounded-3xl">
-              <div className="bg-emerald-50/50 border-b border-emerald-100 py-4 px-6 flex justify-between items-center">
-                <CardTitle className="text-xl text-emerald-800 flex items-center gap-2 font-bold">Income Sources</CardTitle>
-              </div>
-              <CardContent className="p-0">
-                <BudgetTable
-                  data={incomeData as any}
-                  type="income"
-                  expandedCategories={expandedCategories}
-                  toggleCategory={toggleCategory}
-                  editingBudget={editingBudget}
-                  setEditingBudget={setEditingBudget}
-                  handleUpdateBudget={handleUpdateBudget}
-                  totalIncome={percentageDenominator}
-                  currency={settings.currency}
-                  selectedYear={selectedYear}
-                />
-              </CardContent>
-            </Card>
-          )}
-
-
-          {/* Feeder Budgets (Formerly Klintemarken Property) */}
-          {klintemarkenData.length > 0 && (
-            <Card key="klintemarken" className="shadow-sm border-blue-100 bg-blue-50/10 overflow-hidden rounded-3xl">
-              <div className="bg-blue-50/50 border-b border-blue-100 py-4 px-6 flex justify-between items-center">
-                <CardTitle className="text-xl text-blue-800 flex items-center gap-2 font-bold">Feeder Budgets</CardTitle>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => expandAll(klintemarkenData.map(d => d.name))} className="h-8 text-[10px] uppercase tracking-wider font-bold">Expand All</Button>
-                  <Button variant="outline" size="sm" onClick={collapseAll} className="h-8 text-[10px] uppercase tracking-wider font-bold">Collapse All</Button>
-                </div>
-              </div>
-              <CardContent className="p-0">
-                <BudgetTable
-                  data={klintemarkenData as any}
-                  type="klintemarken"
-                  hideHeader={true}
-                  expandedCategories={expandedCategories}
-                  toggleCategory={toggleCategory}
-                  editingBudget={editingBudget}
-                  setEditingBudget={setEditingBudget}
-                  handleUpdateBudget={handleUpdateBudget}
-                  totalIncome={percentageDenominator}
-                  currency={settings.currency}
-                  selectedYear={selectedYear}
-                />
-              </CardContent>
-            </Card>
-          )}
-
           {/* Primary Expenses Card - Now includes Unplanned Expenses as tail section */}
           {(expenditureData.length > 0 || specialData.length > 0) && (
             <Card key="expense" className="shadow-sm border-rose-100 bg-rose-50/10 overflow-hidden rounded-3xl">

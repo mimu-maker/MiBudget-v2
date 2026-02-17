@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/formatUtils';
 import { cn } from '@/lib/utils';
 import { TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight, RefreshCcw, Sparkles } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface BudgetSummaryCardsProps {
     currency: string;
@@ -24,30 +25,34 @@ export const BudgetSummaryCards = ({
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8 mt-2">
             {/* 1. Income */}
-            <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-white to-emerald-50/50 dark:from-slate-900 dark:to-emerald-950/10">
-                <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/50 rounded-full" />
-                <CardHeader className="pb-1 pt-4 px-5">
-                    <CardTitle className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-1">Budgeted Income</CardTitle>
-                </CardHeader>
-                <CardContent className="px-5 pb-5">
-                    <div className="text-2xl font-black text-emerald-700 dark:text-emerald-400 tracking-tight">
-                        {formatCurrency(income, currency)}
-                    </div>
-                </CardContent>
-            </Card>
+            <Link to="/projection" className="block transition-transform hover:scale-[1.02] active:scale-[0.98]">
+                <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-white to-emerald-50/50 dark:from-slate-900 dark:to-emerald-950/10 h-full">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/50 rounded-full" />
+                    <CardHeader className="pb-1 pt-4 px-5">
+                        <CardTitle className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-1">Projected Income</CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-5 pb-5">
+                        <div className="text-2xl font-black text-emerald-700 dark:text-emerald-400 tracking-tight">
+                            {formatCurrency(income, currency)}
+                        </div>
+                    </CardContent>
+                </Card>
+            </Link>
 
             {/* 2. Feeder Budgets */}
-            <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-900 dark:to-blue-950/10">
-                <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50 rounded-full" />
-                <CardHeader className="pb-1 pt-4 px-5">
-                    <CardTitle className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-1">Budgeted Feeder</CardTitle>
-                </CardHeader>
-                <CardContent className="px-5 pb-5">
-                    <div className="text-2xl font-black text-blue-700 dark:text-blue-400 tracking-tight">
-                        {formatCurrency(feeder, currency)}
-                    </div>
-                </CardContent>
-            </Card>
+            <Link to="/projection" className="block transition-transform hover:scale-[1.02] active:scale-[0.98]">
+                <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-900 dark:to-blue-950/10 h-full">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50 rounded-full" />
+                    <CardHeader className="pb-1 pt-4 px-5">
+                        <CardTitle className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-1">Projected Feeder</CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-5 pb-5">
+                        <div className="text-2xl font-black text-blue-700 dark:text-blue-400 tracking-tight">
+                            {formatCurrency(feeder, currency)}
+                        </div>
+                    </CardContent>
+                </Card>
+            </Link>
 
             {/* 3. Expenses */}
             <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-white to-rose-50/50 dark:from-slate-900 dark:to-rose-950/10">
