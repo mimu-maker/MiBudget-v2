@@ -5,10 +5,8 @@ import { MainOverview } from './MainOverview';
 import { SpecialOverview } from './SpecialOverview';
 import { KlintemarkenOverview } from './KlintemarkenOverview';
 import { CategoryOverview } from './CategoryOverview';
-import { ReconciliationOverview } from './ReconciliationOverview';
-import { HistoryDashboard } from './HistoryDashboard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LayoutDashboard, PiggyBank, Wallet, PieChart, Link, History } from 'lucide-react';
+import { LayoutDashboard, PiggyBank, Wallet, PieChart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -47,20 +45,7 @@ export const OverviewTabs = ({ defaultTab = "main" }: { defaultTab?: string }) =
                 <Wallet className="w-4 h-4" />
                 <span className="font-bold tracking-tight">Feeder Budgets</span>
               </TabsTrigger>
-              <TabsTrigger
-                value="recon"
-                className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all gap-2"
-              >
-                <Link className="w-4 h-4" />
-                <span className="font-bold tracking-tight">Recon Pivot</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="history"
-                className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all gap-2"
-              >
-                <History className="w-4 h-4" />
-                <span className="font-bold tracking-tight">History</span>
-              </TabsTrigger>
+
             </TabsList>
           </div>
 
@@ -81,12 +66,7 @@ export const OverviewTabs = ({ defaultTab = "main" }: { defaultTab?: string }) =
         <TabsContent value="klintemarken" className="outline-none animate-in fade-in-50 duration-500">
           <KlintemarkenOverview />
         </TabsContent>
-        <TabsContent value="recon" className="outline-none animate-in fade-in-50 duration-500">
-          <ReconciliationOverview />
-        </TabsContent>
-        <TabsContent value="history" className="outline-none animate-in fade-in-50 duration-500">
-          <HistoryDashboard />
-        </TabsContent>
+
       </Tabs>
     </div>
   );

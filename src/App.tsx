@@ -57,11 +57,7 @@ const AppLayout = () => {
               <OverviewTabs defaultTab="klintemarken" />
             </ProtectedRoute>
           } />
-          <Route path="/history" element={
-            <ProtectedRoute>
-              <OverviewTabs defaultTab="history" />
-            </ProtectedRoute>
-          } />
+
           <Route path="/budget" element={
             <ProtectedRoute>
               <Budget />
