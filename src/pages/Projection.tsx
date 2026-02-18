@@ -368,15 +368,24 @@ const Projection = () => {
     const calculateData = (txs: any[]) => {
       const data: ProjectionData[] = [];
       const yearNum = parseInt(selectedYear);
-      const feederMonthly = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
-      const budgetedPrimaryExpensesMonthly = budget?.category_groups?.expenditure?.reduce((sum, cat) =>
-        sum + cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0), 0) || 0;
 
+      const feederMonthlyTotal = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
+
+      const expenseBreakdownBase: Record<string, number> = {};
+      budget?.category_groups?.expenditure?.forEach(cat => {
+        const catTotal = cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0);
+        expenseBreakdownBase[cat.name || 'Unknown'] = catTotal;
+      });
+      const expenseMonthlyTotal = Object.values(expenseBreakdownBase).reduce((a, b) => a + b, 0);
+
+      let runningBalance = 0;
       for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
         const monthDate = new Date(yearNum, monthIdx, 1);
         const monthKey = monthDate.toISOString().slice(0, 7);
         let income = 0;
         let slush = 0;
+        const incomeBreakdown: Record<string, number> = {};
+        const slushBreakdown: Record<string, number> = {};
 
         txs.forEach(t => {
           if (!t.date) return;
@@ -406,21 +415,38 @@ const Projection = () => {
 
           if (isCurrentMonth) {
             if (amountToUse >= 0) {
+              const streamName = t.stream || t.source || 'Other';
               income += amountToUse;
+              incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
             } else if (specialCategoryNames.includes(t.category)) {
-              slush += Math.abs(amountToUse);
+              // Show individual Slush items as requested
+              const itemName = t.source || t.stream || 'Slush Item';
+              const uniqueKey = `${itemName} [${t.id?.slice(0, 4) || 'tx'}]`;
+              const absVal = Math.abs(amountToUse);
+              slush += absVal;
+              slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
             }
           }
         });
 
+        const monthlyNet = income + feederMonthlyTotal - expenseMonthlyTotal - slush;
+        runningBalance += monthlyNet;
+
         data.push({
           month: monthDate.toLocaleDateString('en-US', { month: 'short' }),
-          value: income + feederMonthly - budgetedPrimaryExpensesMonthly - slush,
+          value: monthlyNet,
+          cumulativeBalance: runningBalance,
           date: monthKey,
-          income: income,
-          feeder: feederMonthly,
-          expense: budgetedPrimaryExpensesMonthly,
-          slush: slush
+          income,
+          feeder: feederMonthlyTotal,
+          expense: expenseMonthlyTotal,
+          slush,
+          breakdown: {
+            incomeBreakdown,
+            feederBreakdown: { 'Feeder Budget': feederMonthlyTotal },
+            expenseBreakdown: { ...expenseBreakdownBase },
+            slushBreakdown
+          }
         });
       }
       return data;
@@ -436,15 +462,24 @@ const Projection = () => {
     const calculateData = (txs: any[]) => {
       const data: ProjectionData[] = [];
       const yearNum = parseInt(selectedYear);
-      const feederMonthly = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
-      const budgetedPrimaryExpensesMonthly = budget?.category_groups?.expenditure?.reduce((sum, cat) =>
-        sum + cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0), 0) || 0;
 
+      const feederMonthlyTotal = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
+
+      const expenseBreakdownBase: Record<string, number> = {};
+      budget?.category_groups?.expenditure?.forEach(cat => {
+        const catTotal = cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0);
+        expenseBreakdownBase[cat.name || 'Unknown'] = catTotal;
+      });
+      const expenseMonthlyTotal = Object.values(expenseBreakdownBase).reduce((a, b) => a + b, 0);
+
+      let runningBalance = 0;
       for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
         const monthDate = new Date(yearNum, monthIdx, 1);
         const monthKey = monthDate.toISOString().slice(0, 7);
         let income = 0;
         let slush = 0;
+        const incomeBreakdown: Record<string, number> = {};
+        const slushBreakdown: Record<string, number> = {};
 
         txs.forEach(t => {
           if (!t.date) return;
@@ -474,21 +509,37 @@ const Projection = () => {
 
           if (isCurrentMonth) {
             if (amountToUse >= 0) {
+              const streamName = t.stream || t.source || 'Other';
               income += amountToUse;
+              incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
             } else if (specialCategoryNames.includes(t.category)) {
-              slush += Math.abs(amountToUse);
+              const itemName = t.source || t.stream || 'Slush Item';
+              const uniqueKey = `${itemName} [${t.id?.slice(0, 4) || 'tx'}]`;
+              const absVal = Math.abs(amountToUse);
+              slush += absVal;
+              slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
             }
           }
         });
 
+        const monthlyNet = income + feederMonthlyTotal - expenseMonthlyTotal - slush;
+        runningBalance += monthlyNet;
+
         data.push({
           month: monthDate.toLocaleDateString('en-US', { month: 'short' }),
-          value: income + feederMonthly - budgetedPrimaryExpensesMonthly - slush,
+          value: monthlyNet,
+          cumulativeBalance: runningBalance,
           date: monthKey,
-          income: income,
-          feeder: feederMonthly,
-          expense: budgetedPrimaryExpensesMonthly,
-          slush: slush
+          income,
+          feeder: feederMonthlyTotal,
+          expense: expenseMonthlyTotal,
+          slush,
+          breakdown: {
+            incomeBreakdown,
+            feederBreakdown: { 'Feeder Budget': feederMonthlyTotal },
+            expenseBreakdown: { ...expenseBreakdownBase },
+            slushBreakdown
+          }
         });
       }
       return data;

@@ -27,6 +27,13 @@ export interface ProjectionData {
   feeder?: number;
   expense?: number;
   slush?: number;
+  cumulativeBalance?: number;
+  breakdown?: {
+    incomeBreakdown: Record<string, number>;
+    feederBreakdown: Record<string, number>;
+    expenseBreakdown: Record<string, number>;
+    slushBreakdown: Record<string, number>;
+  };
 }
 
 export interface NewTransactionForm {
