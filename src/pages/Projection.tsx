@@ -49,7 +49,7 @@ const Projection = () => {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   // 1. Fetch ALL Projections (including Master)
-  const { data: allProjections = [], isLoading: isLoadingProjections } = useQuery({
+  const { data: allProjectionsRaw = [], isLoading: isLoadingProjections } = useQuery({
     queryKey: ['projections', 'all'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -60,6 +60,15 @@ const Projection = () => {
       return data || [];
     }
   });
+
+  // Map merchant -> source for frontend consistently
+  const allProjections = useMemo(() =>
+    allProjectionsRaw.map((p: any) => ({
+      ...p,
+      source: p.merchant || p.source // handle both just in case
+    })),
+    [allProjectionsRaw]
+  );
 
   const projections = useMemo(() => {
     if (activeScenarioId) {
@@ -223,9 +232,18 @@ const Projection = () => {
   const addProjectionMutation = useMutation({
     mutationFn: async (newP: any) => {
       const { data: userData } = await supabase.auth.getUser();
+      // Map source -> merchant for DB
+      const { source, ...rest } = newP;
+      const dbPayload = {
+        ...rest,
+        merchant: source,
+        user_id: userData.user?.id,
+        scenario_id: activeScenarioId
+      };
+
       const { error } = await supabase
         .from('projections' as any)
-        .insert([{ ...newP, user_id: userData.user?.id, scenario_id: activeScenarioId }]);
+        .insert([dbPayload]);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -255,7 +273,14 @@ const Projection = () => {
 
   const updateProjectionMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string | number, updates: any }) => {
-      const { error } = await supabase.from('projections' as any).update(updates).eq('id', id);
+      // Map source -> merchant if present in updates
+      const dbUpdates = { ...updates };
+      if (updates.source) {
+        dbUpdates.merchant = updates.source;
+        delete dbUpdates.source;
+      }
+
+      const { error } = await supabase.from('projections' as any).update(dbUpdates).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -317,27 +342,42 @@ const Projection = () => {
     };
 
     const yearIncome = sumAnnual(incomeTransactions);
-    const yearExpenses = Math.abs(sumAnnual(expenseTransactions));
+    const feederMonthly = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
+    const yearFeeder = feederMonthly * 12;
+
+    const budgetedPrimaryExpensesMonthly = budget?.category_groups?.expenditure?.reduce((sum, cat) =>
+      sum + cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0), 0) || 0;
+    const yearExpenses = budgetedPrimaryExpensesMonthly * 12;
     const yearSlush = Math.abs(sumAnnual(slushFundTransactions));
-    const feederTotal = klintemarkenData.reduce((sum, item) => sum + item.budget_amount, 0) * 12;
+
+    const totalIncome = yearIncome + yearFeeder;
+    const totalExpenses = yearExpenses + yearSlush;
 
     return {
       income: yearIncome,
       expenses: yearExpenses,
       slush: yearSlush,
-      feeder: feederTotal,
-      pl: yearIncome - yearExpenses - yearSlush
+      feeder: yearFeeder,
+      totalIncome,
+      totalExpenses,
+      pl: totalIncome - totalExpenses
     };
-  }, [incomeTransactions, expenseTransactions, slushFundTransactions, klintemarkenData]);
+  }, [incomeTransactions, slushFundTransactions, klintemarkenData, budget]);
 
   const projectionData = useMemo(() => {
     const calculateData = (txs: any[]) => {
       const data: ProjectionData[] = [];
       const yearNum = parseInt(selectedYear);
+      const feederMonthly = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
+      const budgetedPrimaryExpensesMonthly = budget?.category_groups?.expenditure?.reduce((sum, cat) =>
+        sum + cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0), 0) || 0;
+
       for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
         const monthDate = new Date(yearNum, monthIdx, 1);
         const monthKey = monthDate.toISOString().slice(0, 7);
-        let monthTotal = 0;
+        let income = 0;
+        let slush = 0;
+
         txs.forEach(t => {
           if (!t.date) return;
           const transDate = new Date(t.date);
@@ -347,48 +387,68 @@ const Projection = () => {
           const amountToUse = (t.actual_amount !== undefined && t.actual_amount !== 0 && transMonthKey === monthKey)
             ? t.actual_amount
             : effectiveAmount;
+
+          let isCurrentMonth = false;
           if (t.recurring === 'N/A') {
-            if (transMonthKey === monthKey) monthTotal += amountToUse;
+            if (transMonthKey === monthKey) isCurrentMonth = true;
           } else if (t.recurring === 'Monthly') {
-            if (new Date(t.date) <= new Date(yearNum, monthIdx, 28)) monthTotal += amountToUse;
+            if (new Date(t.date) <= new Date(yearNum, monthIdx, 28)) isCurrentMonth = true;
           } else if (t.recurring === 'Annually') {
-            if (transDate.getMonth() === monthIdx) monthTotal += amountToUse;
+            if (transDate.getMonth() === monthIdx) isCurrentMonth = true;
           } else if (t.recurring === 'Bi-annually') {
             const firstMonth = transDate.getMonth();
             const secondMonth = (firstMonth + 6) % 12;
-            if (monthIdx === firstMonth || monthIdx === secondMonth) monthTotal += amountToUse;
+            if (monthIdx === firstMonth || monthIdx === secondMonth) isCurrentMonth = true;
           } else if (t.recurring === 'Quarterly') {
             const startMonth = transDate.getMonth();
-            if ((monthIdx - startMonth) % 3 === 0) monthTotal += amountToUse;
+            if ((monthIdx - startMonth) % 3 === 0) isCurrentMonth = true;
+          }
+
+          if (isCurrentMonth) {
+            if (amountToUse >= 0) {
+              income += amountToUse;
+            } else if (specialCategoryNames.includes(t.category)) {
+              slush += Math.abs(amountToUse);
+            }
           }
         });
+
         data.push({
           month: monthDate.toLocaleDateString('en-US', { month: 'short' }),
-          value: monthTotal,
-          date: monthKey
+          value: income + feederMonthly - budgetedPrimaryExpensesMonthly - slush,
+          date: monthKey,
+          income: income,
+          feeder: feederMonthly,
+          expense: budgetedPrimaryExpensesMonthly,
+          slush: slush
         });
       }
       return data;
     };
 
     return calculateData(futureTransactions);
-  }, [futureTransactions, selectedYear]);
+  }, [futureTransactions, selectedYear, klintemarkenData, specialCategoryNames, budget]);
 
   const masterProjectionData = useMemo(() => {
     if (!activeScenarioId) return undefined;
-
-    // For master comparison, we need to match master projections to actuals too
     const matchedMaster = matchProjectionsToActuals(masterProjectionsRaw, transactions);
 
     const calculateData = (txs: any[]) => {
       const data: ProjectionData[] = [];
       const yearNum = parseInt(selectedYear);
+      const feederMonthly = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
+      const budgetedPrimaryExpensesMonthly = budget?.category_groups?.expenditure?.reduce((sum, cat) =>
+        sum + cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0), 0) || 0;
+
       for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
         const monthDate = new Date(yearNum, monthIdx, 1);
         const monthKey = monthDate.toISOString().slice(0, 7);
-        let monthTotal = 0;
+        let income = 0;
+        let slush = 0;
+
         txs.forEach(t => {
           if (!t.date) return;
+          const transDate = new Date(t.date);
           const transMonthKey = t.date.slice(0, 7);
           const monthOverride = t.overrides?.[monthKey];
           const effectiveAmount = monthOverride?.amount ?? t.amount;
@@ -396,34 +456,46 @@ const Projection = () => {
             ? t.actual_amount
             : effectiveAmount;
 
+          let isCurrentMonth = false;
           if (t.recurring === 'N/A') {
-            if (transMonthKey === monthKey) monthTotal += amountToUse;
-          } else if (t.recurring === 'Monthly' || t.recurring === 'Annually' || t.recurring === 'Bi-annually' || t.recurring === 'Quarterly') {
-            // Re-use logic or simplify for comparison
-            if (t.recurring === 'Monthly') {
-              if (new Date(t.date) <= new Date(yearNum, monthIdx, 28)) monthTotal += amountToUse;
-            } else if (t.recurring === 'Annually' && new Date(t.date).getMonth() === monthIdx) {
-              monthTotal += amountToUse;
-            } else if (t.recurring === 'Bi-annually') {
-              const start = new Date(t.date).getMonth();
-              if (monthIdx === start || monthIdx === (start + 6) % 12) monthTotal += amountToUse;
-            } else if (t.recurring === 'Quarterly') {
-              const start = new Date(t.date).getMonth();
-              if ((monthIdx - start) % 3 === 0) monthTotal += amountToUse;
+            if (transMonthKey === monthKey) isCurrentMonth = true;
+          } else if (t.recurring === 'Monthly') {
+            if (new Date(t.date) <= new Date(yearNum, monthIdx, 28)) isCurrentMonth = true;
+          } else if (t.recurring === 'Annually') {
+            if (transDate.getMonth() === monthIdx) isCurrentMonth = true;
+          } else if (t.recurring === 'Bi-annually') {
+            const firstMonth = transDate.getMonth();
+            const secondMonth = (firstMonth + 6) % 12;
+            if (monthIdx === firstMonth || monthIdx === secondMonth) isCurrentMonth = true;
+          } else if (t.recurring === 'Quarterly') {
+            const startMonth = transDate.getMonth();
+            if ((monthIdx - startMonth) % 3 === 0) isCurrentMonth = true;
+          }
+
+          if (isCurrentMonth) {
+            if (amountToUse >= 0) {
+              income += amountToUse;
+            } else if (specialCategoryNames.includes(t.category)) {
+              slush += Math.abs(amountToUse);
             }
           }
         });
+
         data.push({
           month: monthDate.toLocaleDateString('en-US', { month: 'short' }),
-          value: monthTotal,
-          date: monthKey
+          value: income + feederMonthly - budgetedPrimaryExpensesMonthly - slush,
+          date: monthKey,
+          income: income,
+          feeder: feederMonthly,
+          expense: budgetedPrimaryExpensesMonthly,
+          slush: slush
         });
       }
       return data;
     };
 
     return calculateData(matchedMaster);
-  }, [masterProjectionsRaw, transactions, selectedYear, activeScenarioId]);
+  }, [masterProjectionsRaw, transactions, selectedYear, activeScenarioId, klintemarkenData, specialCategoryNames, budget]);
 
   const handleAddTransaction = () => {
     if ((!newTransaction.source && !newTransaction.stream) || !newTransaction.amount) return;
@@ -611,11 +683,17 @@ const Projection = () => {
             <div className="flex flex-col">
               <h2 className="text-3xl font-black text-emerald-950 flex items-baseline gap-2">
                 <span className="text-sm font-bold text-emerald-600/40">DKK</span>
-                {stats.income.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                {stats.totalIncome.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </h2>
-              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-emerald-50/50">
-                <span className="text-[10px] font-black text-emerald-600/50 uppercase tracking-tighter">Budgeted Feeders</span>
-                <span className="text-sm font-bold text-emerald-700">DKK {stats.feeder.toLocaleString()}</span>
+              <div className="flex flex-col gap-1 mt-4 pt-4 border-t border-emerald-50/50">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-emerald-600/50 uppercase tracking-tighter">Income Projections</span>
+                  <span className="text-xs font-bold text-emerald-700">DKK {stats.income.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-emerald-600/50 uppercase tracking-tighter">Feeder Budgets</span>
+                  <span className="text-xs font-bold text-emerald-700">DKK {stats.feeder.toLocaleString()}</span>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -626,23 +704,33 @@ const Projection = () => {
             <TrendingDown className="w-16 h-16 text-rose-600" />
           </div>
           <CardContent className="p-6">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-1.5 bg-rose-50 rounded-lg">
-                <ArrowDownRight className="w-4 h-4 text-rose-600" />
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-rose-50 rounded-lg">
+                  <ArrowDownRight className="w-4 h-4 text-rose-600" />
+                </div>
+                <p className="text-xs font-black uppercase tracking-widest text-rose-600/80">Primary Expenses</p>
               </div>
-              <p className="text-xs font-black uppercase tracking-widest text-rose-600/80">Primary Expenses</p>
+              <Link to="/budget" className="text-[10px] text-primary/60 hover:text-primary transition-colors uppercase tracking-tighter font-black hover:underline">
+                Budget Tab ↗
+              </Link>
             </div>
             <div className="flex flex-col">
               <h2 className="text-3xl font-black text-rose-950 flex items-baseline gap-2">
                 <span className="text-sm font-bold text-rose-600/40">DKK</span>
-                {stats.expenses.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                {stats.totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </h2>
-              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-rose-50/50">
-                <span className="text-[10px] font-black text-rose-600/50 uppercase tracking-tighter">Excl. Slush Fund</span>
-                <span className="text-sm font-bold text-rose-700">DKK {stats.slush.toLocaleString()} Planned</span>
+              <div className="flex flex-col gap-1 mt-4 pt-4 border-t border-rose-50/50">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-rose-600/50 uppercase tracking-tighter">Budgeted Baseline</span>
+                  <span className="text-xs font-bold text-rose-700">DKK {stats.expenses.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-rose-600/50 uppercase tracking-tighter">Projected Slush</span>
+                  <span className="text-xs font-bold text-rose-700">DKK {stats.slush.toLocaleString()}</span>
+                </div>
               </div>
             </div>
-
           </CardContent>
         </Card>
 
@@ -733,11 +821,14 @@ const Projection = () => {
           </Card>
         )}
 
-        {/* Primary Expenses Section (Only in Scenarios) */}
-        {activeScenarioId && budget?.category_groups?.expenditure && (
-          <Card key="expenses-top" className="shadow-sm border-rose-100 bg-rose-50/10 overflow-hidden rounded-3xl animate-in fade-in duration-500 delay-150">
-            <div className="bg-rose-50/50 border-b border-rose-100 py-4 px-6 flex justify-between items-center">
-              <CardTitle className="text-xl text-rose-800 flex items-center gap-2 font-bold">What-if: Primary Expenses</CardTitle>
+        {/* Primary Expenses Section (Read Only Reference) */}
+        {budget?.category_groups?.expenditure && (
+          <Card key="expenses-top" className="shadow-sm border-gray-100 bg-gray-50/30 overflow-hidden rounded-3xl animate-in fade-in duration-500 delay-150">
+            <div className="bg-gray-50/50 border-b border-gray-100 py-4 px-6 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-xl text-gray-800 flex items-center gap-2 font-bold">Baseline: Primary Expenses</CardTitle>
+                <div className="px-2 py-0.5 bg-gray-200 text-gray-600 text-[10px] font-black uppercase rounded tracking-wider">Read Only</div>
+              </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => expandAll(budget.category_groups.expenditure.map(d => d.name))} className="h-8 text-[10px] uppercase tracking-wider font-bold">Expand All</Button>
                 <Button variant="outline" size="sm" onClick={collapseAll} className="h-8 text-[10px] uppercase tracking-wider font-bold">Collapse All</Button>
@@ -745,21 +836,14 @@ const Projection = () => {
             </div>
             <CardContent className="p-0">
               <BudgetTable
-                data={budget.category_groups.expenditure.map(cat => ({
-                  ...cat,
-                  // In scenario, show the projection value instead of budget if available
-                  sub_categories: cat.sub_categories.map(sub => {
-                    const proj = projections.find(p => p.category === cat.name && p.stream === sub.name);
-                    return proj ? { ...sub, budget_amount: proj.amount } : sub;
-                  })
-                })) as any}
+                data={budget.category_groups.expenditure as any}
                 type="expense"
                 hideHeader={true}
                 expandedCategories={expandedCategories}
                 toggleCategory={toggleCategory}
-                editingBudget={editingBudget}
-                setEditingBudget={setEditingBudget}
-                handleUpdateBudget={handleUpdateBudget}
+                editingBudget={null}
+                setEditingBudget={() => { }}
+                handleUpdateBudget={async () => { }}
                 totalIncome={totalBudgetedIncome}
                 currency={settings.currency}
                 selectedYear={parseInt(selectedYear)}

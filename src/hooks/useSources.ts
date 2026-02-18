@@ -7,8 +7,8 @@ export const useSources = () => {
         queryFn: async () => {
             const { data, error } = await supabase
                 .from('transactions')
-                .select('source, clean_source')
-                .order('source');
+                .select('merchant, clean_source')
+                .order('merchant');
 
             if (error) throw error;
 

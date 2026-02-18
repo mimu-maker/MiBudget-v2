@@ -23,6 +23,10 @@ export interface ProjectionData {
   month: string;
   value: number;
   date: string;
+  income?: number;
+  feeder?: number;
+  expense?: number;
+  slush?: number;
 }
 
 export interface NewTransactionForm {

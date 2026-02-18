@@ -1,6 +1,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { ProjectionData } from '@/types/projection';
 
 interface ProjectionChartProps {
@@ -18,10 +18,16 @@ const ProjectionChart = ({
   activeLabel = "Current",
   comparisonLabel = "Master"
 }: ProjectionChartProps) => {
-  // Merge data for the chart
+  // Merge data for the chart and ensure expenses are negative for downward bars
   const combinedData = data.map((d, i) => ({
     ...d,
-    comparison: comparisonData?.[i]?.value
+    // Ensure breakdown values exist
+    income: d.income || 0,
+    feeder: d.feeder || 0,
+    expense: -(d.expense || 0),
+    slush: -(d.slush || 0),
+    value: d.value, // P/L line
+    comparison: comparisonData?.[i]?.value // Master P/L line
   }));
 
   return (
@@ -30,9 +36,9 @@ const ProjectionChart = ({
         <CardTitle className="text-lg font-black tracking-tight text-gray-800">{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-6">
-        <ResponsiveContainer width="100%" height={350}>
-          <LineChart data={combinedData}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+        <ResponsiveContainer width="100%" height={400}>
+          <ComposedChart data={combinedData}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             <XAxis
               dataKey="month"
               axisLine={false}
@@ -47,19 +53,65 @@ const ProjectionChart = ({
               tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
             />
             <Tooltip
-              contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-              formatter={(value) => [`${Number(value).toLocaleString()} DKK`]}
-              labelStyle={{ fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}
+              contentStyle={{
+                borderRadius: '16px',
+                border: 'none',
+                boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
+                padding: '12px'
+              }}
+              formatter={(value, name) => {
+                const absVal = Math.abs(Number(value));
+                return [`${absVal.toLocaleString()} DKK`, name];
+              }}
+              labelStyle={{ fontWeight: 800, color: '#1e293b', marginBottom: '8px', fontSize: '14px' }}
             />
             <Legend
               verticalAlign="top"
               align="right"
               iconType="circle"
-              wrapperStyle={{ paddingBottom: '20px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+              wrapperStyle={{ paddingBottom: '30px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}
             />
+
+            {/* Bars for Income Breakdown */}
+            <Bar
+              dataKey="income"
+              name="Income Projections"
+              stackId="stack"
+              fill="#10b981"
+              radius={[4, 4, 0, 0]}
+              barSize={32}
+            />
+            <Bar
+              dataKey="feeder"
+              name="Feeder Budgets"
+              stackId="stack"
+              fill="#34d399"
+              radius={[0, 0, 0, 0]}
+              barSize={32}
+            />
+
+            {/* Bars for Expense Breakdown (Negative) */}
+            <Bar
+              dataKey="expense"
+              name="Primary Expenses"
+              stackId="stack"
+              fill="#f43f5e"
+              radius={[0, 0, 0, 0]}
+              barSize={32}
+            />
+            <Bar
+              dataKey="slush"
+              name="Slush Fund"
+              stackId="stack"
+              fill="#fb7185"
+              radius={[0, 0, 4, 4]}
+              barSize={32}
+            />
+
+            {/* Master Comparison Line (if in scenario) */}
             {comparisonData && (
               <Line
-                name={comparisonLabel}
+                name={`${comparisonLabel} P/L`}
                 type="monotone"
                 dataKey="comparison"
                 stroke="#cbd5e1"
@@ -69,16 +121,18 @@ const ProjectionChart = ({
                 activeDot={{ r: 4 }}
               />
             )}
+
+            {/* Active P/L Line */}
             <Line
-              name={activeLabel}
+              name={comparisonData ? "Scenario P/L" : "Projected P/L"}
               type="monotone"
               dataKey="value"
-              stroke="#10b981"
+              stroke="#8b5cf6"
               strokeWidth={4}
               dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}
               activeDot={{ r: 6, strokeWidth: 0 }}
             />
-          </LineChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>
