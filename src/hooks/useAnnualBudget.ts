@@ -17,6 +17,7 @@ export interface BudgetCategory {
   remaining_percent: number;
   sub_categories: BudgetSubCategory[];
   last_year_data?: { budget: number, spent: number };
+  label?: "Fixed Committed" | "Variable Essential" | "Discretionary" | null;
 }
 
 export interface BudgetSubCategory {
@@ -28,6 +29,7 @@ export interface BudgetSubCategory {
   is_active: boolean;
   last_year_data?: { budget: number, spent: number };
   first_used_date?: string;
+  label?: "Fixed Committed" | "Variable Essential" | "Discretionary" | null;
 }
 
 export interface AnnualBudget {
@@ -161,7 +163,7 @@ export const useAnnualBudget = (year?: number) => {
       // 1. Fetch ALL categories and subcategories first (the master list)
       const { data: allCategories, error: allError } = await supabase
         .from('categories')
-        .select('*, sub_categories(id, name, display_order)')
+        .select('*, sub_categories(id, name, display_order, label)')
         .eq('user_id', profile.id)
         .order('display_order', { ascending: true });
 
@@ -339,6 +341,7 @@ export const useAnnualBudget = (year?: number) => {
               remaining: subBudget - subSpent,
               is_active: isActive,
               last_year_data: lastYearData,
+              label: sub.label,
             };
           });
 
@@ -371,7 +374,8 @@ export const useAnnualBudget = (year?: number) => {
           remaining: subTotalBudget - catSpent,
           remaining_percent: subTotalBudget > 0 ? ((subTotalBudget - catSpent) / subTotalBudget) * 100 : 0,
           sub_categories: subCategories,
-          last_year_data: lastYearData
+          last_year_data: lastYearData,
+          label: cat.label
         };
       }).filter(cat => cat.sub_categories.length > 0);
 

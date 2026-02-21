@@ -5,13 +5,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, DownloadCloud } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { generateBackupData, downloadBackupFile } from '@/lib/driveExport';
+import { useAuth } from '@/contexts/AuthContext';
 
 export const GeneralSettings = () => {
     const { userProfile, updateUserProfile, loading } = useProfile();
+    const { user } = useAuth();
     const { toast } = useToast();
     const [saving, setSaving] = useState(false);
+    const [backingUp, setBackingUp] = useState(false);
 
     // Local state for tracking changes
     const [formData, setFormData] = useState({
@@ -44,6 +48,32 @@ export const GeneralSettings = () => {
             });
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleBackup = async () => {
+        if (!user) return;
+        setBackingUp(true);
+        try {
+            toast({
+                title: "Preparing Backup",
+                description: "Gathering your database records...",
+            });
+            const backupData = await generateBackupData(user.id);
+            downloadBackupFile(backupData);
+            toast({
+                title: "Backup Complete",
+                description: "Your data has been successfully downloaded.",
+            });
+        } catch (error: any) {
+            console.error("Backup failed", error);
+            toast({
+                title: "Backup Failed",
+                description: error.message || "Could not generate backup.",
+                variant: "destructive"
+            });
+        } finally {
+            setBackingUp(false);
         }
     };
 
@@ -157,6 +187,33 @@ export const GeneralSettings = () => {
                         </Button>
                     </div>
 
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Data Management</CardTitle>
+                    <CardDescription>
+                        Export your budget data for safekeeping.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="flex flex-col space-y-2">
+                        <Label>Export Local Backup</Label>
+                        <p className="text-[0.8rem] text-muted-foreground pb-2">
+                            Download a full JSON snapshot of your transactions, categories, and settings.
+                            We recommend doing this regularly.
+                        </p>
+                        <Button
+                            variant="outline"
+                            className="w-full sm:w-auto flex items-center gap-2"
+                            onClick={handleBackup}
+                            disabled={backingUp}
+                        >
+                            {backingUp ? <Loader2 className="h-4 w-4 animate-spin" /> : <DownloadCloud className="h-4 w-4" />}
+                            {backingUp ? "Generating Backup..." : "Download Full Data Backup (.json)"}
+                        </Button>
+                    </div>
                 </CardContent>
             </Card>
         </div>

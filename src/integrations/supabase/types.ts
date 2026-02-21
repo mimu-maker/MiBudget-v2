@@ -268,6 +268,7 @@ export type Database = {
           user_id: string
           created_at: string
           updated_at: string
+          label: Database["public"]["Enums"]["expense_label"] | null
         }
         Insert: {
           id?: string
@@ -275,6 +276,7 @@ export type Database = {
           user_id: string
           created_at?: string
           updated_at?: string
+          label?: Database["public"]["Enums"]["expense_label"] | null
         }
         Update: {
           id?: string
@@ -282,6 +284,7 @@ export type Database = {
           user_id?: string
           created_at?: string
           updated_at?: string
+          label?: Database["public"]["Enums"]["expense_label"] | null
         }
         Relationships: []
       }
@@ -296,6 +299,7 @@ export type Database = {
           first_used_date: string
           created_at?: string
           updated_at?: string
+          label: Database["public"]["Enums"]["expense_label"] | null
         }
         Update: {
           id?: string
@@ -304,6 +308,7 @@ export type Database = {
           budget_amount?: number
           created_at?: string
           updated_at?: string
+          label?: Database["public"]["Enums"]["expense_label"] | null
         }
         Relationships: []
       }
@@ -366,7 +371,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      expense_label: "Fixed Committed" | "Variable Essential" | "Discretionary"
     }
     CompositeTypes: {
       [_ in never]: never

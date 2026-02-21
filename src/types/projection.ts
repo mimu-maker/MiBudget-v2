@@ -32,6 +32,7 @@ export interface ProjectionData {
     incomeBreakdown: Record<string, number>;
     feederBreakdown: Record<string, number>;
     expenseBreakdown: Record<string, number>;
+    expenseLabelBreakdown: Record<string, number>;
     slushBreakdown: Record<string, number>;
   };
 }

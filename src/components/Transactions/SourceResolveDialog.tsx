@@ -48,11 +48,20 @@ export const SourceResolveDialog = ({
     // Initialize rule state from transaction
     const baseName = initialName !== undefined ? initialName : (transaction.clean_source || cleanSource(transaction.source, noiseFilters));
 
+    // Improved detection: If current transaction is Uncategorized, don't pre-fill the rule with empty strings if we can avoid it.
+    // But if we're resolving, we want the form to be empty so the user can pick.
+    const getInitialCategory = () => {
+        if (!transaction.category || transaction.category === 'Uncategorized' || transaction.category === 'Other') {
+            return '';
+        }
+        return transaction.category;
+    };
+
     const [initialRule, setInitialRule] = useState<SourceRuleState>({
         raw_name: transaction.source,
         name: baseName,
-        category: transaction.category !== 'Other' ? transaction.category : '',
-        sub_category: transaction.sub_category || '',
+        category: getInitialCategory(),
+        sub_category: transaction.sub_category && transaction.sub_category !== 'Uncategorized' ? transaction.sub_category : '',
         auto_planned: true, // Auto-planned default (Unplanned OFF)
         auto_exclude: transaction.excluded || false,
         match_mode: 'fuzzy'
@@ -69,8 +78,8 @@ export const SourceResolveDialog = ({
             setInitialRule({
                 raw_name: transaction.source,
                 name: initialName !== undefined ? initialName : (transaction.clean_source || cleanSource(transaction.source, noiseFilters)),
-                category: transaction.category !== 'Other' ? transaction.category : '',
-                sub_category: transaction.sub_category || '',
+                category: getInitialCategory(),
+                sub_category: transaction.sub_category && transaction.sub_category !== 'Uncategorized' ? transaction.sub_category : '',
                 auto_planned: true, // Auto-planned default (Unplanned OFF)
                 auto_exclude: transaction.excluded || false,
                 match_mode: 'fuzzy'
@@ -80,7 +89,7 @@ export const SourceResolveDialog = ({
                 is_auto_complete: false // FORCE DISABLE
             });
         }
-    }, [open, transaction.id, initialName, noiseFilters]);
+    }, [open, transaction.id, initialName, noiseFilters, transaction.category, transaction.sub_category]);
 
     const addRuleMutation = useMutation({
         mutationFn: async ({ rule, selectedIds, settings }: { rule: SourceRuleState, selectedIds: string[], settings: { recurring: string, is_auto_complete: boolean } }) => {

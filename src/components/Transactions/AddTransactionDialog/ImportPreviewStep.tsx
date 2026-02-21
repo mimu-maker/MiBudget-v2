@@ -96,132 +96,45 @@ export const ImportPreviewStep = ({
             <div className="flex flex-wrap items-center justify-between gap-4 mb-4 bg-slate-100 p-4 rounded-xl border border-slate-200">
                 <div>
                     <h3 className="text-sm font-bold text-slate-800 tracking-tight">Review & Triage</h3>
-                    <p className="text-xs text-slate-500">All data has been pre-processed. Fix any issues before importing.</p>
+                    <p className="text-xs text-slate-500">Review pending action summaries. All duplicates will be imported. Fix any issues in the main dashboard.</p>
                 </div>
                 <Badge variant="secondary" className="bg-blue-100 text-blue-700 px-3 py-1 font-bold">{preview.length} Rows Prepared</Badge>
             </div>
 
             <div className="min-h-[400px]">
-                {!showFullPreview && summaryStats ? (
-                    <div className="flex flex-col items-center justify-center p-8 space-y-8 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden relative">
-                        {/* Decorative background accent */}
-                        <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-blue-500 via-purple-500 to-emerald-500" />
+                <>
 
-                        <div className="text-center space-y-2 max-w-md">
-                            <div className="bg-amber-100 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4 shadow-inner">
-                                <AlertTriangle className="w-8 h-8 text-amber-600" />
-                            </div>
-                            <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Direct Import Summary</h3>
-                            <p className="text-slate-500 text-sm font-medium">
-                                We've simplified the view to prevent performance issues with your <span className="text-blue-600 font-bold">{preview.length} items</span>.
-                            </p>
-                        </div>
+                    <TriageAccordion
+                        transactions={preview}
+                        onVerifySingle={(tx, cat, sub) => {
+                            const finalCat = cat || tx.category;
+                            const finalSub = sub || tx.sub_category;
+                            const isExcluded = tx.excluded || tx.budget === 'Exclude' || tx.auto_budget === 'Exclude';
+                            updatePreviewRow(tx.id, {
+                                category: finalCat,
+                                sub_category: finalSub,
+                                status: (isExcluded || (finalCat && finalSub)) ? 'Complete' : 'Pending Triage'
+                            });
+                        }}
+                        onSaveRule={(rule) => {
+                            // In import preview, we just apply the rule locally to the preview set
+                            applyRuleToPreview(rule);
+                        }}
+                        onBulkUpdate={bulkUpdatePreview}
+                        onSplit={(tx) => {
+                            // For now we don't support splitting in the preview
+                            console.log('Split skip in preview', tx);
+                        }}
+                        onDelete={onDelete}
+                        onBulkDelete={onBulkDelete}
+                        onKeep={onKeep}
+                        onUpdateRow={updatePreviewRow}
+                        categoryList={categoryNames}
+                        getSubCategoryList={getSubCategoryList}
+                        mode="import"
+                    />
+                </>
 
-                        <div className="w-full max-w-2xl space-y-6">
-                            {/* High-level stats */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center text-center shadow-sm">
-                                    <Calendar className="w-4 h-4 text-blue-500 mb-1" />
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Period</span>
-                                    <span className="text-xs font-bold text-slate-700">{summaryStats.dateRange}</span>
-                                </div>
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center text-center shadow-sm">
-                                    <FileText className="w-4 h-4 text-emerald-500 mb-1" />
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sources</span>
-                                    <span className="text-xs font-bold text-slate-700">{summaryStats.uniqueSources} Distinct</span>
-                                </div>
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center text-center shadow-sm">
-                                    <Wallet className="w-4 h-4 text-purple-500 mb-1" />
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Value</span>
-                                    <span className="text-xs font-black text-slate-900">
-                                        {new Intl.NumberFormat('da-DK', { style: 'currency', currency: 'DKK' }).format(summaryStats.totalAmount)}
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* Category Summary - The requested feature */}
-                            <div className="bg-slate-50 rounded-xl border border-slate-100 overflow-hidden shadow-inner">
-                                <div className="bg-slate-200/50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
-                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Category Breakdown</span>
-                                    <span className="text-[10px] font-bold text-slate-400 italic">No expansion available in Safe Mode</span>
-                                </div>
-                                <div className="max-h-[250px] overflow-y-auto divide-y divide-slate-100 p-2">
-                                    {summaryStats.categoryBreakdown.map((cat, idx) => (
-                                        <div key={idx} className="flex justify-between items-center py-2 px-3 hover:bg-white rounded-lg transition-colors">
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-bold text-slate-700 leading-tight">{cat.name}</span>
-                                                <span className="text-[10px] text-slate-400 font-medium">{cat.count} transactions</span>
-                                            </div>
-                                            <span className={cn(
-                                                "font-mono font-black text-xs",
-                                                cat.amount < 0 ? "text-slate-700" : "text-emerald-600"
-                                            )}>
-                                                {new Intl.NumberFormat('da-DK', { style: 'currency', currency: 'DKK' }).format(cat.amount)}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="flex flex-col gap-4 w-full max-w-md pt-4">
-                            <Button
-                                onClick={checkForUnknownAccounts}
-                                size="lg"
-                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl shadow-emerald-100 font-black uppercase tracking-widest h-14 text-base"
-                            >
-                                <CheckCircle2 className="w-6 h-6 mr-3" />
-                                Complete Import Now
-                            </Button>
-                            <p className="text-xs text-center text-slate-400 font-medium leading-relaxed">
-                                Choose this to save everything as "Pending Triage".<br />
-                                You can refine categories safely in the main dashboard.
-                            </p>
-                        </div>
-                    </div>
-                ) : (
-                    <>
-                        {isLargeDataset && (
-                            <Alert className="mb-6 border-amber-200 bg-amber-50">
-                                <AlertTriangle className="h-4 w-4 text-amber-600" />
-                                <AlertTitle className="text-amber-800 font-bold">Performance Warning</AlertTitle>
-                                <AlertDescription className="text-amber-700">
-                                    Displaying {preview.length} transactions at once may slow down your browser.
-                                    If it becomes unresponsive, refresh the page and choose "Import All" instead.
-                                </AlertDescription>
-                            </Alert>
-                        )}
-                        <TriageAccordion
-                            transactions={preview}
-                            onVerifySingle={(tx, cat, sub) => {
-                                const finalCat = cat || tx.category;
-                                const finalSub = sub || tx.sub_category;
-                                const isExcluded = tx.excluded || tx.budget === 'Exclude' || tx.auto_budget === 'Exclude';
-                                updatePreviewRow(tx.id, {
-                                    category: finalCat,
-                                    sub_category: finalSub,
-                                    status: (isExcluded || (finalCat && finalSub)) ? 'Complete' : 'Pending Triage'
-                                });
-                            }}
-                            onSaveRule={(rule) => {
-                                // In import preview, we just apply the rule locally to the preview set
-                                applyRuleToPreview(rule);
-                            }}
-                            onBulkUpdate={bulkUpdatePreview}
-                            onSplit={(tx) => {
-                                // For now we don't support splitting in the preview
-                                console.log('Split skip in preview', tx);
-                            }}
-                            onDelete={onDelete}
-                            onBulkDelete={onBulkDelete}
-                            onKeep={onKeep}
-                            onUpdateRow={updatePreviewRow}
-                            categoryList={categoryNames}
-                            getSubCategoryList={getSubCategoryList}
-                            mode="import"
-                        />
-                    </>
-                )}
             </div>
 
             <div className="flex justify-between pt-8 border-t border-slate-200 mt-10">

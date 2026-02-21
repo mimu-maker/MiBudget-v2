@@ -15,6 +15,7 @@ export interface SubCategoryRecord {
   display_order?: number;
   budget_amount?: number;
   is_active?: boolean;
+  label?: "Fixed Committed" | "Variable Essential" | "Discretionary" | null;
 }
 
 export interface BudgetCategoryRecord {
@@ -26,6 +27,7 @@ export interface BudgetCategoryRecord {
   budget_amount?: number;
   icon?: string;
   color?: string;
+  label?: "Fixed Committed" | "Variable Essential" | "Discretionary" | null;
   sub_categories: SubCategoryRecord[];
 }
 
@@ -86,11 +88,13 @@ const fetchCategories = async (profileId: string, budgetId?: string | null): Pro
       is_system,
       icon,
       color,
+      label,
       sub_categories (
         id,
         name,
         display_order,
-        budget_amount
+        budget_amount,
+        label
       )
     `)
     .eq('user_id', profileId)
@@ -152,10 +156,12 @@ const fetchCategoriesWithMultiYearLimits = async (profileId: string, budgetIds: 
       is_system,
       icon,
       color,
+      label,
       sub_categories (
         id,
         name,
-        display_order
+        display_order,
+        label
       )
     `)
     .eq('user_id', profileId)
@@ -262,6 +268,17 @@ const useCategoryMutations = (profileId?: string, budgetId?: string | null) => {
     onSuccess: invalidate
   });
 
+  const updateCategoryLabel = useMutation({
+    mutationFn: async ({ categoryId, label }: { categoryId: string; label: "Fixed Committed" | "Variable Essential" | "Discretionary" | null }) => {
+      const { error: catError } = await supabase.from('categories').update({ label }).eq('id', categoryId);
+      if (catError) throw catError;
+
+      const { error: subCatError } = await supabase.from('sub_categories').update({ label }).eq('category_id', categoryId);
+      if (subCatError) throw subCatError;
+    },
+    onSuccess: invalidate
+  });
+
   const reorderCategories = useMutation({
     mutationFn: async ({ orderedIds }: { orderedIds: string[] }) => {
       await Promise.all(orderedIds.map((id, index) =>
@@ -282,6 +299,14 @@ const useCategoryMutations = (profileId?: string, budgetId?: string | null) => {
   const renameSubCategory = useMutation({
     mutationFn: async ({ subCategoryId, name }: { subCategoryId: string; name: string }) => {
       const { error } = await supabase.from('sub_categories').update({ name }).eq('id', subCategoryId);
+      if (error) throw error;
+    },
+    onSuccess: invalidate
+  });
+
+  const updateSubCategoryLabel = useMutation({
+    mutationFn: async ({ subCategoryId, label }: { subCategoryId: string; label: "Fixed Committed" | "Variable Essential" | "Discretionary" | null }) => {
+      const { error } = await supabase.from('sub_categories').update({ label }).eq('id', subCategoryId);
       if (error) throw error;
     },
     onSuccess: invalidate
@@ -414,7 +439,7 @@ const useCategoryMutations = (profileId?: string, budgetId?: string | null) => {
   return {
     addCategory, renameCategory, deleteCategory, reorderCategories,
     addSubCategory, renameSubCategory, deleteSubCategory, reorderSubCategories,
-    moveSubCategory, updateSubCategoryBudget, toggleSubCategoryActive, updateCategoryIcon, updateCategoryColor
+    moveSubCategory, updateSubCategoryBudget, toggleSubCategoryActive, updateCategoryIcon, updateCategoryColor, updateCategoryLabel, updateSubCategoryLabel
   };
 };
 

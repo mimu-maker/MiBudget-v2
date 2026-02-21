@@ -37,6 +37,7 @@ const Projection = () => {
   const [showPastProjections, setShowPastProjections] = useState(false);
   const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
   const [showCreateScenario, setShowCreateScenario] = useState(false);
+  const [chartView, setChartView] = useState<'categories' | 'labels'>('categories');
 
   const currentYear = new Date().getFullYear();
   const availableYearsList = [currentYear, currentYear + 1, currentYear + 2];
@@ -372,9 +373,14 @@ const Projection = () => {
       const feederMonthlyTotal = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
 
       const expenseBreakdownBase: Record<string, number> = {};
+      const expenseLabelBreakdownBase: Record<string, number> = {};
       budget?.category_groups?.expenditure?.forEach(cat => {
         const catTotal = cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0);
         expenseBreakdownBase[cat.name || 'Unknown'] = catTotal;
+        cat.sub_categories.forEach(sub => {
+          const label = sub.label || 'Unlabeled';
+          expenseLabelBreakdownBase[label] = (expenseLabelBreakdownBase[label] || 0) + (sub.budget_amount || 0);
+        });
       });
       const expenseMonthlyTotal = Object.values(expenseBreakdownBase).reduce((a, b) => a + b, 0);
 
@@ -445,6 +451,7 @@ const Projection = () => {
             incomeBreakdown,
             feederBreakdown: { 'Feeder Budget': feederMonthlyTotal },
             expenseBreakdown: { ...expenseBreakdownBase },
+            expenseLabelBreakdown: { ...expenseLabelBreakdownBase },
             slushBreakdown
           }
         });
@@ -466,9 +473,14 @@ const Projection = () => {
       const feederMonthlyTotal = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
 
       const expenseBreakdownBase: Record<string, number> = {};
+      const expenseLabelBreakdownBase: Record<string, number> = {};
       budget?.category_groups?.expenditure?.forEach(cat => {
         const catTotal = cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0);
         expenseBreakdownBase[cat.name || 'Unknown'] = catTotal;
+        cat.sub_categories.forEach(sub => {
+          const label = sub.label || 'Unlabeled';
+          expenseLabelBreakdownBase[label] = (expenseLabelBreakdownBase[label] || 0) + (sub.budget_amount || 0);
+        });
       });
       const expenseMonthlyTotal = Object.values(expenseBreakdownBase).reduce((a, b) => a + b, 0);
 
@@ -538,6 +550,7 @@ const Projection = () => {
             incomeBreakdown,
             feederBreakdown: { 'Feeder Budget': feederMonthlyTotal },
             expenseBreakdown: { ...expenseBreakdownBase },
+            expenseLabelBreakdown: { ...expenseLabelBreakdownBase },
             slushBreakdown
           }
         });
@@ -812,12 +825,34 @@ const Projection = () => {
         </Card>
       </div>
 
+      <div className="flex justify-end mb-4 pr-2">
+        <div className="flex bg-muted p-1 rounded-lg">
+          <Button
+            variant={chartView === 'categories' ? 'secondary' : 'ghost'}
+            size="sm"
+            className="rounded-md h-8 text-xs font-bold"
+            onClick={() => setChartView('categories')}
+          >
+            Category Flow
+          </Button>
+          <Button
+            variant={chartView === 'labels' ? 'secondary' : 'ghost'}
+            size="sm"
+            className="rounded-md h-8 text-xs font-bold"
+            onClick={() => setChartView('labels')}
+          >
+            Label Flow
+          </Button>
+        </div>
+      </div>
+
       <ProjectionChart
         data={projectionData}
         comparisonData={masterProjectionData}
         title={activeScenarioId ? `Simulation: ${scenarios.find(s => s.id === activeScenarioId)?.name} vs Master` : `Projection for ${selectedYear}`}
         activeLabel={activeScenarioId ? "Scenario" : "Projected"}
         comparisonLabel="Master"
+        chartView={chartView}
       />
 
       <div className="space-y-6">

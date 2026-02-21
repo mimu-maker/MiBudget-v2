@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from 'recharts';
+import { ComposedChart, Bar, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from 'recharts';
 import { ProjectionData } from '@/types/projection';
 
 interface ProjectionChartProps {
@@ -10,6 +10,7 @@ interface ProjectionChartProps {
   title?: string;
   activeLabel?: string;
   comparisonLabel?: string;
+  chartView?: 'categories' | 'labels';
 }
 
 const ProjectionChart = ({
@@ -17,7 +18,8 @@ const ProjectionChart = ({
   comparisonData,
   title = "Projection",
   activeLabel = "Current",
-  comparisonLabel = "Master"
+  comparisonLabel = "Master",
+  chartView = "categories"
 }: ProjectionChartProps) => {
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
@@ -45,6 +47,16 @@ const ProjectionChart = ({
     };
   }, [data]);
 
+  const uniqueLabels = useMemo(() => {
+    const labels = new Set<string>();
+    data.forEach(d => {
+      if (d.breakdown?.expenseLabelBreakdown) {
+        Object.keys(d.breakdown.expenseLabelBreakdown).forEach(k => labels.add(k));
+      }
+    });
+    return Array.from(labels).sort();
+  }, [data]);
+
   // Merge data for the chart
   const combinedData = useMemo(() => data.map((d, i) => {
     const row: any = {
@@ -68,6 +80,10 @@ const ProjectionChart = ({
         row[`in_Feeder Budget`] = 0;
         row[`out_Feeder Budget`] = Math.abs(feederVal);
       }
+
+      if (d.breakdown.expenseLabelBreakdown) {
+        Object.entries(d.breakdown.expenseLabelBreakdown).forEach(([k, v]) => row[`lbl_${k}`] = v || 0);
+      }
     }
 
     return row;
@@ -85,6 +101,11 @@ const ProjectionChart = ({
     return colors[index % colors.length];
   };
 
+  const getLabelColor = (name: string, index: number) => {
+    const colors = ['#f43f5e', '#a855f7', '#3b82f6', '#f59e0b', '#10b981'];
+    return colors[index % colors.length];
+  };
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload) return null;
 
@@ -92,8 +113,8 @@ const ProjectionChart = ({
     const activeEntry = payload.find((p: any) => p.dataKey === hoveredKey);
     if (!activeEntry) return null;
 
-    const name = activeEntry.name.replace(/^(in_|out_)/, '');
-    const isExpense = activeEntry.name.startsWith('out_');
+    const name = activeEntry.name.replace(/^(in_|out_|lbl_)/, '');
+    const isExpense = activeEntry.name.startsWith('out_') || activeEntry.name.startsWith('lbl_');
     const displayVal = isExpense ? -Math.abs(Number(activeEntry.value)) : Number(activeEntry.value);
 
     return (
@@ -156,40 +177,73 @@ const ProjectionChart = ({
 
             <ReferenceLine yAxisId="cumulative" y={0} stroke="#e2e8f0" strokeDasharray="3 3" />
 
-            {/* Income Bars */}
-            {uniqueSubCats.income.map((name, idx) => (
-              <Bar
-                key={`in_${name}`}
-                yAxisId="bars"
-                dataKey={`in_${name}`}
-                name={`in_${name}`}
-                stackId="income"
-                fill={getIncomeColor(name, idx)}
-                radius={idx === uniqueSubCats.income.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                barSize={32}
-                onMouseEnter={() => setHoveredKey(`in_${name}`)}
-              />
-            ))}
-
-            {/* Expenditure Bars */}
-            {uniqueSubCats.expense.map((name, idx) => {
-              const isSlush = name.includes('[') && name.includes(']');
-              return (
-                <Bar
-                  key={`out_${name}`}
-                  yAxisId="bars"
-                  dataKey={`out_${name}`}
-                  name={`out_${name}`}
-                  stackId="expenditure"
-                  fill={getExpenseColor(name, idx)}
-                  stroke={isSlush ? "#fff" : "none"}
-                  strokeWidth={isSlush ? 2 : 0}
-                  radius={idx === uniqueSubCats.expense.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                  barSize={32}
-                  onMouseEnter={() => setHoveredKey(`out_${name}`)}
-                />
-              );
-            })}
+            {/* Income and Expenditure (Bars or Areas) */}
+            {chartView === 'categories' ? (
+              <>
+                {uniqueSubCats.income.map((name, idx) => (
+                  <Bar
+                    key={`in_${name}`}
+                    yAxisId="bars"
+                    dataKey={`in_${name}`}
+                    name={`in_${name}`}
+                    stackId="income"
+                    fill={getIncomeColor(name, idx)}
+                    radius={idx === uniqueSubCats.income.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                    barSize={32}
+                    onMouseEnter={() => setHoveredKey(`in_${name}`)}
+                  />
+                ))}
+                {uniqueSubCats.expense.map((name, idx) => {
+                  const isSlush = name.includes('[') && name.includes(']');
+                  return (
+                    <Bar
+                      key={`out_${name}`}
+                      yAxisId="bars"
+                      dataKey={`out_${name}`}
+                      name={`out_${name}`}
+                      stackId="expenditure"
+                      fill={getExpenseColor(name, idx)}
+                      stroke={isSlush ? "#fff" : "none"}
+                      strokeWidth={isSlush ? 2 : 0}
+                      radius={idx === uniqueSubCats.expense.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                      barSize={32}
+                      onMouseEnter={() => setHoveredKey(`out_${name}`)}
+                    />
+                  );
+                })}
+              </>
+            ) : (
+              <>
+                {uniqueSubCats.income.map((name, idx) => (
+                  <Area
+                    key={`in_${name}`}
+                    yAxisId="bars"
+                    type="monotone"
+                    dataKey={`in_${name}`}
+                    name={`in_${name}`}
+                    stackId="income"
+                    fill={getIncomeColor(name, idx)}
+                    stroke={getIncomeColor(name, idx)}
+                    fillOpacity={0.8}
+                    onMouseEnter={() => setHoveredKey(`in_${name}`)}
+                  />
+                ))}
+                {uniqueLabels.map((name, idx) => (
+                  <Area
+                    key={`lbl_${name}`}
+                    yAxisId="bars"
+                    type="monotone"
+                    dataKey={`lbl_${name}`}
+                    name={`lbl_${name}`}
+                    stackId="expenditure"
+                    fill={getLabelColor(name, idx)}
+                    stroke={getLabelColor(name, idx)}
+                    fillOpacity={0.8}
+                    onMouseEnter={() => setHoveredKey(`lbl_${name}`)}
+                  />
+                ))}
+              </>
+            )}
 
             {/* Cumulative Lines */}
             {comparisonData && (

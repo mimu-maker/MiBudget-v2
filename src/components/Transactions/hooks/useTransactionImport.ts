@@ -592,58 +592,12 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
         setProcessingProgress(prev => ({ ...prev, stage: 'validating', current: 0, total: preview.length }));
 
         try {
-            // 1. Generate fingerprints for all preview rows
-            const previewWithFingerprints = preview.map(p => ({
-                ...p,
-                fingerprint: generateFingerprint(p)
-            }));
-
-            // 2. Fetch existing fingerprints from DB to check for duplicates
-            const { data: authData } = await supabase.auth.getUser();
-            const userId = authData.user?.id || 'a316d106-5bc5-447a-b594-91dab8814c06';
-
-            const previewFingerprints = previewWithFingerprints.map(p => p.fingerprint);
-
-            // BATCH CHECKS to avoid "400 Request URI too long" (Supabase/PostgREST limit)
-            // BATCH CHECKS to avoid "400 Request URI too long" (Supabase/PostgREST limit)
-            const BATCH_SIZE = 100;
-            const existingFingerprints = new Set<string>();
-
-            const batches = [];
-            for (let i = 0; i < previewFingerprints.length; i += BATCH_SIZE) {
-                batches.push(previewFingerprints.slice(i, i + BATCH_SIZE));
-            }
-
-            // Process in chunks of 5 simultaneous requests to speed up without overwhelming connection
-            const CONCURRENCY = 5;
-            for (let i = 0; i < batches.length; i += CONCURRENCY) {
-                const currentBatches = batches.slice(i, i + CONCURRENCY);
-                await Promise.all(currentBatches.map(async (batch) => {
-                    const { data: existingBatch, error: batchError } = await supabase
-                        .from('transactions')
-                        .select('fingerprint')
-                        .eq('user_id', userId)
-                        .neq('excluded', true) // Ignore soft-deleted/excluded transactions
-                        .in('fingerprint', batch);
-
-                    if (batchError) throw batchError;
-                    (existingBatch || []).forEach(e => existingFingerprints.add(e.fingerprint));
-                }));
-            }
-
-            const duplicateTransactions = previewWithFingerprints.filter(p => existingFingerprints.has(p.fingerprint));
-
-            if (duplicateTransactions.length > 0) {
-                setConflicts(duplicateTransactions);
-                setStep(6);
-                setIsProcessing(false);
-                return;
-            }
-
-            // No duplicates found, proceed to import
-            executeImport();
+            // Bypass duplicate checks and proceed directly to importing everything
+            setTimeout(() => {
+                executeImport();
+            }, 50); // Small timeout to allow processing UI to render immediately
         } catch (err: any) {
-            setErrors([`Duplicate check failed: ${err.message}`]);
+            setErrors([`Validation failed: ${err.message}`]);
             setIsProcessing(false);
         }
     };
