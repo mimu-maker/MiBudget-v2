@@ -5,10 +5,12 @@ import AddTransactionFormV2 from '@/components/Projection/AddTransactionFormV2';
 import IncomeTransactionsTable from '@/components/Projection/IncomeTransactionsTable';
 import ExpenseTransactionsTable from '@/components/Projection/ExpenseTransactionsTable';
 import SlushFundTransactionsTable from '@/components/Projection/SlushFundTransactionsTable';
+import SlushFundAddDialog from '@/components/Projection/SlushFundAddDialog';
+import ProjectedIncomeTable from '@/components/Projection/ProjectedIncomeTable';
 import PasteDataDialog from '@/components/Projection/PasteDataDialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Sparkles, ChevronDown, ChevronUp, Clock, History, TrendingUp, TrendingDown, Scale, ArrowUpRight, ArrowDownRight, Wallet, PieChart, Plus, Trash2 } from 'lucide-react';
+import { Sparkles, ChevronDown, ChevronUp, Clock, History, TrendingUp, TrendingDown, Scale, ArrowUpRight, ArrowDownRight, Wallet, PieChart, Plus, Trash2, BarChart3 } from 'lucide-react';
 import CreateScenarioDialog from '@/components/Projection/CreateScenarioDialog';
 import SuggestProjectionsWizard from '@/components/Projection/SuggestProjectionsWizard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -16,6 +18,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Link } from 'react-router-dom';
+import { formatCurrency } from '@/lib/formatUtils';
 import { useAnnualBudget, BudgetCategory, BudgetSubCategory } from '@/hooks/useAnnualBudget';
 import { useBudgetCategoryActionsForBudget } from '@/hooks/useBudgetCategories';
 import { useSettings } from '@/hooks/useSettings';
@@ -35,9 +38,12 @@ const Projection = () => {
   const [pasteDialogType, setPasteDialogType] = useState<'income' | 'expense'>('income');
   const [showLegacy, setShowLegacy] = useState(false);
   const [showPastProjections, setShowPastProjections] = useState(false);
-  const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
   const [showCreateScenario, setShowCreateScenario] = useState(false);
-  const [chartView, setChartView] = useState<'categories' | 'labels'>('categories');
+  const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | number | null>(null);
+  const [disabledIncomeStreams, setDisabledIncomeStreams] = useState<Set<string>>(new Set());
+  const [slushDialogOpen, setSlushDialogOpen] = useState(false);
+  const [slushEditingTx, setSlushEditingTx] = useState<FutureTransaction | null>(null);
 
   const currentYear = new Date().getFullYear();
   const availableYearsList = [currentYear, currentYear + 1, currentYear + 2];
@@ -50,7 +56,7 @@ const Projection = () => {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   // 1. Fetch ALL Projections (including Master)
-  const { data: allProjectionsRaw = [], isLoading: isLoadingProjections } = useQuery({
+  const { data: allProjectionsRaw = [], isLoading: isLoadingProjections } = useQuery<any[]>({
     queryKey: ['projections', 'all'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -84,7 +90,7 @@ const Projection = () => {
   );
 
   // 1.1 Fetch Scenarios
-  const { data: scenarios = [] } = useQuery({
+  const { data: scenarios = [] } = useQuery<any[]>({
     queryKey: ['scenarios'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -329,41 +335,62 @@ const Projection = () => {
     [futureTransactions, selectedYear, specialCategoryNames]
   );
 
-  const stats = useMemo(() => {
-    const sumAnnual = (txs: FutureTransaction[]) => {
-      return txs.reduce((sum, t) => {
-        let count = 0;
-        if (t.recurring === 'Monthly') count = 12;
-        else if (t.recurring === 'Quarterly') count = 4;
-        else if (t.recurring === 'Annually') count = 1;
-        else if (t.recurring === 'Bi-annually') count = 2;
-        else count = 1; // N/A
-        return sum + (t.amount * count);
-      }, 0);
-    };
+  const handleEditTransaction = (tx: FutureTransaction) => {
+    setEditingId(tx.id);
+    setTransactionType(tx.amount >= 0 ? 'income' : 'expense');
+    setNewTransaction({
+      date: tx.date,
+      source: tx.source,
+      amount: Math.abs(tx.amount).toString(),
+      category: tx.category,
+      stream: tx.stream,
+      planned: tx.planned,
+      recurring: tx.recurring,
+      description: tx.description
+    });
+    setShowAddForm(true);
+  };
 
-    const yearIncome = sumAnnual(incomeTransactions);
-    const feederMonthly = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
-    const yearFeeder = feederMonthly * 12;
+  const primaryExpensesByLabel = useMemo(() => {
+    if (!budget?.category_groups?.expenditure) return [];
 
-    const budgetedPrimaryExpensesMonthly = budget?.category_groups?.expenditure?.reduce((sum, cat) =>
-      sum + cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0), 0) || 0;
-    const yearExpenses = budgetedPrimaryExpensesMonthly * 12;
-    const yearSlush = Math.abs(sumAnnual(slushFundTransactions));
+    const labelGroups: Record<string, BudgetSubCategory[]> = {};
 
-    const totalIncome = yearIncome + yearFeeder;
-    const totalExpenses = yearExpenses + yearSlush;
+    budget.category_groups.expenditure.forEach(cat => {
+      cat.sub_categories.forEach(sub => {
+        const label = sub.label || 'Unlabeled';
+        if (!labelGroups[label]) labelGroups[label] = [];
+        labelGroups[label].push({
+          ...sub,
+          name: `${cat.name} - ${sub.name}`
+        });
+      });
+    });
 
-    return {
-      income: yearIncome,
-      expenses: yearExpenses,
-      slush: yearSlush,
-      feeder: yearFeeder,
-      totalIncome,
-      totalExpenses,
-      pl: totalIncome - totalExpenses
-    };
-  }, [incomeTransactions, slushFundTransactions, klintemarkenData, budget]);
+    return Object.entries(labelGroups).map(([label, subcategories]) => {
+      return {
+        id: `label-${label}`,
+        name: label,
+        type: 'expense',
+        budget_amount: subcategories.reduce((sum, sub) => sum + (sub.budget_amount || 0), 0),
+        spent: subcategories.reduce((sum, sub) => sum + (sub.spent || 0), 0),
+        sub_categories: subcategories.sort((a, b) => a.name.localeCompare(b.name))
+      } as unknown as BudgetCategory;
+    }).sort((a, b) => a.name.localeCompare(b.name));
+  }, [budget]);
+
+  const unlabeledCategories = useMemo(() => {
+    if (!budget?.category_groups?.expenditure) return [];
+    const unlabeled: string[] = [];
+    budget.category_groups.expenditure.forEach(cat => {
+      cat.sub_categories.forEach(sub => {
+        if (!sub.label || sub.label.toLowerCase() === 'unlabeled') {
+          unlabeled.push(`${cat.name} - ${sub.name}`);
+        }
+      });
+    });
+    return unlabeled.sort();
+  }, [budget]);
 
   const projectionData = useMemo(() => {
     const calculateData = (txs: any[]) => {
@@ -385,16 +412,64 @@ const Projection = () => {
       const expenseMonthlyTotal = Object.values(expenseBreakdownBase).reduce((a, b) => a + b, 0);
 
       let runningBalance = 0;
-      for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
-        const monthDate = new Date(yearNum, monthIdx, 1);
+      const today = new Date();
+      const isCurrentYear = yearNum === today.getFullYear();
+      const startMonth = isCurrentYear ? today.getMonth() : 0;
+
+      for (let i = 0; i < 12; i++) {
+        const monthIdx = (startMonth + i) % 12;
+        const yearOffset = Math.floor((startMonth + i) / 12);
+        const currentYearNum = yearNum + yearOffset;
+
+        const monthDate = new Date(currentYearNum, monthIdx, 1);
         const monthKey = monthDate.toISOString().slice(0, 7);
         let income = 0;
         let slush = 0;
         const incomeBreakdown: Record<string, number> = {};
         const slushBreakdown: Record<string, number> = {};
 
+        // 1. Process Income from Budget Categories (merging with overrides in projections)
+        budget?.category_groups?.income?.forEach(cat => {
+          cat.sub_categories.forEach(sub => {
+            if (disabledIncomeStreams.has(sub.name)) return;
+
+            // Find ALL potential projections for this stream
+            const matches = txs.filter(t =>
+              (t.stream === sub.name && t.category === cat.name) ||
+              (t.source === sub.name && (t.category === 'Income' || t.category === cat.name))
+            );
+
+            let amount = sub.budget_amount;
+
+            // Check for overrides in any matching projection
+            matches.forEach(m => {
+              const monthOverride = m.overrides?.[monthKey];
+              if (monthOverride && monthOverride.amount !== undefined) {
+                amount = monthOverride.amount;
+              } else if (m.recurring === 'Monthly') {
+                amount = m.amount;
+              } else {
+                // If it's a non-monthly recurring projection, it will be handled in the txs loop below?
+                // Actually, to avoid double counting, we should mark these projections as "handled"
+                // but let's stick to the simplest override logic first.
+              }
+            });
+
+            income += amount;
+            incomeBreakdown[sub.name] = (incomeBreakdown[sub.name] || 0) + amount;
+          });
+        });
+
+        // 2. Process non-income projections and Slush fund items
         txs.forEach(t => {
           if (!t.date) return;
+
+          const isKnownIncome = budget?.category_groups?.income?.some(cat =>
+            cat.sub_categories.some(sub =>
+              sub.name === t.stream || sub.name === t.source
+            )
+          );
+
           const transDate = new Date(t.date);
           const transMonthKey = t.date.slice(0, 7);
           const monthOverride = t.overrides?.[monthKey];
@@ -421,9 +496,23 @@ const Projection = () => {
 
           if (isCurrentMonth) {
             if (amountToUse >= 0) {
-              const streamName = t.stream || t.source || 'Other';
-              income += amountToUse;
-              incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
+              // Only add if it wasn't handled by the budget loop above
+              // AND ensure it doesn't just match the "Income" category name to avoid doubling
+              if (!isKnownIncome) {
+                const streamName = t.stream || t.source || 'Other';
+
+                // If it's not a known sub-category (handled in first loop), but it is a positive amount
+                // that belongs to an Income category, we strictly exclude it to avoid doubling.
+                const isIncomeCategory = budget?.category_groups?.income?.some(cat => cat.name === t.category);
+                if (isIncomeCategory && !isKnownIncome) return;
+
+                // Handle generic "Income" or category name as stream name
+                const isTopLevelCategoryName = budget?.category_groups?.income?.some(cat => cat.name === streamName);
+                if (isTopLevelCategoryName || streamName === 'Income') return;
+
+                income += amountToUse;
+                incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
+              }
             } else if (specialCategoryNames.includes(t.category)) {
               // Show individual Slush items as requested
               const itemName = t.source || t.stream || 'Slush Item';
@@ -460,7 +549,24 @@ const Projection = () => {
     };
 
     return calculateData(futureTransactions);
-  }, [futureTransactions, selectedYear, klintemarkenData, specialCategoryNames, budget]);
+  }, [futureTransactions, selectedYear, klintemarkenData, specialCategoryNames, budget, disabledIncomeStreams]);
+
+  const stats = useMemo(() => {
+    const totalIncome = projectionData.reduce((sum, d) => sum + (d.income || 0), 0);
+    const totalFeeder = projectionData.reduce((sum, d) => sum + (d.feeder || 0), 0);
+    const totalExpenses = projectionData.reduce((sum, d) => sum + (d.expense || 0), 0);
+    const totalSlush = projectionData.reduce((sum, d) => sum + (d.slush || 0), 0);
+
+    return {
+      income: totalIncome,
+      feeder: totalFeeder,
+      expenses: totalExpenses,
+      slush: totalSlush,
+      totalIncome: (totalIncome + totalFeeder),
+      totalExpenses: (totalExpenses + totalSlush),
+      pl: (totalIncome + totalFeeder) - (totalExpenses + totalSlush)
+    };
+  }, [projectionData]);
 
   const masterProjectionData = useMemo(() => {
     if (!activeScenarioId) return undefined;
@@ -485,16 +591,57 @@ const Projection = () => {
       const expenseMonthlyTotal = Object.values(expenseBreakdownBase).reduce((a, b) => a + b, 0);
 
       let runningBalance = 0;
-      for (let monthIdx = 0; monthIdx < 12; monthIdx++) {
-        const monthDate = new Date(yearNum, monthIdx, 1);
+      const today = new Date();
+      const isCurrentYear = yearNum === today.getFullYear();
+      const startMonth = isCurrentYear ? today.getMonth() : 0;
+
+      for (let i = 0; i < 12; i++) {
+        const monthIdx = (startMonth + i) % 12;
+        const yearOffset = Math.floor((startMonth + i) / 12);
+        const currentYearNum = yearNum + yearOffset;
+
+        const monthDate = new Date(currentYearNum, monthIdx, 1);
         const monthKey = monthDate.toISOString().slice(0, 7);
         let income = 0;
         let slush = 0;
         const incomeBreakdown: Record<string, number> = {};
         const slushBreakdown: Record<string, number> = {};
 
+        // 1. Process Income from Budget Categories (merging with overrides in projections)
+        budget?.category_groups?.income?.forEach(cat => {
+          cat.sub_categories.forEach(sub => {
+            if (disabledIncomeStreams.has(sub.name)) return;
+
+            const matches = txs.filter(t =>
+              (t.stream === sub.name && t.category === cat.name) ||
+              (t.source === sub.name && (t.category === 'Income' || t.category === cat.name))
+            );
+
+            let amount = sub.budget_amount;
+            matches.forEach(m => {
+              const monthOverride = m.overrides?.[monthKey];
+              if (monthOverride && monthOverride.amount !== undefined) {
+                amount = monthOverride.amount;
+              } else if (m.recurring === 'Monthly') {
+                amount = m.amount;
+              }
+            });
+
+            income += amount;
+            incomeBreakdown[sub.name] = (incomeBreakdown[sub.name] || 0) + amount;
+          });
+        });
+
+        // 2. Process non-income projections and Slush fund items
         txs.forEach(t => {
           if (!t.date) return;
+
+          const isKnownIncome = budget?.category_groups?.income?.some(cat =>
+            cat.sub_categories.some(sub =>
+              sub.name === t.stream || sub.name === t.source
+            )
+          );
+
           const transDate = new Date(t.date);
           const transMonthKey = t.date.slice(0, 7);
           const monthOverride = t.overrides?.[monthKey];
@@ -521,9 +668,18 @@ const Projection = () => {
 
           if (isCurrentMonth) {
             if (amountToUse >= 0) {
-              const streamName = t.stream || t.source || 'Other';
-              income += amountToUse;
-              incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
+              if (!isKnownIncome) {
+                const streamName = t.stream || t.source || 'Other';
+
+                const isIncomeCategory = budget?.category_groups?.income?.some(cat => cat.name === t.category);
+                if (isIncomeCategory && !isKnownIncome) return;
+
+                const isTopLevelCategoryName = budget?.category_groups?.income?.some(cat => cat.name === streamName);
+                if (isTopLevelCategoryName || streamName === 'Income') return;
+
+                income += amountToUse;
+                incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
+              }
             } else if (specialCategoryNames.includes(t.category)) {
               const itemName = t.source || t.stream || 'Slush Item';
               const uniqueKey = `${itemName} [${t.id?.slice(0, 4) || 'tx'}]`;
@@ -559,15 +715,30 @@ const Projection = () => {
     };
 
     return calculateData(matchedMaster);
-  }, [masterProjectionsRaw, transactions, selectedYear, activeScenarioId, klintemarkenData, specialCategoryNames, budget]);
+  }, [masterProjectionsRaw, transactions, selectedYear, activeScenarioId, klintemarkenData, specialCategoryNames, budget, disabledIncomeStreams]);
 
   const handleAddTransaction = () => {
-    if ((!newTransaction.source && !newTransaction.stream) || !newTransaction.amount) return;
-    addProjectionMutation.mutate({
+    if (!newTransaction.amount) {
+      toast({ title: "Validation Error", description: "Amount is required", variant: "destructive" });
+      return;
+    }
+
+    if (!newTransaction.source && !newTransaction.stream && !newTransaction.description) {
+      toast({ title: "Validation Error", description: "Please provide a source, stream, or description", variant: "destructive" });
+      return;
+    }
+
+    const payload = {
       ...newTransaction,
       amount: parseFloat(newTransaction.amount) || 0,
       date: newTransaction.date || new Date().toISOString().slice(0, 10)
-    });
+    };
+
+    if (editingId) {
+      updateProjectionMutation.mutate({ id: editingId, updates: payload });
+    } else {
+      addProjectionMutation.mutate(payload);
+    }
     resetForm();
   };
 
@@ -582,24 +753,55 @@ const Projection = () => {
       recurring: 'Monthly',
       description: ''
     });
+    setEditingId(null);
     setShowAddForm(false);
+  };
+
+  const handleSlushSubmit = (data: { name: string; date: string; amount: number; category: string }) => {
+    if (slushEditingTx) {
+      updateProjectionMutation.mutate({
+        id: slushEditingTx.id,
+        updates: {
+          source: data.name,
+          description: data.name,
+          date: data.date,
+          amount: data.amount,
+          recurring: 'N/A',
+          category: data.category,
+          stream: ''
+        }
+      });
+      setSlushEditingTx(null);
+    } else {
+      addProjectionMutation.mutate({
+        source: data.name,
+        description: data.name,
+        date: data.date,
+        amount: data.amount,
+        recurring: 'N/A',
+        category: data.category,
+        stream: '',
+        planned: true
+      });
+    }
   };
 
   const handleDeleteTransaction = (id: string | number) => deleteProjectionMutation.mutate(id);
   const handleTransactionChange = (updates: Partial<NewTransactionForm>) => setNewTransaction(prev => ({ ...prev, ...updates }));
 
-  const handleAddClick = (type: 'income' | 'expense') => {
+  const handleAddClick = (type: 'income' | 'expense', category?: string) => {
     setTransactionType(type);
     setNewTransaction({
       date: new Date().toISOString().slice(0, 10),
       source: '',
       amount: '',
-      category: type === 'income' ? 'Income' : 'Food',
+      category: category || (type === 'income' ? 'Income' : 'Food'),
       stream: '',
       planned: true,
       recurring: 'Monthly',
       description: ''
     });
+    setEditingId(null);
     setShowAddForm(true);
   };
 
@@ -825,25 +1027,11 @@ const Projection = () => {
         </Card>
       </div>
 
-      <div className="flex justify-end mb-4 pr-2">
-        <div className="flex bg-muted p-1 rounded-lg">
-          <Button
-            variant={chartView === 'categories' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="rounded-md h-8 text-xs font-bold"
-            onClick={() => setChartView('categories')}
-          >
-            Category Flow
-          </Button>
-          <Button
-            variant={chartView === 'labels' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="rounded-md h-8 text-xs font-bold"
-            onClick={() => setChartView('labels')}
-          >
-            Label Flow
-          </Button>
-        </div>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-primary" />
+          Financial Forecast
+        </h2>
       </div>
 
       <ProjectionChart
@@ -852,28 +1040,101 @@ const Projection = () => {
         title={activeScenarioId ? `Simulation: ${scenarios.find(s => s.id === activeScenarioId)?.name} vs Master` : `Projection for ${selectedYear}`}
         activeLabel={activeScenarioId ? "Scenario" : "Projected"}
         comparisonLabel="Master"
-        chartView={chartView}
+        unlabeledCategories={unlabeledCategories}
       />
 
       <div className="space-y-6">
+        {/* Slush Fund Section */}
+        <div key="slush-fund" className="animate-in fade-in duration-500 delay-200">
+          <SlushFundTransactionsTable
+            transactions={slushFundTransactions}
+            onDelete={handleDeleteTransaction}
+            onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
+            onEdit={(tx) => { setSlushEditingTx(tx as FutureTransaction); setSlushDialogOpen(true); }}
+            onAddClick={() => { setSlushEditingTx(null); setSlushDialogOpen(true); }}
+            selectedYear={selectedYear}
+            showPastProjections={showPastProjections}
+          />
+        </div>
+
         {/* Income Sources Card */}
         {incomeData.length > 0 && (
           <Card key="income" className="shadow-sm border-emerald-100 bg-emerald-50/10 overflow-hidden rounded-3xl animate-in fade-in duration-500">
             <div className="bg-emerald-50/50 border-b border-emerald-100 py-4 px-6 flex justify-between items-center">
-              <CardTitle className="text-xl text-emerald-800 flex items-center gap-2 font-bold">Projected Income</CardTitle>
+              <CardTitle className="text-xl text-emerald-800 flex items-center gap-2 font-bold shrink-0">Projected Income</CardTitle>
+              <div className="flex items-center gap-6 ml-auto pr-4">
+                <div className="text-right">
+                  <p className="text-[10px] uppercase font-black text-emerald-600/60 leading-tight tracking-widest">Projected Monthly</p>
+                  <p className="text-lg font-black text-emerald-900 leading-tight font-mono">{formatCurrency(projectionData[0]?.income || 0, settings.currency)}</p>
+                </div>
+                <div className="text-right border-l border-emerald-100 pl-6">
+                  <p className="text-[10px] uppercase font-black text-emerald-600/60 leading-tight tracking-widest">Projected Annual</p>
+                  <p className="text-lg font-black text-emerald-900 leading-tight font-mono">{formatCurrency(projectionData.reduce((sum, d) => sum + (d.income || 0), 0), settings.currency)}</p>
+                </div>
+              </div>
             </div>
             <CardContent className="p-0">
-              <BudgetTable
-                data={incomeData as any}
-                type="income"
-                expandedCategories={expandedCategories}
-                toggleCategory={toggleCategory}
-                editingBudget={editingBudget}
-                setEditingBudget={setEditingBudget}
-                handleUpdateBudget={handleUpdateBudget}
-                totalIncome={totalBudgetedIncome}
+              <ProjectedIncomeTable
+                incomeCategories={incomeData as any}
+                projections={futureTransactions}
+                disabledStreams={disabledIncomeStreams}
+                onToggleStream={(name) => {
+                  const next = new Set(disabledIncomeStreams);
+                  if (next.has(name)) next.delete(name);
+                  else next.add(name);
+                  setDisabledIncomeStreams(next);
+                }}
+                onUpdateValue={async (stream, category, monthKey, amount, mode) => {
+                  // Find existing projection for this stream
+                  const existing = futureTransactions.find(p => p.stream === stream && p.category === category);
+                  if (mode === 'single') {
+                    if (existing) {
+                      const newOverrides = { ...(existing.overrides || {}) };
+                      newOverrides[monthKey] = { amount };
+                      await updateProjectionMutation.mutateAsync({ id: existing.id, updates: { overrides: newOverrides } });
+                    } else {
+                      // Create new projection for this stream
+                      await addProjectionMutation.mutateAsync({
+                        category,
+                        stream,
+                        amount: amount, // For single month, we set it as the base and use override logic?
+                        // Actually, if it's the first time, maybe just set it as single month projection
+                        date: `${monthKey}-01`,
+                        recurring: 'N/A',
+                        planned: true,
+                        source: stream,
+                        description: `Income override for ${stream}`
+                      });
+                    }
+                  } else {
+                    // Forward mode: set the base amount and clear subsequent overrides?
+                    // Or set recurring to Monthly and change amount
+                    if (existing) {
+                      await updateProjectionMutation.mutateAsync({
+                        id: existing.id,
+                        updates: {
+                          amount,
+                          recurring: 'Monthly',
+                          date: `${monthKey}-01`,
+                          overrides: {} // Clear overrides to let the new base take effect
+                        }
+                      });
+                    } else {
+                      await addProjectionMutation.mutateAsync({
+                        category,
+                        stream,
+                        amount,
+                        date: `${monthKey}-01`,
+                        recurring: 'Monthly',
+                        planned: true,
+                        source: stream,
+                        description: `Income override for ${stream}`
+                      });
+                    }
+                  }
+                  queryClient.invalidateQueries({ queryKey: ['projections'] });
+                }}
                 currency={settings.currency}
-                selectedYear={parseInt(selectedYear)}
               />
             </CardContent>
           </Card>
@@ -916,13 +1177,13 @@ const Projection = () => {
                 <div className="px-2 py-0.5 bg-gray-200 text-gray-600 text-[10px] font-black uppercase rounded tracking-wider">Read Only</div>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => expandAll(budget.category_groups.expenditure.map(d => d.name))} className="h-8 text-[10px] uppercase tracking-wider font-bold">Expand All</Button>
+                <Button variant="outline" size="sm" onClick={() => expandAll(primaryExpensesByLabel.map(d => d.name))} className="h-8 text-[10px] uppercase tracking-wider font-bold">Expand All</Button>
                 <Button variant="outline" size="sm" onClick={collapseAll} className="h-8 text-[10px] uppercase tracking-wider font-bold">Collapse All</Button>
               </div>
             </div>
             <CardContent className="p-0">
               <BudgetTable
-                data={budget.category_groups.expenditure as any}
+                data={primaryExpensesByLabel as any}
                 type="expense"
                 hideHeader={true}
                 expandedCategories={expandedCategories}
@@ -938,17 +1199,6 @@ const Projection = () => {
           </Card>
         )}
 
-        {/* Slush Fund Section */}
-        <div key="slush-fund" className="animate-in fade-in duration-500 delay-200">
-          <SlushFundTransactionsTable
-            transactions={slushFundTransactions}
-            onDelete={handleDeleteTransaction}
-            onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
-            onAddClick={() => handleAddClick('expense')}
-            selectedYear={selectedYear}
-            showPastProjections={showPastProjections}
-          />
-        </div>
       </div>
 
       <AddTransactionFormV2
@@ -959,6 +1209,7 @@ const Projection = () => {
         onSubmit={handleAddTransaction}
         onCancel={resetForm}
         onPasteClick={() => handlePasteClick(transactionType)}
+        isEditing={!!editingId}
       />
 
       {/* Legacy Section */}
@@ -988,25 +1239,29 @@ const Projection = () => {
             </div>
 
 
-            <div className="space-y-6">
-              <IncomeTransactionsTable
-                transactions={incomeTransactions}
-                onDelete={handleDeleteTransaction}
-                onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
-                onAddClick={() => handleAddClick('income')}
-                selectedYear={selectedYear}
-                showPastProjections={showPastProjections}
-              />
+            {showLegacy && (
+              <div className="space-y-6">
+                <IncomeTransactionsTable
+                  transactions={incomeTransactions}
+                  onDelete={handleDeleteTransaction}
+                  onEdit={handleEditTransaction}
+                  onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
+                  onAddClick={() => handleAddClick('income')}
+                  selectedYear={selectedYear}
+                  showPastProjections={showPastProjections}
+                />
 
-              <ExpenseTransactionsTable
-                transactions={expenseTransactions}
-                onDelete={handleDeleteTransaction}
-                onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
-                onAddClick={() => handleAddClick('expense')}
-                selectedYear={selectedYear}
-                showPastProjections={showPastProjections}
-              />
-            </div>
+                <ExpenseTransactionsTable
+                  transactions={expenseTransactions}
+                  onDelete={handleDeleteTransaction}
+                  onEdit={handleEditTransaction}
+                  onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
+                  onAddClick={() => handleAddClick('expense')}
+                  selectedYear={selectedYear}
+                  showPastProjections={showPastProjections}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1031,6 +1286,12 @@ const Projection = () => {
         open={showCreateScenario}
         onOpenChange={setShowCreateScenario}
         onSuccess={(id) => setActiveScenarioId(id)}
+      />
+      <SlushFundAddDialog
+        open={slushDialogOpen}
+        onOpenChange={(open) => { setSlushDialogOpen(open); if (!open) setSlushEditingTx(null); }}
+        onSubmit={handleSlushSubmit}
+        editingTransaction={slushEditingTx}
       />
     </div >
   );

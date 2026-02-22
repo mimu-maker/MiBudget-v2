@@ -41,6 +41,8 @@ interface SelectedRule {
     auto_planned: boolean;
     auto_exclude: boolean;
     skip_triage: boolean;
+    match_mode?: 'exact' | 'fuzzy';
+    raw_name?: string;
     transactionIds: string[];
 }
 
@@ -318,7 +320,7 @@ export const ValidationDashboard = () => {
     // Simplified: Using centralization in useTransactionTable
 
     const createRuleMutation = useMutation({
-        mutationFn: async ({ name, clean_source, category, sub_category, auto_recurring, auto_planned, skip_triage, auto_budget }: {
+        mutationFn: async ({ name, clean_source, category, sub_category, auto_recurring, auto_planned, skip_triage, auto_budget, match_mode }: {
             name: string,
             clean_source: string,
             category: string,
@@ -326,7 +328,8 @@ export const ValidationDashboard = () => {
             auto_recurring: string,
             auto_planned: boolean,
             skip_triage: boolean,
-            auto_budget?: string | null
+            auto_budget?: string | null,
+            match_mode?: string
         }) => {
             // 1. Save Source Settings (Centralized)
             const { error: sourceSettingsError } = await supabase
@@ -353,7 +356,8 @@ export const ValidationDashboard = () => {
                     auto_category: category,
                     auto_sub_category: sub_category,
                     auto_planned: auto_planned,
-                    auto_budget: auto_budget
+                    auto_budget: auto_budget,
+                    match_mode: match_mode || 'fuzzy'
                 }], { onConflict: 'user_id, source_name' });
 
             if (error) throw error;
@@ -397,7 +401,8 @@ export const ValidationDashboard = () => {
 
     const openRuleDialog = (sourceName: string, txs: any[], inline: boolean = false) => {
         const ruleData: SelectedRule = {
-            name: txs[0]?.source || sourceName, // Raw name from DB
+            name: txs[0]?.clean_source || cleanSource(txs[0]?.source) || sourceName, // Editable mapping string
+            raw_name: txs[0]?.source || sourceName, // Raw name from DB
             clean_name: txs[0]?.clean_source || '', // Existing clean name if any
             category: txs[0]?.category || '',
             sub_category: txs[0]?.sub_category || '',
@@ -405,6 +410,7 @@ export const ValidationDashboard = () => {
             auto_planned: true, // Default to Planned
             auto_exclude: txs[0]?.excluded || false,
             skip_triage: txs[0]?.status === 'Complete',
+            match_mode: 'fuzzy',
             transactionIds: txs.map(t => t.id)
         };
 
@@ -447,7 +453,8 @@ export const ValidationDashboard = () => {
                     auto_recurring: ruleToUse.auto_recurring,
                     auto_planned: ruleToUse.auto_planned,
                     auto_budget: ruleToUse.auto_exclude ? 'Exclude' : null,
-                    skip_triage: false // FORCE DISABLE
+                    skip_triage: false, // FORCE DISABLE
+                    match_mode: ruleToUse.match_mode || 'fuzzy'
                 });
             } catch (error) {
                 console.warn("Failed to update source rule, proceeding with transaction updates...", error);
@@ -489,7 +496,8 @@ export const ValidationDashboard = () => {
                 sub_category: null,
                 auto_recurring: 'N/A',
                 auto_planned: true,
-                skip_triage: false
+                skip_triage: false,
+                match_mode: 'fuzzy'
             });
         } catch (error) {
             console.warn("Failed to save source rule (likely permission issue), proceeding with transaction update...", error);
@@ -762,9 +770,25 @@ export const ValidationDashboard = () => {
             <div className="space-y-8">
                 <div className="flex flex-col md:flex-row items-center gap-4 p-6 bg-slate-50/50 rounded-2xl border border-slate-100/80 shadow-inner relative">
                     <div className="flex-1 space-y-2 w-full">
-                        <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Input Name (Bank Reference)</Label>
-                        <div className="py-2.5 px-4 bg-white rounded-xl border border-slate-200/60 shadow-sm">
-                            <p className="text-sm font-mono font-bold text-slate-600 truncate">{rule.name}</p>
+                        <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Pattern Text</Label>
+                        <div className="flex gap-2">
+                            <Input
+                                value={rule.name}
+                                onChange={(e) => setRule((p: any) => p ? { ...p, name: e.target.value } : null)}
+                                className="flex-1 bg-white h-10 font-mono text-sm border-slate-200/60 shadow-sm"
+                            />
+                            <Select
+                                value={rule.match_mode || 'fuzzy'}
+                                onValueChange={(v) => setRule((p: any) => p ? { ...p, match_mode: v } : null)}
+                            >
+                                <SelectTrigger className="w-32 bg-white h-10 border-slate-200/60 shadow-sm">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="fuzzy">Fuzzy</SelectItem>
+                                    <SelectItem value="exact">Exact</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
                     </div>
 
@@ -778,7 +802,7 @@ export const ValidationDashboard = () => {
                     </div>
 
                     <div className="flex-1 space-y-2 w-full">
-                        <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Display Name (Clean Product/Service)</Label>
+                        <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Mapped Source</Label>
                         <SourceNameSelector
                             value={rule.clean_name}
                             hideAddNew={false}
@@ -969,8 +993,8 @@ export const ValidationDashboard = () => {
             <TriageAccordion
                 transactions={transactions}
                 onVerifySingle={(tx, cat, sub) => {
-                    updateTransaction.mutate({
-                        id: tx.id,
+                    bulkUpdate({
+                        ids: [tx.id],
                         updates: {
                             category: cat || tx.category,
                             sub_category: sub || tx.sub_category,
@@ -982,17 +1006,17 @@ export const ValidationDashboard = () => {
                     setSelectedSourceRule(rule);
                     setRuleDialogOpen(true);
                 }}
-                onBulkUpdate={(ids, updates) => bulkUpdate.mutate({ ids, updates })}
+                onBulkUpdate={(ids, updates) => bulkUpdate({ ids, updates })}
                 onSplit={(tx) => {
                     setTransactionToSplit(tx);
                     setSplitModalOpen(true);
                 }}
                 categoryList={allCategories.map(c => c.name)}
                 getSubCategoryList={(cat) => allCategories.find(c => c.name === cat)?.sub_categories?.map((s: any) => s.name) || []}
-                onDelete={(id) => deleteTransaction.mutate(id)}
-                onBulkDelete={(ids) => bulkDelete.mutate(ids)}
-                onKeep={(id) => differentiateTransaction.mutate(id)}
-                onUpdateRow={(id, updates) => updateTransaction.mutate({ id, updates })}
+                onDelete={(id) => deleteTransaction(id)}
+                onBulkDelete={(ids) => bulkDelete(ids)}
+                onKeep={(id) => differentiateTransaction(id)}
+                onUpdateRow={(id, updates) => bulkUpdate({ ids: [id], updates })}
                 mode="dashboard"
             />
 

@@ -14,8 +14,10 @@ import { SourceNameSelector } from './SourceNameSelector';
 import { SmartSelector } from '@/components/ui/smart-selector';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CategorySelector } from '@/components/Budget/CategorySelector';
+import { cleanSource } from '@/lib/importBrain';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { TransactionNote } from './TransactionNote';
 import { Info } from 'lucide-react';
@@ -51,13 +53,41 @@ const RuleForm = ({ rule, setRule, onSave, onCancel, getSubCategoryList }: any) 
 
     return (
         <div className="space-y-6">
-            <div className="space-y-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="space-y-1">
-                    <Label className="text-[10px] uppercase font-bold text-slate-500">Input Source Name</Label>
-                    <p className="text-sm font-mono text-slate-700">{rule.name}</p>
+            <div className="flex flex-col md:flex-row items-center gap-4 p-4 bg-slate-50/50 rounded-2xl border border-slate-100/80 shadow-inner relative">
+                <div className="flex-1 space-y-2 w-full">
+                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Pattern Text</Label>
+                    <div className="flex gap-2">
+                        <Input
+                            value={rule.name}
+                            onChange={(e) => setRule((p: any) => p ? { ...p, name: e.target.value } : null)}
+                            className="flex-1 bg-white h-10 font-mono text-sm border-slate-200/60 shadow-sm"
+                        />
+                        <Select
+                            value={rule.match_mode || 'fuzzy'}
+                            onValueChange={(v) => setRule((p: any) => p ? { ...p, match_mode: v } : null)}
+                        >
+                            <SelectTrigger className="w-32 bg-white h-10 border-slate-200/60 shadow-sm">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="fuzzy">Fuzzy</SelectItem>
+                                <SelectItem value="exact">Exact</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </div>
-                <div className="space-y-2">
-                    <Label className="text-[10px] uppercase font-bold text-slate-500">Display Name</Label>
+
+                <div className="flex flex-col items-center justify-center mt-4 md:mt-6 shrink-0 px-2 group/maps">
+                    <span className="text-[10px] uppercase font-black text-blue-400 tracking-widest leading-none mb-1.5 group-hover/maps:text-blue-500 transition-colors">Maps To</span>
+                    <div className="w-full flex items-center relative h-1">
+                        <div className="h-[2px] w-full bg-blue-500/60 rounded-full relative shadow-sm">
+                            <div className="absolute -right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 border-t-2 border-r-2 border-blue-500 rotate-45 rounded-tr-[1px]" />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex-1 space-y-2 w-full">
+                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Mapped Source</Label>
                     <SourceNameSelector
                         value={rule.clean_name}
                         hideAddNew={false}
@@ -66,55 +96,10 @@ const RuleForm = ({ rule, setRule, onSave, onCancel, getSubCategoryList }: any) 
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                    <Label className={cn("text-xs uppercase font-bold", showErrors && !rule.category && !rule.auto_exclude ? "text-red-500" : "text-slate-500")}>Category</Label>
-                    <CategorySelector
-                        value={rule.category}
-                        onValueChange={(v) => {
-                            if (v.includes(':')) {
-                                const [cat, sub] = v.split(':');
-                                setRule((p: any) => ({ ...p, category: cat, sub_category: sub }));
-                            } else {
-                                setRule((p: any) => ({ ...p, category: v, sub_category: '' }));
-                            }
-                        }}
-                        disabled={rule.auto_exclude}
-                        type="all"
-                        suggestionLimit={3}
-                        placeholder="Select category"
-                        className={cn("bg-white", showErrors && !rule.category && !rule.auto_exclude && "border-red-500 ring-1 ring-red-500")}
-                    />
-                </div>
-                <div className="space-y-2">
-                    <Label className={cn("text-xs uppercase font-bold", showErrors && !rule.sub_category && !rule.auto_exclude ? "text-red-500" : "text-slate-500")}>Sub-category</Label>
-                    <SmartSelector
-                        value={rule.sub_category}
-                        onValueChange={(v) => setRule((p: any) => ({ ...p, sub_category: v }))}
-                        disabled={!rule.category || rule.auto_exclude}
-                        options={subCats.map((s: string) => ({ label: s, value: s }))}
-                        placeholder="..."
-                    />
-                </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between p-2 border rounded bg-white">
-                    <Label className="text-xs uppercase font-bold text-slate-500">Exclude Rule</Label>
-                    <Switch checked={rule.auto_exclude} onCheckedChange={(v) => setRule((p: any) => ({ ...p, auto_exclude: v }))} />
-                </div>
-            </div>
 
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                 <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-                <Button
-                    onClick={() => validateAndSave('Pending Reconciliation')}
-                    className="bg-white border-blue-200 text-blue-700 hover:bg-blue-50 font-bold h-10 px-6 text-sm flex items-center gap-2"
-                >
-                    <History className="w-4 h-4" />
-                    Recon
-                </Button>
-                <Button onClick={() => validateAndSave()} className="bg-blue-600 hover:bg-blue-700 font-bold">Apply Rule</Button>
+                <Button onClick={() => validateAndSave()} className="bg-blue-600 hover:bg-blue-700 font-bold">Apply Mapping</Button>
             </div>
         </div>
     );
@@ -160,6 +145,7 @@ export const TriageAccordion = ({
     const [confirmingDeleteAllDuplicates, setConfirmingDeleteAllDuplicates] = useState(false);
     const [currentBucket, setCurrentBucket] = useState<string | undefined>(undefined);
     const [expandedValidationSource, setExpandedValidationSource] = useState<string | null>(null);
+    const [expandedCategorisationSource, setExpandedCategorisationSource] = useState<string | null>(null);
     const [editingRowId, setEditingRowId] = useState<string | null>(null);
     const [editingState, setEditingState] = useState<{ category: string, sub_category: string, excluded: boolean, planned: boolean }>({ category: '', sub_category: '', excluded: false, planned: true });
 
@@ -325,8 +311,10 @@ export const TriageAccordion = ({
 
     const openRuleDialog = (sourceName: string, txs: any[], inline: boolean = false) => {
         setSelectedSourceRule({
-            name: txs[0]?.source || sourceName,
+            name: txs[0]?.clean_source || cleanSource(txs[0]?.source) || sourceName,
+            raw_name: txs[0]?.source || sourceName,
             clean_name: txs[0]?.clean_source || '',
+            match_mode: 'fuzzy',
             category: txs[0]?.category || '',
             sub_category: txs[0]?.sub_category || '',
             auto_recurring: txs[0]?.recurring || 'Monthly',
@@ -480,68 +468,143 @@ export const TriageAccordion = ({
                         onSort={(f: string) => handleSort('pending-categorisation', f)}
                         color="blue"
                     />
-                    <VirtualList
-                        items={groupedCategorisation}
-                        height="600px"
-                        estimateSize={80}
-                        className="pr-2"
-                        renderItem={(item) => {
-                            const { source, txs, total } = item;
-                            const firstTx = txs[0];
-                            const defaultCat = firstTx?.suggested_category || '';
-                            const defaultSub = firstTx?.suggested_sub_category || '';
-                            const edit = categorisationEdits[source] || { category: defaultCat, sub_category: defaultSub, status: 'Complete' };
-                            const subCats = getSubCategoryList(edit.category);
-                            return (
-                                <div key={source} className="flex flex-col border rounded-lg overflow-hidden border-slate-200 bg-white shadow-sm hover:border-blue-300 transition-colors">
-                                    <div className="flex items-center px-4 py-3 bg-slate-50 justify-between gap-6">
-                                        <div className="flex-1 min-w-0 flex items-center gap-4">
-                                            <span className="font-black text-slate-900 text-[15px] truncate">{source}</span>
-                                            <span className="font-mono text-sm font-bold text-slate-400 shrink-0">{formatCurrency(total, settings.currency)}</span>
-                                        </div>
-                                        <div className="flex gap-3 items-center">
-                                            <CategorySelector
-                                                value={edit.category}
-                                                onValueChange={v => {
-                                                    if (v.includes(':')) {
-                                                        const [cat, sub] = v.split(':');
-                                                        setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], category: cat, sub_category: sub } }));
-                                                    } else {
-                                                        setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], category: v, sub_category: '' } }));
-                                                    }
-                                                }}
-                                                type="all"
-                                                suggestionLimit={3}
-                                                placeholder="Category"
-                                                className="h-10 w-[240px] text-sm font-medium"
-                                            />
-                                            <SmartSelector
-                                                value={edit.sub_category}
-                                                onValueChange={v => setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], sub_category: v } }))}
-                                                disabled={!edit.category}
-                                                options={subCats.map(s => ({ label: s, value: s }))}
-                                                placeholder="Sub-category"
-                                                className="h-10 w-[200px]"
-                                            />
-                                            <Select
-                                                value={edit.status || 'Complete'}
-                                                onValueChange={v => setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], status: v } }))}
-                                            >
-                                                <SelectTrigger className="h-10 w-[160px] bg-slate-50 border-slate-200">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="Complete">Complete</SelectItem>
-                                                    <SelectItem value="Pending Reconciliation">Pending Reconciliation</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                            <Button size="sm" className="h-10 bg-blue-600 hover:bg-blue-700 px-8 font-black text-sm uppercase tracking-tight" onClick={() => onBulkUpdate(txs.map(t => t.id), { category: edit.category, sub_category: edit.sub_category, status: (edit.category && edit.sub_category) ? (edit.status || 'Complete') : 'Pending Triage' })}>SAVE ACTIONS</Button>
-                                        </div>
+                    <Accordion
+                        type="single"
+                        collapsible
+                        value={expandedCategorisationSource || ""}
+                        onValueChange={setExpandedCategorisationSource}
+                    >
+                        <VirtualList
+                            items={groupedCategorisation}
+                            height="600px"
+                            estimateSize={80}
+                            className="pr-2"
+                            renderItem={(item) => {
+                                const { source, txs, total } = item;
+                                const firstTx = txs[0];
+                                const defaultCat = firstTx?.suggested_category || '';
+                                const defaultSub = firstTx?.suggested_sub_category || '';
+                                const edit = categorisationEdits[source] || { category: defaultCat, sub_category: defaultSub, status: 'Complete' };
+                                const subCats = getSubCategoryList(edit.category);
+
+                                const visibleLimit = lazyLoadCounts[source] || PAGE_SIZE;
+                                let renderedCount = 0;
+                                let showMoreAvailable = false;
+
+                                const remainingQuota = visibleLimit - renderedCount;
+                                const txsToRender = txs.slice(0, remainingQuota);
+                                if (txs.length > remainingQuota) showMoreAvailable = true;
+
+                                return (
+                                    <div className="pb-4">
+                                        <AccordionItem key={source} value={source} className="border rounded-xl bg-white overflow-hidden border-slate-200 hover:border-blue-300 transition-colors">
+                                            <AccordionTrigger className="bg-slate-50 border-b border-slate-100 px-6 py-3 hover:no-underline group/trigger">
+                                                <div className="flex items-center justify-between w-full pr-4">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="p-2 bg-blue-100 rounded-lg group-hover/trigger:bg-blue-200 transition-colors">
+                                                            <Store className="w-5 h-5 text-blue-600" />
+                                                        </div>
+                                                        <h4 className="text-[15px] font-black text-slate-900 uppercase tracking-tight">{source}</h4>
+                                                        <Badge variant="outline" className="text-[12px] h-7 font-bold text-slate-500 bg-white border-slate-200 px-3">
+                                                            {txs.length} {txs.length === 1 ? 'match' : 'matches'}
+                                                        </Badge>
+                                                    </div>
+                                                    <div className="flex gap-3 items-center" onClick={(e) => e.stopPropagation()}>
+                                                        <CategorySelector
+                                                            value={edit.category}
+                                                            onValueChange={(v: string) => {
+                                                                if (v.includes(':')) {
+                                                                    const [cat, sub] = v.split(':');
+                                                                    setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], category: cat, sub_category: sub } }));
+                                                                } else {
+                                                                    setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], category: v, sub_category: '' } }));
+                                                                }
+                                                            }}
+                                                            type="all"
+                                                            suggestionLimit={3}
+                                                            placeholder="Category"
+                                                            className="h-9 w-[180px] text-sm font-medium"
+                                                        />
+                                                        <SmartSelector
+                                                            value={edit.sub_category}
+                                                            onValueChange={(v: string) => setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], sub_category: v } }))}
+                                                            disabled={!edit.category}
+                                                            options={subCats.map((s: string) => ({ label: s, value: s }))}
+                                                            placeholder="Sub-category"
+                                                            className="h-9 w-[150px]"
+                                                        />
+                                                        <Select
+                                                            value={edit.status || 'Complete'}
+                                                            onValueChange={(v: string) => setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], status: v } }))}
+                                                        >
+                                                            <SelectTrigger className="h-9 w-[160px] bg-slate-50 border-slate-200">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="Complete">Complete</SelectItem>
+                                                                <SelectItem value="Pending Reconciliation">Pending Recon</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                        <Button size="sm" className="h-9 bg-blue-600 hover:bg-blue-700 px-6 font-black text-sm uppercase tracking-tight shrink-0" onClick={() => onBulkUpdate(txs.map((t: any) => t.id), { category: edit.category, sub_category: edit.sub_category, status: (edit.category && edit.sub_category) ? (edit.status || 'Complete') : 'Pending Triage' })}>SAVE ACTIONS</Button>
+                                                        <div className="ml-4 tabular-nums font-black text-slate-900 text-[16px] shrink-0">{formatCurrency(total, settings.currency)}</div>
+                                                    </div>
+                                                </div>
+                                            </AccordionTrigger>
+                                            <AccordionContent className="p-0">
+                                                <div className="p-6 space-y-2 bg-slate-50/20">
+                                                    {txsToRender.map((tx: any) => (
+                                                        <div key={tx.id} className="relative z-0 group/card-wrapper w-full mb-2">
+                                                            <Card className="p-0 transition-all bg-white border-slate-200 overflow-hidden group/card shadow-sm border-slate-200/80 rounded-xl">
+                                                                <div className="flex items-center h-14">
+                                                                    <div className="w-[28%] min-w-0 px-5 h-full flex flex-col justify-center border-r border-slate-50 bg-slate-50/30">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <div className="font-black text-[14px] text-slate-900 leading-tight truncate">{tx.clean_source || tx.source}</div>
+                                                                            {onUpdateRow && (
+                                                                                <TransactionNote transaction={tx} onSave={(id, note) => onUpdateRow(id, { notes: note })} />
+                                                                            )}
+                                                                        </div>
+                                                                        {tx.parent_id && (
+                                                                            <div className="text-[10px] text-amber-600/80 font-bold tracking-tight mt-0.5 truncate flex items-center gap-1 uppercase">
+                                                                                <Split className="w-3 h-3" /> Split from {tx.notes?.replace('Split item from ', '') || 'Split Transaction'}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex-1 flex items-center px-6 h-full gap-8 bg-slate-50/5">
+                                                                        <div className="flex items-center gap-4 shrink-0">
+                                                                            <span className={cn("text-[10px] font-black uppercase tracking-wider tabular-nums leading-none", tx.needs_date_verification ? "text-amber-600 flex items-center gap-1" : "text-slate-400")}>
+                                                                                {tx.needs_date_verification && <AlertTriangle className="w-3 h-3" />}
+                                                                                {formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex-1 min-w-0 flex items-center gap-2">
+                                                                            {tx.description && <span className="text-xs text-slate-500 truncate" title={tx.description}>{tx.description}</span>}
+                                                                        </div>
+                                                                        <div className="flex items-center gap-6 shrink-0 font-mono">
+                                                                            <span className={cn("text-[15px] font-black text-right min-w-[100px]", tx.amount > 0 ? "text-emerald-600" : "text-slate-900")}>
+                                                                                {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount, settings.currency)}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </Card>
+                                                        </div>
+                                                    ))}
+                                                    {showMoreAvailable && (
+                                                        <Button variant="outline" className="w-full mt-4 bg-white/50 border-dashed" onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setLazyLoadCounts(p => ({ ...p, [source]: (p[source] || PAGE_SIZE) + PAGE_SIZE }));
+                                                        }}>
+                                                            Load More ({txs.length - txsToRender.length} remaining)
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </AccordionContent>
+                                        </AccordionItem>
                                     </div>
-                                </div>
-                            );
-                        }}
-                    />
+                                );
+                            }}
+                        />
+                    </Accordion>
                 </div>
             )
         },
@@ -716,7 +779,12 @@ export const TriageAccordion = ({
                                                                                                                 />
                                                                                                             )}
                                                                                                         </div>
-                                                                                                        {tx.clean_source && tx.clean_source !== tx.source && (
+                                                                                                        {tx.parent_id && (
+                                                                                                            <div className="text-[10px] text-amber-600/80 font-bold tracking-tight mt-0.5 truncate flex items-center gap-1 uppercase">
+                                                                                                                <Split className="w-3 h-3" /> Split from {tx.notes?.replace('Split item from ', '') || 'Split Transaction'}
+                                                                                                            </div>
+                                                                                                        )}
+                                                                                                        {tx.clean_source && tx.clean_source !== tx.source && !tx.parent_id && (
                                                                                                             <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter truncate mt-0.5">
                                                                                                                 {tx.source}
                                                                                                             </div>

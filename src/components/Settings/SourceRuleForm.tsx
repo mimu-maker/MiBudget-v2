@@ -140,8 +140,8 @@ export const SourceRuleForm = ({
                     {/* LEFT: Origin (Pattern or Group) */}
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1.5">
-                            <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                                {isPatternMode ? 'Match Pattern (Raw)' : 'Source Group'}
+                            <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
+                                Pattern Text
                             </Label>
                             {isPatternMode && (
                                 <div className="flex gap-0.5 bg-slate-200/50 p-0.5 rounded-md">
@@ -182,14 +182,19 @@ export const SourceRuleForm = ({
                     </div>
 
                     {/* MIDDLE: Arrow */}
-                    <div className="flex flex-col items-center justify-center pt-8 gap-1 text-slate-300">
-                        <ArrowRight className="w-4 h-4" />
+                    <div className="flex flex-col items-center justify-center mt-4 md:mt-2 shrink-0 px-2 group/maps">
+                        <span className="text-[10px] uppercase font-black text-blue-400 tracking-widest leading-none mb-1.5 group-hover/maps:text-blue-500 transition-colors">Maps To</span>
+                        <div className="w-full flex items-center relative h-1 min-w-[60px]">
+                            <div className="h-[2px] w-full bg-blue-500/60 rounded-full relative shadow-sm">
+                                <div className="absolute -right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 border-t-2 border-r-2 border-blue-500 rotate-45 rounded-tr-[1px]" />
+                            </div>
+                        </div>
                     </div>
 
                     {/* RIGHT: Destination (Clean Name) */}
                     <div className="flex-1 min-w-0">
-                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">
-                            Maps to Resolved Name
+                        <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">
+                            Mapped Source
                         </Label>
 
                         <SourceNameSelector

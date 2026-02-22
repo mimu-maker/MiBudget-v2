@@ -17,6 +17,7 @@ interface AddTransactionFormV2Props {
     onSubmit: () => void;
     onCancel: () => void;
     onPasteClick: () => void;
+    isEditing?: boolean;
 }
 
 const AddTransactionFormV2 = ({
@@ -26,7 +27,8 @@ const AddTransactionFormV2 = ({
     onTransactionChange,
     onSubmit,
     onCancel,
-    onPasteClick
+    onPasteClick,
+    isEditing = false
 }: AddTransactionFormV2Props) => {
     const { data: sources = [] } = useSources();
     const { categories } = useBudgetCategoriesManager();
@@ -103,7 +105,7 @@ const AddTransactionFormV2 = ({
     return (
         <Card className="mb-6">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle>Add {transactionType === 'income' ? 'Income' : 'Expense'} Projection</CardTitle>
+                <CardTitle>{isEditing ? 'Edit' : 'Add'} {transactionType === 'income' ? 'Income' : 'Expense'} Projection</CardTitle>
                 <Button variant="outline" size="sm" onClick={onPasteClick} className="gap-2">
                     <ClipboardPaste className="w-4 h-4" />
                     Paste Data
@@ -332,7 +334,7 @@ const AddTransactionFormV2 = ({
                         Cancel
                     </Button>
                     <Button onClick={onSubmit}>
-                        Add Projection
+                        {isEditing ? 'Save Changes' : 'Add Projection'}
                     </Button>
                 </div>
             </CardContent>

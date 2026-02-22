@@ -66,6 +66,8 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
   // Blue Pill Logic: Derived from hook logic
   const isResolved = transaction.is_resolved;
 
+  const parentSourceName = transaction.parent_id ? (allTransactions?.find(t => t.id === transaction.parent_id)?.clean_source || allTransactions?.find(t => t.id === transaction.parent_id)?.source || transaction.notes?.replace('Split item from ', '')) : null;
+
   return (
     <>
       <SourceResolveDialog
@@ -156,8 +158,8 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
                         {transaction.clean_source}
                       </Badge>
                       {transaction.parent_id && (
-                        <Badge variant="outline" className="text-[9px] uppercase tracking-tighter bg-amber-50 text-amber-600 border-amber-200 py-0 px-1.5 h-4 font-black">
-                          ITEM
+                        <Badge variant="outline" className="text-[9px] uppercase tracking-tighter bg-amber-50 text-amber-600 border-amber-200 py-0 px-1.5 h-4 font-black flex items-center gap-1">
+                          SPLIT {parentSourceName && <span className="opacity-70 font-semibold truncate max-w-[120px] uppercase tracking-normal text-[9px]">FROM {parentSourceName}</span>}
                         </Badge>
                       )}
                       {transaction.is_split && (
@@ -176,8 +178,8 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
                         {transaction.clean_source || transaction.source}
                       </span>
                       {transaction.parent_id && (
-                        <Badge variant="outline" className="text-[9px] uppercase tracking-tighter bg-amber-50 text-amber-600 border-amber-200 py-0 px-1.5 h-4 font-black">
-                          ITEM
+                        <Badge variant="outline" className="text-[9px] uppercase tracking-tighter bg-amber-50 text-amber-600 border-amber-200 py-0 px-1.5 h-4 font-black flex items-center gap-1">
+                          SPLIT {parentSourceName && <span className="opacity-70 font-semibold truncate max-w-[120px] uppercase tracking-normal text-[9px]">FROM {parentSourceName}</span>}
                         </Badge>
                       )}
                       {transaction.is_split && (

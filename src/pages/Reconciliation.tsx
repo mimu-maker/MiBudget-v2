@@ -123,18 +123,25 @@ const EntityRow = ({
             </div>
 
             <div className="flex-1 flex flex-col min-w-0" onClick={(e) => e.stopPropagation()}>
-                <EditableCell
-                    transaction={item}
-                    field="source"
-                    isEditing={isEditing && editingField === 'source'}
-                    onEdit={onEdit}
-                    onStartEdit={onStartEdit}
-                    onStopEdit={onStopEdit}
-                    onBulkEdit={() => { }}
-                    customDisplay={
-                        <div className="font-bold text-foreground/90 truncate">{item.source}</div>
-                    }
-                />
+                <div className="flex items-center gap-2">
+                    <EditableCell
+                        transaction={item}
+                        field="source"
+                        isEditing={isEditing && editingField === 'source'}
+                        onEdit={onEdit}
+                        onStartEdit={onStartEdit}
+                        onStopEdit={onStopEdit}
+                        onBulkEdit={() => { }}
+                        customDisplay={
+                            <div className="font-bold text-foreground/90 truncate">{item.source}</div>
+                        }
+                    />
+                    {item.parent_id && (
+                        <Badge variant="outline" className="text-[9px] uppercase tracking-tighter bg-amber-50 text-amber-600 border-amber-200 py-0 px-1.5 h-4 font-black flex items-center gap-1">
+                            SPLIT {item.notes?.replace('Split item from ', '') && <span className="opacity-70 font-semibold truncate max-w-[120px] uppercase tracking-normal text-[9px]">FROM {item.notes.replace('Split item from ', '')}</span>}
+                        </Badge>
+                    )}
+                </div>
                 <div className="text-[10px] text-muted-foreground flex items-center gap-2 mt-1">
                     <span className="truncate max-w-[150px]">{item.category || 'No Category'}</span>
                     {item.sub_category && (

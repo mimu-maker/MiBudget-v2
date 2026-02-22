@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Sparkles, ChevronDown, ChevronRight, Edit3, Save, X, Lightbulb } from 'lucide-react';
+import { Plus, Sparkles, ChevronDown, ChevronRight, Edit3, Save, X, Lightbulb, Trash2 } from 'lucide-react';
 import { FutureTransaction } from '@/types/projection';
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ interface SlushFundTransactionsTableProps {
     transactions: FutureTransaction[];
     onDelete: (id: string | number) => void;
     onUpdate: (id: string | number, updates: any) => void;
+    onEdit: (transaction: FutureTransaction) => void;
     onAddClick: () => void;
     selectedYear: string;
     showPastProjections: boolean;
@@ -20,6 +21,7 @@ const SlushFundTransactionsTable = ({
     transactions,
     onDelete,
     onUpdate,
+    onEdit,
     onAddClick,
     selectedYear,
     showPastProjections
@@ -208,14 +210,26 @@ const SlushFundTransactionsTable = ({
                                                                 {actual !== 0 ? `${deviation >= 0 ? '' : '-'}DKK ${Math.abs(deviation).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
                                                             </td>
                                                             <td className="py-3 px-4 text-center">
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    onClick={() => onDelete(transaction.id)}
-                                                                    className="text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-colors h-8 px-3 rounded-lg"
-                                                                >
-                                                                    Delete
-                                                                </Button>
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => onEdit(transaction)}
+                                                                        className="text-purple-600 hover:bg-purple-50 transition-colors h-8 px-2 rounded-lg flex items-center gap-1"
+                                                                    >
+                                                                        <Edit3 className="w-3.5 h-3.5" />
+                                                                        Edit
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => onDelete(transaction.id)}
+                                                                        className="text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-colors h-8 px-2 rounded-lg flex items-center gap-1"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                        Delete
+                                                                    </Button>
+                                                                </div>
                                                             </td>
                                                         </tr>
                                                         {isExpanded && occurrences.map(occ => {
