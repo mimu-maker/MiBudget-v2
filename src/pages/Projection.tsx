@@ -42,15 +42,14 @@ const Projection = () => {
   const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [disabledIncomeStreams, setDisabledIncomeStreams] = useState<Set<string>>(new Set());
+  const [disabledExpenses, setDisabledExpenses] = useState<Set<string>>(new Set());
   const [slushDialogOpen, setSlushDialogOpen] = useState(false);
   const [slushEditingTx, setSlushEditingTx] = useState<FutureTransaction | null>(null);
-
   const currentYear = new Date().getFullYear();
-  const availableYearsList = [currentYear, currentYear + 1, currentYear + 2];
-  const [selectedYear, setSelectedYear] = useState<string>(currentYear.toString());
+  const selectedYear = currentYear.toString();
 
   // Budget Hooks
-  const { budget, loading: budgetLoading, refreshBudget } = useAnnualBudget(parseInt(selectedYear));
+  const { budget, loading: budgetLoading, refreshBudget } = useAnnualBudget(currentYear);
   const { updateSubCategoryBudget: updateSubCategoryBudgetMutation } = useBudgetCategoryActionsForBudget(budget?.id);
   const [editingBudget, setEditingBudget] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -102,17 +101,42 @@ const Projection = () => {
     }
   });
 
-  // 2. Fetch Actual Transactions (Complete only)
+  // 2. Fetch Actual Transactions (Complete only, last 13 months for averages)
   const { data: transactions = [] } = useQuery({
-    queryKey: ['transactions', 'complete'],
+    queryKey: ['transactions', 'complete', 'projection-trailing'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('status', 'Complete')
-        .order('date', { ascending: true });
-      if (error) throw error;
-      return data || [];
+      const today = new Date();
+      const thirteenMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 13, 1).toISOString().split('T')[0];
+
+      let allData: any[] = [];
+      let hasMore = true;
+      let offset = 0;
+      const limit = 1000; // Chunk size
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('status', 'Complete')
+          .gte('date', thirteenMonthsAgo)
+          .order('date', { ascending: false })
+          .range(offset, offset + limit - 1);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          if (data.length < limit) {
+            hasMore = false;
+          } else {
+            offset += limit;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      return allData;
     }
   });
 
@@ -171,7 +195,7 @@ const Projection = () => {
             category: parentCategory.name,
             stream: subCategory.name,
             amount: roundedMonthly,
-            date: new Date(parseInt(selectedYear), 0, 1).toISOString().slice(0, 10),
+            date: new Date(currentYear, 0, 1).toISOString().slice(0, 10),
             recurring: 'Monthly',
             planned: true,
             source: subCategory.name,
@@ -187,7 +211,7 @@ const Projection = () => {
             categoryId: parentCategory.id,
             amount: roundedMonthly,
             targetBudgetId: budget?.id,
-            year: parseInt(selectedYear)
+            year: currentYear
           });
           await refreshBudget();
         }
@@ -230,6 +254,62 @@ const Projection = () => {
     });
   };
 
+  const toggleIncomeStream = (name: string) => {
+    setDisabledIncomeStreams(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const toggleExpense = (name: string) => {
+    // Fixed Committed and Variable Essential cannot be disabled
+    if (name === 'Fixed Committed' || name === 'Variable Essential') return;
+
+    setDisabledExpenses(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const handleBatchAdjust = async (label: string, subName: string | null, percentage: number) => {
+    const group = primaryExpensesByLabel.find(g => g.name === label);
+    if (!group) return;
+
+    const itemsToUpdate = subName
+      ? group.sub_categories.filter(s => s.name === subName)
+      : group.sub_categories;
+
+    for (const sub of itemsToUpdate) {
+      const base = (sub as any).avg_6m || 0;
+      const newValue = base * (1 + percentage / 100);
+
+      if (!budget?.category_groups?.expenditure) continue;
+
+      const [origCatName, origSubName] = sub.name.split(' - ');
+      let foundParent: BudgetCategory | undefined;
+      let foundSub: BudgetSubCategory | undefined;
+
+      budget.category_groups.expenditure.forEach(cat => {
+        if (cat.name === origCatName) {
+          const s = cat.sub_categories.find(sc => sc.name === origSubName);
+          if (s) {
+            foundParent = cat;
+            foundSub = s;
+          }
+        }
+      });
+
+      if (foundParent && foundSub) {
+        await handleUpdateBudget(foundParent, foundSub, newValue.toFixed(2), 'monthly', '');
+      }
+    }
+    toast({ title: "Updated", description: `Applied ${percentage}% adjustment to ${subName || label}` });
+  };
+
   const futureTransactions = useMemo(() =>
     matchProjectionsToActuals(projections, transactions),
     [projections, transactions]
@@ -248,8 +328,7 @@ const Projection = () => {
         scenario_id: activeScenarioId
       };
 
-      const { error } = await supabase
-        .from('projections' as any)
+      const { error } = await (supabase.from('projections' as any) as any)
         .insert([dbPayload]);
       if (error) throw error;
     },
@@ -287,7 +366,7 @@ const Projection = () => {
         delete dbUpdates.source;
       }
 
-      const { error } = await supabase.from('projections' as any).update(dbUpdates).eq('id', id);
+      const { error } = await (supabase.from('projections' as any) as any).update(dbUpdates).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -313,7 +392,7 @@ const Projection = () => {
   }, [budget]);
 
   const incomeTransactions = useMemo(() =>
-    (futureTransactions as any[]).filter(t => t.amount >= 0 && (t.recurring !== 'N/A' || t.date?.startsWith(selectedYear))),
+    (futureTransactions as any[]).filter(t => t.amount >= 0 && (t.recurring !== 'N/A' || t.date?.slice(0, 4) >= currentYear.toString())),
     [futureTransactions, selectedYear]
   );
 
@@ -321,7 +400,7 @@ const Projection = () => {
     (futureTransactions as any[]).filter(t =>
       t.amount < 0 &&
       !specialCategoryNames.includes(t.category) &&
-      (t.recurring !== 'N/A' || t.date?.startsWith(selectedYear))
+      (t.recurring !== 'N/A' || t.date?.slice(0, 4) >= currentYear.toString())
     ),
     [futureTransactions, selectedYear, specialCategoryNames]
   );
@@ -330,7 +409,7 @@ const Projection = () => {
     (futureTransactions as any[]).filter(t =>
       t.amount < 0 &&
       specialCategoryNames.includes(t.category) &&
-      (t.recurring !== 'N/A' || t.date?.startsWith(selectedYear))
+      (t.recurring !== 'N/A' || t.date?.slice(0, 4) >= currentYear.toString())
     ),
     [futureTransactions, selectedYear, specialCategoryNames]
   );
@@ -351,6 +430,49 @@ const Projection = () => {
     setShowAddForm(true);
   };
 
+  const subCategoryAverages = useMemo(() => {
+    const avgs: Record<string, { avg6m: number, avg1y: number }> = {};
+    const today = new Date();
+
+    // Use start of current month for trailing calculation
+    const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const sixMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 6, 1);
+    const twelveMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 12, 1);
+
+    // Group transactions by normalized category-sub_category
+    const grouped: Record<string, any[]> = {};
+    (transactions as any[]).forEach(t => {
+      if (!t.category) return;
+      const cat = t.category.trim();
+      const sub = (t.sub_category || '').trim();
+      const key = `${cat}-${sub}`.toLowerCase();
+
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(t);
+    });
+
+    Object.entries(grouped).forEach(([key, txs]) => {
+      // User requested exact simple math: take last 180 days / 6, and last 365 days / 12.
+      const sixMonthsAgo = new Date(today.getTime() - 182 * 24 * 60 * 60 * 1000);
+      const twelveMonthsAgo = new Date(today.getTime() - 365 * 24 * 60 * 60 * 1000);
+
+      const sixMonthTotal = txs
+        .filter(t => new Date(t.date) >= sixMonthsAgo && new Date(t.date) <= today)
+        .reduce((sum, t) => sum + (t.amount || 0), 0);
+
+      const twelveMonthTotal = txs
+        .filter(t => new Date(t.date) >= twelveMonthsAgo && new Date(t.date) <= today)
+        .reduce((sum, t) => sum + (t.amount || 0), 0);
+
+      avgs[key] = {
+        avg6m: Math.abs(sixMonthTotal) / 6,
+        avg1y: Math.abs(twelveMonthTotal) / 12
+      };
+    });
+
+    return avgs;
+  }, [transactions]);
+
   const primaryExpensesByLabel = useMemo(() => {
     if (!budget?.category_groups?.expenditure) return [];
 
@@ -360,12 +482,21 @@ const Projection = () => {
       cat.sub_categories.forEach(sub => {
         const label = sub.label || 'Unlabeled';
         if (!labelGroups[label]) labelGroups[label] = [];
+
+        // Match with normalized key
+        const matchKey = `${cat.name}-${sub.name}`.toLowerCase();
+        const avgData = subCategoryAverages[matchKey] || { avg6m: 0, avg1y: 0 };
+
         labelGroups[label].push({
           ...sub,
-          name: `${cat.name} - ${sub.name}`
-        });
+          name: `${cat.name} - ${sub.name}`,
+          avg_6m: avgData.avg6m,
+          avg_1y: avgData.avg1y
+        } as any);
       });
     });
+
+    const labelOrder = ['Fixed Committed', 'Variable Essential', 'Discretionary'];
 
     return Object.entries(labelGroups).map(([label, subcategories]) => {
       return {
@@ -374,10 +505,45 @@ const Projection = () => {
         type: 'expense',
         budget_amount: subcategories.reduce((sum, sub) => sum + (sub.budget_amount || 0), 0),
         spent: subcategories.reduce((sum, sub) => sum + (sub.spent || 0), 0),
+        avg_6m: subcategories.reduce((sum, sub) => sum + ((sub as any).avg_6m || 0), 0),
+        avg_1y: subcategories.reduce((sum, sub) => sum + ((sub as any).avg_1y || 0), 0),
         sub_categories: subcategories.sort((a, b) => a.name.localeCompare(b.name))
       } as unknown as BudgetCategory;
-    }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [budget]);
+    }).sort((a, b) => {
+      const indexA = labelOrder.indexOf(a.name);
+      const indexB = labelOrder.indexOf(b.name);
+      if (indexA === -1 && indexB === -1) return a.name.localeCompare(b.name);
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
+  }, [budget, subCategoryAverages]);
+
+  const klintemarkenDataEnhanced = useMemo(() => {
+    if (!budget?.category_groups?.klintemarken) return [];
+    return budget.category_groups.klintemarken.map(cat => ({
+      ...cat,
+      avg_6m: cat.sub_categories.reduce((sum, sub) => {
+        const matchKey = `${cat.name}-${sub.name}`.toLowerCase();
+        const avgData = subCategoryAverages[matchKey] || { avg6m: 0, avg1y: 0 };
+        return sum + avgData.avg6m;
+      }, 0),
+      avg_1y: cat.sub_categories.reduce((sum, sub) => {
+        const matchKey = `${cat.name}-${sub.name}`.toLowerCase();
+        const avgData = subCategoryAverages[matchKey] || { avg6m: 0, avg1y: 0 };
+        return sum + avgData.avg1y;
+      }, 0),
+      sub_categories: cat.sub_categories.map(sub => {
+        const matchKey = `${cat.name}-${sub.name}`.toLowerCase();
+        const avgData = subCategoryAverages[matchKey] || { avg6m: 0, avg1y: 0 };
+        return {
+          ...sub,
+          avg_6m: avgData.avg6m,
+          avg_1y: avgData.avg1y
+        };
+      })
+    }));
+  }, [budget, subCategoryAverages]);
 
   const unlabeledCategories = useMemo(() => {
     if (!budget?.category_groups?.expenditure) return [];
@@ -395,21 +561,25 @@ const Projection = () => {
   const projectionData = useMemo(() => {
     const calculateData = (txs: any[]) => {
       const data: ProjectionData[] = [];
-      const yearNum = parseInt(selectedYear);
+      const yearNum = currentYear;
 
-      const feederMonthlyTotal = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
+      const feederMonthlyTotal = klintemarkenData.reduce((sum, item) => {
+        if (disabledExpenses.has(item.name)) return sum;
+        return sum + (item.budget_amount || 0);
+      }, 0);
 
-      const expenseBreakdownBase: Record<string, number> = {};
       const expenseLabelBreakdownBase: Record<string, number> = {};
-      budget?.category_groups?.expenditure?.forEach(cat => {
-        const catTotal = cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0);
-        expenseBreakdownBase[cat.name || 'Unknown'] = catTotal;
-        cat.sub_categories.forEach(sub => {
-          const label = sub.label || 'Unlabeled';
-          expenseLabelBreakdownBase[label] = (expenseLabelBreakdownBase[label] || 0) + (sub.budget_amount || 0);
-        });
+      primaryExpensesByLabel.forEach(labelCat => {
+        if (disabledExpenses.has(labelCat.name)) return;
+        const labelTotal = labelCat.sub_categories.reduce((s, sub) => {
+          if (disabledExpenses.has(sub.name)) return s;
+          return s + (sub.budget_amount || 0);
+        }, 0);
+        if (labelTotal > 0) {
+          expenseLabelBreakdownBase[labelCat.name] = labelTotal;
+        }
       });
-      const expenseMonthlyTotal = Object.values(expenseBreakdownBase).reduce((a, b) => a + b, 0);
+      const expenseMonthlyTotal = Object.values(expenseLabelBreakdownBase).reduce((a, b) => a + b, 0);
 
       let runningBalance = 0;
       const today = new Date();
@@ -539,8 +709,8 @@ const Projection = () => {
           breakdown: {
             incomeBreakdown,
             feederBreakdown: { 'Feeder Budget': feederMonthlyTotal },
-            expenseBreakdown: { ...expenseBreakdownBase },
-            expenseLabelBreakdown: { ...expenseLabelBreakdownBase },
+            expenseBreakdown: expenseLabelBreakdownBase,
+            expenseLabelBreakdown: expenseLabelBreakdownBase,
             slushBreakdown
           }
         });
@@ -549,7 +719,7 @@ const Projection = () => {
     };
 
     return calculateData(futureTransactions);
-  }, [futureTransactions, selectedYear, klintemarkenData, specialCategoryNames, budget, disabledIncomeStreams]);
+  }, [futureTransactions, selectedYear, klintemarkenData, specialCategoryNames, budget, disabledIncomeStreams, disabledExpenses]);
 
   const stats = useMemo(() => {
     const totalIncome = projectionData.reduce((sum, d) => sum + (d.income || 0), 0);
@@ -574,21 +744,22 @@ const Projection = () => {
 
     const calculateData = (txs: any[]) => {
       const data: ProjectionData[] = [];
-      const yearNum = parseInt(selectedYear);
+      const yearNum = currentYear;
 
       const feederMonthlyTotal = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
 
-      const expenseBreakdownBase: Record<string, number> = {};
       const expenseLabelBreakdownBase: Record<string, number> = {};
-      budget?.category_groups?.expenditure?.forEach(cat => {
-        const catTotal = cat.sub_categories.reduce((s, sub) => s + (sub.budget_amount || 0), 0);
-        expenseBreakdownBase[cat.name || 'Unknown'] = catTotal;
-        cat.sub_categories.forEach(sub => {
-          const label = sub.label || 'Unlabeled';
-          expenseLabelBreakdownBase[label] = (expenseLabelBreakdownBase[label] || 0) + (sub.budget_amount || 0);
-        });
+      primaryExpensesByLabel.forEach(labelCat => {
+        if (disabledExpenses.has(labelCat.name)) return;
+        const labelTotal = labelCat.sub_categories.reduce((s, sub) => {
+          if (disabledExpenses.has(sub.name)) return s;
+          return s + (sub.budget_amount || 0);
+        }, 0);
+        if (labelTotal > 0) {
+          expenseLabelBreakdownBase[labelCat.name] = labelTotal;
+        }
       });
-      const expenseMonthlyTotal = Object.values(expenseBreakdownBase).reduce((a, b) => a + b, 0);
+      const expenseMonthlyTotal = Object.values(expenseLabelBreakdownBase).reduce((a, b) => a + b, 0);
 
       let runningBalance = 0;
       const today = new Date();
@@ -705,8 +876,8 @@ const Projection = () => {
           breakdown: {
             incomeBreakdown,
             feederBreakdown: { 'Feeder Budget': feederMonthlyTotal },
-            expenseBreakdown: { ...expenseBreakdownBase },
-            expenseLabelBreakdown: { ...expenseLabelBreakdownBase },
+            expenseBreakdown: expenseLabelBreakdownBase,
+            expenseLabelBreakdown: expenseLabelBreakdownBase,
             slushBreakdown
           }
         });
@@ -715,7 +886,7 @@ const Projection = () => {
     };
 
     return calculateData(matchedMaster);
-  }, [masterProjectionsRaw, transactions, selectedYear, activeScenarioId, klintemarkenData, specialCategoryNames, budget, disabledIncomeStreams]);
+  }, [masterProjectionsRaw, transactions, selectedYear, activeScenarioId, klintemarkenData, specialCategoryNames, budget, disabledIncomeStreams, disabledExpenses]);
 
   const handleAddTransaction = () => {
     if (!newTransaction.amount) {
@@ -839,213 +1010,128 @@ const Projection = () => {
   });
 
   return (
-    <div className="p-6">
-      <div className="flex flex-col gap-4 mb-6">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/budget">Budget</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>Projections</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-3xl font-black text-gray-900 tracking-tight">
-              {activeScenarioId ? `Scenario: ${scenarios.find(s => s.id === activeScenarioId)?.name}` : 'Master Projections'}
+    <div className="p-8 max-w-[1600px] mx-auto space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col">
+          <Breadcrumb className="mb-2 opacity-50 scale-90 origin-left">
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link to="/budget">Budget</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>Projections</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <div className="flex items-baseline gap-4">
+            <h1 className="text-4xl font-black text-slate-900 tracking-tighter">
+              Rolling Year Forecast
             </h1>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-              {activeScenarioId ? 'What-if playground • Edits do not affect Master' : 'Production Budget • Feeders & Core Income'}
-            </p>
+            {activeScenarioId && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-500 rounded-lg">
+                <Sparkles className="w-3 h-3" />
+                <span className="text-[10px] font-bold uppercase tracking-widest">
+                  Simulation: {scenarios.find(s => s.id === activeScenarioId)?.name}
+                </span>
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100">
-              <Switch
-                id="past-projections"
-                checked={showPastProjections}
-                onCheckedChange={setShowPastProjections}
-              />
-              <Label htmlFor="past-projections" className="text-xs font-bold uppercase tracking-wider text-gray-500 cursor-pointer flex items-center gap-1.5">
-                <History className="w-3.5 h-3.5" />
-                Show Past Projections
-              </Label>
-            </div>
-            <Tabs value={selectedYear} onValueChange={setSelectedYear} className="w-[300px]">
-              <TabsList className="grid w-full grid-cols-3">
-                {availableYearsList.map(year => (
-                  <TabsTrigger key={year} value={year.toString()}>
-                    {year}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Tabs value={activeScenarioId || 'master'} onValueChange={(val) => {
+            if (val === 'new') {
+              setShowCreateScenario(true);
+              return;
+            }
+            setActiveScenarioId(val === 'master' ? null : val);
+          }} className="inline-flex items-center">
+            <TabsList className="bg-slate-100/80 backdrop-blur-md border border-slate-200 p-1 h-10 gap-1 shadow-sm rounded-xl">
+              <TabsTrigger
+                value="master"
+                className="px-6 h-8 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg font-black uppercase tracking-widest text-[10px] transition-all"
+              >
+                Expected
+              </TabsTrigger>
+              {scenarios.map(scenario => (
+                <TabsTrigger
+                  key={scenario.id}
+                  value={scenario.id}
+                  className="px-6 h-8 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg font-black uppercase tracking-widest text-[10px] group flex items-center gap-2 transition-all hover:bg-slate-50 data-[state=active]:hover:bg-white"
+                >
+                  {scenario.name}
+                  {activeScenarioId === scenario.id && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm('Delete this scenario? All its data will be lost.')) {
+                          deleteScenarioMutation.mutate(scenario.id);
+                        }
+                      }}
+                      className="ml-1 opacity-40 hover:opacity-100 p-0.5 hover:bg-slate-100 rounded transition-all"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </TabsTrigger>
+              ))}
+              <TabsTrigger
+                value="new"
+                className="px-3 h-8 text-slate-400 hover:text-primary hover:bg-white rounded-lg transition-all"
+              >
+                <Plus className="w-4 h-4" />
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
       </div>
 
-      {/* Scenario Navigation Tabs */}
-      <div className="mb-8 flex items-center justify-between gap-4 overflow-x-auto pb-2 scrollbar-hide">
-        <Tabs value={activeScenarioId || 'master'} onValueChange={(val) => setActiveScenarioId(val === 'master' ? null : val)} className="flex-1">
-          <TabsList className="bg-gray-100/50 p-1 h-12 gap-1 inline-flex w-auto">
-            <TabsTrigger
-              value="master"
-              className="px-6 h-10 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg font-bold uppercase tracking-wider text-[10px]"
-            >
-              Master
-            </TabsTrigger>
-            {scenarios.map(scenario => (
-              <TabsTrigger
-                key={scenario.id}
-                value={scenario.id}
-                className="px-6 h-10 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg font-bold uppercase tracking-wider text-[10px] group flex items-center gap-2"
-              >
-                {scenario.name}
-                {activeScenarioId === scenario.id && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="w-4 h-4 text-rose-400 hover:text-rose-600 p-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm('Delete this scenario? All its data will be lost.')) {
-                        deleteScenarioMutation.mutate(scenario.id);
-                      }
-                    }}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
-                )}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-        <Button
-          onClick={() => setShowCreateScenario(true)}
-          className="bg-primary hover:bg-primary/90 text-white gap-2 font-bold uppercase tracking-tighter h-10 px-4 whitespace-nowrap"
-        >
-          <Plus className="w-4 h-4" />
-          New Scenario
-        </Button>
+      <div className="flex items-center gap-2 text-slate-400">
+        <Scale className="w-4 h-4" />
+        <span className="text-[10px] font-black uppercase tracking-[0.2em]">{activeScenarioId ? 'Scenario Comparison' : 'Master Projection'}</span>
       </div>
 
-      {/* Summary Tiles */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <Card className="border-emerald-100 bg-white shadow-sm overflow-hidden relative group transition-all hover:shadow-md">
-          <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity">
-            <TrendingUp className="w-16 h-16 text-emerald-600" />
-          </div>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-1.5 bg-emerald-50 rounded-lg">
-                <ArrowUpRight className="w-4 h-4 text-emerald-600" />
-              </div>
-              <p className="text-xs font-black uppercase tracking-widest text-emerald-600/80">Projected Income</p>
-            </div>
-            <div className="flex flex-col">
-              <h2 className="text-3xl font-black text-emerald-950 flex items-baseline gap-2">
-                <span className="text-sm font-bold text-emerald-600/40">DKK</span>
-                {stats.totalIncome.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </h2>
-              <div className="flex flex-col gap-1 mt-4 pt-4 border-t border-emerald-50/50">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black text-emerald-600/50 uppercase tracking-tighter">Income Projections</span>
-                  <span className="text-xs font-bold text-emerald-700">DKK {stats.income.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black text-emerald-600/50 uppercase tracking-tighter">Feeder Budgets</span>
-                  <span className="text-xs font-bold text-emerald-700">DKK {stats.feeder.toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
-        <Card className="border-rose-100 bg-white shadow-sm overflow-hidden relative group transition-all hover:shadow-md">
-          <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity">
-            <TrendingDown className="w-16 h-16 text-rose-600" />
-          </div>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-rose-50 rounded-lg">
-                  <ArrowDownRight className="w-4 h-4 text-rose-600" />
-                </div>
-                <p className="text-xs font-black uppercase tracking-widest text-rose-600/80">Primary Expenses</p>
-              </div>
-              <Link to="/budget" className="text-[10px] text-primary/60 hover:text-primary transition-colors uppercase tracking-tighter font-black hover:underline">
-                Budget Tab ↗
-              </Link>
-            </div>
-            <div className="flex flex-col">
-              <h2 className="text-3xl font-black text-rose-950 flex items-baseline gap-2">
-                <span className="text-sm font-bold text-rose-600/40">DKK</span>
-                {stats.totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </h2>
-              <div className="flex flex-col gap-1 mt-4 pt-4 border-t border-rose-50/50">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black text-rose-600/50 uppercase tracking-tighter">Budgeted Baseline</span>
-                  <span className="text-xs font-bold text-rose-700">DKK {stats.expenses.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black text-rose-600/50 uppercase tracking-tighter">Projected Slush</span>
-                  <span className="text-xs font-bold text-rose-700">DKK {stats.slush.toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
-        <Card className={`border-purple-100 bg-white shadow-sm overflow-hidden relative group transition-all hover:shadow-md`}>
-          <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity">
-            <Scale className="w-16 h-16 text-purple-600" />
-          </div>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-1.5 bg-purple-50 rounded-lg">
-                <Wallet className="w-4 h-4 text-purple-600" />
-              </div>
-              <p className="text-xs font-black uppercase tracking-widest text-purple-600/80">Net Profit / Loss</p>
-            </div>
-            <div className="flex flex-col">
-              <h2 className={`text-3xl font-black flex items-baseline gap-2 ${stats.pl >= 0 ? 'text-purple-950' : 'text-rose-950'}`}>
-                <span className="text-sm font-bold opacity-40">DKK</span>
-                {stats.pl.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </h2>
-              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-purple-50/50">
-                <span className="text-[10px] font-black text-purple-600/50 uppercase tracking-tighter">Annual Forecast</span>
-                <span className={`text-sm font-bold ${stats.pl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {stats.pl >= 0 ? '+ On Track' : '- Over Budget'}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Summary Tiles Hidden for now
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
+        ... tiles content ...
       </div>
-
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-primary" />
-          Financial Forecast
-        </h2>
-      </div>
+      */}
 
       <ProjectionChart
         data={projectionData}
         comparisonData={masterProjectionData}
-        title={activeScenarioId ? `Simulation: ${scenarios.find(s => s.id === activeScenarioId)?.name} vs Master` : `Projection for ${selectedYear}`}
+        title=""
         activeLabel={activeScenarioId ? "Scenario" : "Projected"}
         comparisonLabel="Master"
         unlabeledCategories={unlabeledCategories}
       />
 
-      <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-6">
         {/* Slush Fund Section */}
-        <div key="slush-fund" className="animate-in fade-in duration-500 delay-200">
+        <div key="slush-fund" className="bg-white/70 backdrop-blur-xl rounded-[2rem] border border-slate-200/60 p-6 shadow-sm animate-in fade-in duration-500 delay-200">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-black text-purple-900 tracking-tight flex items-center gap-2">
+              <div className="p-1.5 bg-purple-50 rounded-lg text-purple-600">
+                <Wallet className="w-4 h-4" />
+              </div>
+              Slush Fund
+            </h2>
+            <div className="flex items-center gap-8">
+              <div className="text-right">
+                <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Items</p>
+                <p className="text-sm font-black text-slate-900 font-mono">{slushFundTransactions.length}</p>
+              </div>
+              <div className="text-right border-l border-slate-200 pl-6">
+                <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Total Impact</p>
+                <p className="text-sm font-black text-slate-900 font-mono">{formatCurrency(slushFundTransactions.reduce((sum, t) => sum + t.amount, 0), settings.currency)}</p>
+              </div>
+            </div>
+          </div>
           <SlushFundTransactionsTable
             transactions={slushFundTransactions}
             onDelete={handleDeleteTransaction}
@@ -1059,21 +1145,26 @@ const Projection = () => {
 
         {/* Income Sources Card */}
         {incomeData.length > 0 && (
-          <Card key="income" className="shadow-sm border-emerald-100 bg-emerald-50/10 overflow-hidden rounded-3xl animate-in fade-in duration-500">
-            <div className="bg-emerald-50/50 border-b border-emerald-100 py-4 px-6 flex justify-between items-center">
-              <CardTitle className="text-xl text-emerald-800 flex items-center gap-2 font-bold shrink-0">Projected Income</CardTitle>
-              <div className="flex items-center gap-6 ml-auto pr-4">
-                <div className="text-right">
-                  <p className="text-[10px] uppercase font-black text-emerald-600/60 leading-tight tracking-widest">Projected Monthly</p>
-                  <p className="text-lg font-black text-emerald-900 leading-tight font-mono">{formatCurrency(projectionData[0]?.income || 0, settings.currency)}</p>
+          <div key="income" className="bg-white/70 backdrop-blur-xl rounded-[2rem] border border-slate-200/60 p-6 shadow-sm animate-in fade-in duration-500">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-black text-emerald-900 tracking-tight flex items-center gap-2">
+                <div className="p-1.5 bg-emerald-50 rounded-lg text-emerald-600">
+                  <TrendingUp className="w-4 h-4" />
                 </div>
-                <div className="text-right border-l border-emerald-100 pl-6">
-                  <p className="text-[10px] uppercase font-black text-emerald-600/60 leading-tight tracking-widest">Projected Annual</p>
-                  <p className="text-lg font-black text-emerald-900 leading-tight font-mono">{formatCurrency(projectionData.reduce((sum, d) => sum + (d.income || 0), 0), settings.currency)}</p>
+                Projected Income
+              </h2>
+              <div className="flex items-center gap-8">
+                <div className="text-right">
+                  <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Monthly</p>
+                  <p className="text-sm font-black text-slate-900 font-mono">{formatCurrency(projectionData[0]?.income || 0, settings.currency)}</p>
+                </div>
+                <div className="text-right border-l border-slate-200 pl-6">
+                  <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Annual</p>
+                  <p className="text-sm font-black text-slate-900 font-mono">{formatCurrency(projectionData.reduce((sum, d) => sum + (d.income || 0), 0), settings.currency)}</p>
                 </div>
               </div>
             </div>
-            <CardContent className="p-0">
+            <div className="p-0">
               <ProjectedIncomeTable
                 incomeCategories={incomeData as any}
                 projections={futureTransactions}
@@ -1136,67 +1227,62 @@ const Projection = () => {
                 }}
                 currency={settings.currency}
               />
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
 
-        {/* Feeder Budgets */}
-        {klintemarkenData.length > 0 && (
-          <Card key="klintemarken" className="shadow-sm border-blue-100 bg-blue-50/10 overflow-hidden rounded-3xl animate-in fade-in duration-500 delay-100">
-            <div className="bg-blue-50/50 border-b border-blue-100 py-4 px-6 flex justify-between items-center">
-              <CardTitle className="text-xl text-blue-800 flex items-center gap-2 font-bold">Projected Feeder</CardTitle>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => expandAll(klintemarkenData.map(d => d.name))} className="h-8 text-[10px] uppercase tracking-wider font-bold">Expand All</Button>
-                <Button variant="outline" size="sm" onClick={collapseAll} className="h-8 text-[10px] uppercase tracking-wider font-bold">Collapse All</Button>
-              </div>
-            </div>
-            <CardContent className="p-0">
+        {/* Primary Expenses Section */}
+        {budget?.category_groups?.expenditure && (
+          <div key="expenses-top" className="bg-white/70 backdrop-blur-xl rounded-[2rem] border border-slate-200/60 p-6 shadow-sm animate-in fade-in duration-500 delay-150">
+            <div>
               <BudgetTable
-                data={klintemarkenData as any}
-                type="klintemarken"
-                hideHeader={true}
+                data={primaryExpensesByLabel as any}
+                type="expense"
+                title="Core Expenditure"
+                hideHeader={false}
                 expandedCategories={expandedCategories}
                 toggleCategory={toggleCategory}
                 editingBudget={editingBudget}
                 setEditingBudget={setEditingBudget}
                 handleUpdateBudget={handleUpdateBudget}
-                totalIncome={totalBudgetedIncome}
-                currency={settings.currency}
-                selectedYear={parseInt(selectedYear)}
+                totalIncome={stats.totalIncome}
+                currency={settings?.currency || 'DKK'}
+                selectedYear={currentYear}
+                onToggleItem={toggleExpense}
+                disabledItems={disabledExpenses}
+                isScenario={!!activeScenarioId}
+                projectionMode={true}
+                onBatchAdjust={handleBatchAdjust}
               />
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
 
-        {/* Primary Expenses Section (Read Only Reference) */}
-        {budget?.category_groups?.expenditure && (
-          <Card key="expenses-top" className="shadow-sm border-gray-100 bg-gray-50/30 overflow-hidden rounded-3xl animate-in fade-in duration-500 delay-150">
-            <div className="bg-gray-50/50 border-b border-gray-100 py-4 px-6 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-xl text-gray-800 flex items-center gap-2 font-bold">Baseline: Primary Expenses</CardTitle>
-                <div className="px-2 py-0.5 bg-gray-200 text-gray-600 text-[10px] font-black uppercase rounded tracking-wider">Read Only</div>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => expandAll(primaryExpensesByLabel.map(d => d.name))} className="h-8 text-[10px] uppercase tracking-wider font-bold">Expand All</Button>
-                <Button variant="outline" size="sm" onClick={collapseAll} className="h-8 text-[10px] uppercase tracking-wider font-bold">Collapse All</Button>
-              </div>
-            </div>
-            <CardContent className="p-0">
+        {/* Feeder Budgets */}
+        {klintemarkenDataEnhanced.length > 0 && (
+          <div key="klintemarken" className="bg-white/70 backdrop-blur-xl rounded-[2rem] border border-slate-200/60 p-6 shadow-sm animate-in fade-in duration-500 delay-100">
+            <div>
               <BudgetTable
-                data={primaryExpensesByLabel as any}
-                type="expense"
-                hideHeader={true}
+                data={klintemarkenDataEnhanced as any}
+                type="klintemarken"
+                title="Feeders"
+                hideHeader={false}
                 expandedCategories={expandedCategories}
                 toggleCategory={toggleCategory}
-                editingBudget={null}
-                setEditingBudget={() => { }}
-                handleUpdateBudget={async () => { }}
-                totalIncome={totalBudgetedIncome}
-                currency={settings.currency}
-                selectedYear={parseInt(selectedYear)}
+                editingBudget={editingBudget}
+                setEditingBudget={setEditingBudget}
+                handleUpdateBudget={handleUpdateBudget}
+                totalIncome={stats.totalIncome}
+                currency={settings?.currency || 'DKK'}
+                selectedYear={currentYear}
+                onToggleItem={toggleExpense}
+                disabledItems={disabledExpenses}
+                isScenario={!!activeScenarioId}
+                projectionMode={true}
+                onBatchAdjust={handleBatchAdjust}
               />
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
 
       </div>
@@ -1212,59 +1298,8 @@ const Projection = () => {
         isEditing={!!editingId}
       />
 
-      {/* Legacy Section */}
-      <div className="mt-12 pt-8 border-t border-gray-100">
-        <button
-          onClick={() => setShowLegacy(!showLegacy)}
-          className="flex items-center gap-2 text-gray-400 hover:text-gray-600 transition-colors mb-4 group"
-        >
-          {showLegacy ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          <span className="text-sm font-medium uppercase tracking-widest">Legacy Projections (Experimental)</span>
-        </button>
-
-        {showLegacy && (
-          <div className="space-y-6 animate-in slide-in-from-top-2 duration-300">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-500 max-w-2xl">
-                These are automated projections based on historical data. This feature is currently in preview and may not reflect manual budget adjustments.
-              </p>
-              <Button
-                variant="outline"
-                onClick={() => setShowWizard(true)}
-                className="gap-2 text-primary border-primary hover:bg-primary/10"
-              >
-                <Sparkles className="w-4 h-4" />
-                Suggest Projections
-              </Button>
-            </div>
-
-
-            {showLegacy && (
-              <div className="space-y-6">
-                <IncomeTransactionsTable
-                  transactions={incomeTransactions}
-                  onDelete={handleDeleteTransaction}
-                  onEdit={handleEditTransaction}
-                  onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
-                  onAddClick={() => handleAddClick('income')}
-                  selectedYear={selectedYear}
-                  showPastProjections={showPastProjections}
-                />
-
-                <ExpenseTransactionsTable
-                  transactions={expenseTransactions}
-                  onDelete={handleDeleteTransaction}
-                  onEdit={handleEditTransaction}
-                  onUpdate={(id, updates) => updateProjectionMutation.mutate({ id, updates })}
-                  onAddClick={() => handleAddClick('expense')}
-                  selectedYear={selectedYear}
-                  showPastProjections={showPastProjections}
-                />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      {/* Space for future sections */}
+      <div className="h-12" />
 
       <PasteDataDialog
         open={showPasteDialog}

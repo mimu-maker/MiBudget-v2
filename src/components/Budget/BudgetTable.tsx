@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, ChevronRight, Target } from 'lucide-react';
+import { ChevronDown, ChevronRight, Target, Circle, CheckCircle2 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { formatCurrency, formatPercentage } from '@/lib/formatUtils';
@@ -138,6 +138,11 @@ interface BudgetTableProps {
     currency: string;
     selectedYear: number;
     hideHeader?: boolean;
+    onToggleItem?: (itemName: string) => void;
+    disabledItems?: Set<string>;
+    isScenario?: boolean;
+    projectionMode?: boolean;
+    onBatchAdjust?: (categoryName: string, subCategoryName: string | null, percentage: number) => void;
 }
 
 export const BudgetTable = ({
@@ -152,8 +157,69 @@ export const BudgetTable = ({
     totalIncome,
     currency,
     selectedYear,
-    hideHeader = false
+    hideHeader = false,
+    onToggleItem,
+    disabledItems,
+    isScenario = false,
+    projectionMode = false,
+    onBatchAdjust
 }: BudgetTableProps) => {
+    const isFixedOrVariableEssential = (name: string) =>
+        name === 'Fixed Committed' || name === 'Variable Essential';
+
+    const getExpenseTextColor = (name: string, defaultColor: string = 'text-rose-500') => {
+        if (type !== 'expense') return defaultColor;
+        const lowerName = name.toLowerCase();
+        if (lowerName.includes('fixed') || lowerName === 'fc') return 'text-slate-500';
+        if (lowerName.includes('variable') || lowerName === 've') return 'text-blue-500';
+        if (lowerName.includes('discret')) return 'text-amber-500';
+        if (lowerName.includes('unlabeled')) return 'text-red-500';
+        return defaultColor;
+    };
+
+    const getExpenseBgColor = (name: string, defaultColor: string = 'hover:bg-rose-500/5') => {
+        if (type !== 'expense') return defaultColor;
+        const lowerName = name.toLowerCase();
+        if (lowerName.includes('fixed') || lowerName === 'fc') return 'bg-slate-50/40 hover:bg-slate-500/5 border-slate-100';
+        if (lowerName.includes('variable') || lowerName === 've') return 'bg-blue-50/30 hover:bg-blue-500/5 border-blue-100';
+        if (lowerName.includes('discret')) return 'bg-amber-50/30 hover:bg-amber-500/5 border-amber-100';
+        if (lowerName.includes('unlabeled')) return 'bg-red-50/30 hover:bg-red-500/5 border-red-100';
+        return defaultColor;
+    };
+
+    const renderVariance = (avg: number, budget: number) => {
+        if (!budget || budget === 0) return null;
+        const variance = ((avg - budget) / budget) * 100;
+        if (Math.abs(variance) < 0.5) return null; // Hide noise
+
+        const isOver = variance > 0;
+        const colorClass = isOver
+            ? (type === 'income' ? 'text-emerald-500' : 'text-rose-500')
+            : (type === 'income' ? 'text-rose-500' : 'text-emerald-500');
+
+        return (
+            <div className={`flex flex-col items-end leading-none ml-2 ${colorClass}`}>
+                <span className="text-[8px] font-bold uppercase opacity-70 mb-0.5">{isOver ? 'Over' : 'Under'}</span>
+                <span className="text-[10px] font-bold tracking-tight whitespace-nowrap">
+                    {isOver ? '+' : ''}{variance.toFixed(1)}%
+                </span>
+            </div>
+        );
+    };
+
+    const AdjustButtons = ({ onAdjust }: { onAdjust: (p: number) => void }) => (
+        <div className="flex items-center gap-0.5 ml-auto opacity-30 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+            {[10, 5, 0, -5, -10, -25].map(p => (
+                <button
+                    key={p}
+                    onClick={(e) => { e.stopPropagation(); onAdjust(p); }}
+                    className="px-1 py-0.5 text-[8px] font-black rounded bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/50 transition-colors"
+                >
+                    {p === 0 ? '-' : (p > 0 ? `+${p}%` : `${p}%`)}
+                </button>
+            ))}
+        </div>
+    );
     const today = new Date();
     const currentYear = today.getFullYear();
     const currentMonth = today.getMonth() + 1; // 1-12
@@ -181,69 +247,90 @@ export const BudgetTable = ({
             return (
                 <tr
                     key={`${item.id}-${subcat.id}-${subIndex}`}
-                    className={`text-xs text-muted-foreground/80 ${type === 'income' ? 'bg-emerald-500/5' : type === 'klintemarken' ? 'bg-blue-500/5' : type === 'special' ? 'bg-purple-500/5' : 'bg-rose-500/5'}`}
+                    className={`text-xs text-muted-foreground/80 ${type === 'income' ? 'bg-emerald-500/5' : type === 'klintemarken' ? 'bg-blue-500/5' : type === 'special' ? 'bg-purple-500/5' : type === 'expense' ? getExpenseTextColor(item.name).replace('text-', 'bg-').replace('500', '500/5') : 'bg-rose-500/5'} ${disabledItems?.has(subcat.name) ? 'opacity-30' : ''}`}
                 >
-                    <td className="py-2 px-6"></td>
-                    <td className="py-2 px-2 italic pl-6 font-medium">└ {subcat.name}</td>
-                    <EditableCell
-                        value={(subcat.budget_amount || 0) * 12}
-                        isEditing={editingBudget === annualKey}
-                        onEdit={() => type !== 'special' && setEditingBudget(annualKey)}
-                        onCancel={() => setEditingBudget(null)}
-                        onUpdate={(val) => type !== 'special' ? handleUpdateBudget(item, subcat, val, 'annual', annualKey) : Promise.resolve()}
-                        currency={currency}
-                        lastYearData={subcat.last_year_data}
-                        selectedYear={selectedYear}
-                        annualMultiplier={12}
-                    />
-                    <EditableCell
-                        value={subcat.budget_amount || 0}
-                        isEditing={editingBudget === monthlyKey}
-                        onEdit={() => type !== 'special' && setEditingBudget(monthlyKey)}
-                        onCancel={() => setEditingBudget(null)}
-                        onUpdate={(val) => type !== 'special' ? handleUpdateBudget(item, subcat, val, 'monthly', monthlyKey) : Promise.resolve()}
-                        currency={currency}
-                        lastYearData={subcat.last_year_data}
-                        selectedYear={selectedYear}
-                        annualMultiplier={1}
-                    />
-                    <EditableCell
-                        value={totalIncome > 0.1 ? ((subcat.budget_amount || 0) / totalIncome) * 100 : 0}
-                        isEditing={editingBudget === percentKey}
-                        onEdit={() => type !== 'special' && setEditingBudget(percentKey)}
-                        onCancel={() => setEditingBudget(null)}
-                        onUpdate={(val) => type !== 'special' ? handleUpdateBudget(item, subcat, val, 'percent', percentKey) : Promise.resolve()}
-                        currency={currency}
-                        isPercent
-                        selectedYear={selectedYear}
-                    />
-                    <td className="py-2 px-6 text-right font-mono text-[10px] text-muted-foreground/60 whitespace-nowrap">
-                        {(!isFutureYear || (subcat.spent !== 0)) && formatCurrency((subcat.budget_amount || 0) * elapsedMonths, currency)}
+                    <td className="py-2 px-4">
+                        <div className="flex items-center justify-center gap-2">
+                            {onToggleItem && !isFixedOrVariableEssential(item.name) && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onToggleItem(subcat.name); }}
+                                    className="hover:scale-110 transition-transform flex-shrink-0"
+                                >
+                                    {disabledItems?.has(subcat.name) ? (
+                                        <Circle className="w-3.5 h-3.5 text-slate-300" />
+                                    ) : (
+                                        <CheckCircle2 className={`w-3.5 h-3.5 ${type === 'income' ? 'text-emerald-500' : type === 'expense' ? getExpenseTextColor(item.name) : 'text-rose-500'}`} />
+                                    )}
+                                </button>
+                            )}
+                            <div className="w-4 h-4 flex-shrink-0" /> {/* Spacer for caret alignment */}
+                        </div>
                     </td>
-                    <td className="py-2 px-6 text-right font-bold text-foreground/70 whitespace-nowrap">{formatCurrency(subcat.spent, currency)}</td>
-                    <td className={`py-2 px-6 text-right font-mono text-[10px] whitespace-nowrap ${type === 'income'
-                            ? (subcat.spent >= ((subcat.budget_amount || 0) * elapsedMonths) ? 'text-emerald-600' : 'text-rose-600')
-                            : (((subcat.budget_amount || 0) * elapsedMonths) >= subcat.spent ? 'text-emerald-600' : 'text-rose-600')
-                        }`}>
-                        {(!isFutureYear || (subcat.spent !== 0)) && (
-                            <div className="flex flex-col items-end whitespace-nowrap">
-                                {((subcat.budget_amount || 0) * elapsedMonths) > 0 && (
-                                    <span className="text-xs font-black leading-none mb-1">
-                                        {(() => {
-                                            const budgetYtd = (subcat.budget_amount || 0) * elapsedMonths;
-                                            const variance = Math.round(((subcat.spent / budgetYtd) - 1) * 100);
-                                            return variance > 0 ? `+${variance}%` : `${variance}%`;
-                                        })()}
-                                    </span>
-                                )}
-                                <div className="flex items-center justify-end gap-1 opacity-60 text-[9px]">
-                                    {((subcat.budget_amount || 0) * elapsedMonths) < subcat.spent && <span>OVER</span>}
-                                    {((subcat.budget_amount || 0) * elapsedMonths) > subcat.spent && <span>UNDER</span>}
-                                    {formatCurrency(Math.abs(((subcat.budget_amount || 0) * elapsedMonths) - subcat.spent), currency)}
+                    <td className="py-2 px-2 italic pl-10 font-medium">
+                        <div className="flex items-center justify-between group">
+                            <span>└ {subcat.name}</span>
+                            {projectionMode && isScenario && onBatchAdjust && item.name === 'Variable Essential' && (
+                                <AdjustButtons onAdjust={(p) => onBatchAdjust(item.name, subcat.name, p)} />
+                            )}
+                        </div>
+                    </td>
+
+                    {projectionMode ? (
+                        <>
+                            <td className="py-2 px-3 text-right font-medium">
+                                <div className="flex items-center justify-end">
+                                    <span className="text-muted-foreground/60">{formatCurrency((subcat as any).avg_6m || 0, currency)}</span>
+                                    {renderVariance((subcat as any).avg_6m || 0, subcat.budget_amount || 0)}
                                 </div>
-                            </div>
-                        )}
-                    </td>
+                            </td>
+                            <td className="py-2 px-3 text-right font-medium">
+                                <div className="flex items-center justify-end">
+                                    <span className="text-muted-foreground/60">{formatCurrency((subcat as any).avg_1y || 0, currency)}</span>
+                                    {renderVariance((subcat as any).avg_1y || 0, subcat.budget_amount || 0)}
+                                </div>
+                            </td>
+                            <EditableCell
+                                value={subcat.budget_amount || 0}
+                                isEditing={editingBudget === monthlyKey}
+                                onEdit={() => isScenario && setEditingBudget(monthlyKey)}
+                                onCancel={() => setEditingBudget(null)}
+                                onUpdate={(val) => isScenario ? handleUpdateBudget(item, subcat, val, 'monthly', monthlyKey) : Promise.resolve()}
+                                currency={currency}
+                                lastYearData={subcat.last_year_data}
+                                selectedYear={selectedYear}
+                                annualMultiplier={1}
+                                className={!isScenario ? 'opacity-50' : ''}
+                            />
+                        </>
+                    ) : (
+                        <>
+                            <EditableCell
+                                value={(subcat.budget_amount || 0) * 12}
+                                isEditing={editingBudget === annualKey}
+                                onEdit={() => type !== 'special' && setEditingBudget(annualKey)}
+                                onCancel={() => setEditingBudget(null)}
+                                onUpdate={(val) => type !== 'special' ? handleUpdateBudget(item, subcat, val, 'annual', annualKey) : Promise.resolve()}
+                                currency={currency}
+                                lastYearData={subcat.last_year_data}
+                                selectedYear={selectedYear}
+                                annualMultiplier={12}
+                            />
+                            <EditableCell
+                                value={subcat.budget_amount || 0}
+                                isEditing={editingBudget === monthlyKey}
+                                onEdit={() => type !== 'special' && setEditingBudget(monthlyKey)}
+                                onCancel={() => setEditingBudget(null)}
+                                onUpdate={(val) => type !== 'special' ? handleUpdateBudget(item, subcat, val, 'monthly', monthlyKey) : Promise.resolve()}
+                                currency={currency}
+                                lastYearData={subcat.last_year_data}
+                                selectedYear={selectedYear}
+                                annualMultiplier={1}
+                            />
+                        </>
+                    )}
+
+                    <td className="py-2 px-6 text-right font-bold text-foreground/70 whitespace-nowrap">{formatCurrency(subcat.spent, currency)}</td>
+
                 </tr>
             );
         });
@@ -252,33 +339,50 @@ export const BudgetTable = ({
     return (
         <div className="overflow-x-auto">
             <table className="w-full text-left table-fixed">
-                <colgroup>
-                    <col className="w-12" />
-                    <col className="w-auto" />
-                    <col className="w-[11%]" />
-                    <col className="w-[11%]" />
-                    <col className="w-[7%]" />
-                    <col className="w-[13%]" />
-                    <col className="w-[13%]" />
-                    <col className="w-[16%]" />
-                </colgroup>
+                {projectionMode ? (
+                    <colgroup>
+                        <col className="w-10" />
+                        <col className="w-auto" />
+                        <col className="w-[12%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[15%]" />
+                    </colgroup>
+                ) : (
+                    <colgroup>
+                        <col className="w-20" />
+                        <col className="w-auto" />
+                        <col className="w-[15%]" />
+                        <col className="w-[15%]" />
+                        <col className="w-[20%]" />
+                    </colgroup>
+                )}
                 {!hideHeader && (
                     <thead>
                         <tr className={`${type === 'income'
-                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                            ? 'bg-emerald-50/50 text-emerald-900'
                             : type === 'klintemarken'
-                                ? 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400'
+                                ? 'bg-blue-50/50 text-blue-900'
                                 : type === 'special'
-                                    ? 'bg-purple-500/10 border-purple-500/20 text-purple-600 dark:text-purple-400'
-                                    : 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400'} border-b uppercase text-[10px] font-bold tracking-widest`}>
-                            <th className="py-3 px-6"></th>
-                            <th className="py-3 px-2">{title || (type === 'income' ? 'Income' : type === 'klintemarken' ? 'Klintemarken' : type === 'special' ? 'Special' : 'Expenses')}</th>
-                            <th className="py-3 px-3 text-right">Annual</th>
-                            <th className="py-3 px-3 text-right">Monthly</th>
-                            <th className="py-3 px-3 text-right">% of Total</th>
-                            <th className="py-3 px-6 text-right">{selectedYear === currentYear ? 'Budget YTD' : (isFutureYear ? 'Annual Budget' : 'Full Year Budget')}</th>
-                            <th className="py-3 px-6 text-right">{selectedYear === currentYear ? 'Actual Spend YTD' : (isFutureYear ? 'Actual Spend YTD' : 'Actual Spend')}</th>
-                            <th className="py-3 px-6 text-right">Vs Budget</th>
+                                    ? 'bg-purple-50/50 text-purple-900'
+                                    : 'bg-slate-50 text-slate-900'} border-b uppercase text-[9px] font-black tracking-[0.2em]`}>
+                            <th className="py-3 px-6 text-center">{projectionMode ? "" : "Sim"}</th>
+                            <th className="py-3 px-2">{title || (type === 'income' ? 'Income' : type === 'klintemarken' ? 'Feeders' : 'Expenditure')}</th>
+
+                            {projectionMode ? (
+                                <>
+                                    <th className="py-3 px-3 text-right">Last 6M (avg)</th>
+                                    <th className="py-3 px-3 text-right">Last 1Y (avg)</th>
+                                    <th className="py-3 px-3 text-right">Budgeted</th>
+                                </>
+                            ) : (
+                                <>
+                                    <th className="py-3 px-3 text-right">Annual</th>
+                                    <th className="py-3 px-3 text-right">Monthly</th>
+                                </>
+                            )}
+
+                            <th className="py-3 px-6 text-right">Year to Date</th>
                         </tr>
                     </thead>
                 )}
@@ -292,7 +396,7 @@ export const BudgetTable = ({
                                         ${type === 'income' ? 'hover:bg-emerald-500/5' :
                                             type === 'klintemarken' ? 'hover:bg-blue-500/5' :
                                                 (type === 'special' || item.name === 'Slush Fund') ? 'bg-purple-50/60 hover:bg-purple-100/60 border-purple-100' :
-                                                    'hover:bg-rose-500/5'}`}
+                                                    type === 'expense' ? getExpenseBgColor(item.name) : 'hover:bg-rose-500/5'}`}
                                     onClick={(e) => {
                                         if ((e.target as HTMLElement).closest('td')?.querySelector('input, div[role="spinbutton"]')) {
                                             return;
@@ -300,87 +404,104 @@ export const BudgetTable = ({
                                         toggleCategory(item.name);
                                     }}
                                 >
-                                    <td className="py-3 px-6 pl-8">
-                                        {item.sub_categories.length > 0 && (
-                                            isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                                        )}
+                                    <td className="py-3 px-4">
+                                        <div className="flex items-center justify-center gap-2">
+                                            {onToggleItem && !isFixedOrVariableEssential(item.name) && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onToggleItem(item.name); }}
+                                                    className="hover:scale-110 transition-transform flex-shrink-0"
+                                                >
+                                                    {disabledItems?.has(item.name) ? (
+                                                        <Circle className="w-4 h-4 text-slate-300" />
+                                                    ) : (
+                                                        <CheckCircle2 className={`w-4 h-4 ${type === 'income' ? 'text-emerald-500' : type === 'expense' ? getExpenseTextColor(item.name) : 'text-rose-500'}`} />
+                                                    )}
+                                                </button>
+                                            )}
+                                            {item.sub_categories.length > 0 ? (
+                                                <div className="w-4 h-4 flex-shrink-0">
+                                                    {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                                                </div>
+                                            ) : (
+                                                <div className="w-4 h-4" />
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="py-3 px-2 font-bold text-foreground">
-                                        {(type === 'special' || item.name === 'Slush Fund') ? (
-                                            <div className="flex items-center gap-3 py-2">
-                                                <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center shadow-sm">
-                                                    <CategoryIcon name={item.icon || 'Sparkles'} className="w-6 h-6" />
+                                        <div className="flex items-center justify-between group">
+                                            {(type === 'special' || item.name === 'Slush Fund') ? (
+                                                <div className="flex items-center gap-3 py-2">
+                                                    <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center shadow-sm">
+                                                        <CategoryIcon name={item.icon || 'Sparkles'} className="w-6 h-6" />
+                                                    </div>
+                                                    <span className="text-lg font-bold text-purple-900 tracking-tight">{item.name}</span>
                                                 </div>
-                                                <span className="text-lg font-bold text-purple-900 tracking-tight">{item.name}</span>
-                                            </div>
-                                        ) : (
-                                            <span className="font-bold text-foreground">{item.name}</span>
-                                        )}
+                                            ) : (
+                                                <span className={`font-bold ${type === 'expense' ? getExpenseTextColor(item.name, 'text-foreground') : 'text-foreground'}`}>
+                                                    {item.name}
+                                                </span>
+                                            )}
+                                            {projectionMode && isScenario && onBatchAdjust && item.name === 'Variable Essential' && (
+                                                <AdjustButtons onAdjust={(p) => onBatchAdjust(item.name, null, p)} />
+                                            )}
+                                        </div>
                                     </td>
-                                    <EditableCell
-                                        value={item.budget_amount * 12}
-                                        isEditing={editingBudget === `${item.id}-annual`}
-                                        onEdit={() => (type === 'special' || item.name === 'Slush Fund') && setEditingBudget(`${item.id}-annual`)}
-                                        onCancel={() => setEditingBudget(null)}
-                                        onUpdate={(val) => handleUpdateBudget(item, { id: null, name: item.name } as any, val, 'annual', `${item.id}-annual`)}
-                                        currency={currency}
-                                        selectedYear={selectedYear}
-                                        annualMultiplier={12}
-                                        lastYearData={item.last_year_data}
-                                        className={(type !== 'special' && item.name !== 'Slush Fund') ? 'opacity-50' : ''}
-                                    />
-                                    <EditableCell
-                                        value={item.budget_amount}
-                                        isEditing={editingBudget === `${item.id}-monthly`}
-                                        onEdit={() => (type === 'special' || item.name === 'Slush Fund') && setEditingBudget(`${item.id}-monthly`)}
-                                        onCancel={() => setEditingBudget(null)}
-                                        onUpdate={(val) => handleUpdateBudget(item, { id: null, name: item.name } as any, val, 'monthly', `${item.id}-monthly`)}
-                                        currency={currency}
-                                        selectedYear={selectedYear}
-                                        lastYearData={item.last_year_data}
-                                        className={(type !== 'special' && item.name !== 'Slush Fund') ? 'opacity-50' : ''}
-                                    />
-                                    <EditableCell
-                                        value={totalIncome > 0.1 ? (item.budget_amount / totalIncome) * 100 : 0}
-                                        isEditing={editingBudget === `${item.id}-percent`}
-                                        onEdit={() => (type === 'special' || item.name === 'Slush Fund') && setEditingBudget(`${item.id}-percent`)}
-                                        onCancel={() => setEditingBudget(null)}
-                                        onUpdate={(val) => handleUpdateBudget(item, { id: null, name: item.name } as any, val, 'percent', `${item.id}-percent`)}
-                                        currency={currency}
-                                        isPercent
-                                        selectedYear={selectedYear}
-                                        className={(type !== 'special' && item.name !== 'Slush Fund') ? 'opacity-50' : ''}
-                                    />
-                                    <td className="py-3 px-6 text-right font-mono text-muted-foreground/60 whitespace-nowrap">
-                                        {(!isFutureYear || (item.spent !== 0)) && formatCurrency(item.budget_amount * elapsedMonths, currency)}
-                                    </td>
-                                    <td className="py-3 px-6 text-right font-black text-foreground whitespace-nowrap">{formatCurrency(item.spent, currency)}</td>
-                                    <td className={`py-3 px-6 text-right transition-all duration-300 whitespace-nowrap ${type === 'income'
-                                            ? (item.spent >= (item.budget_amount * elapsedMonths) ? 'text-emerald-500' : 'text-rose-500')
-                                            : ((item.budget_amount * elapsedMonths) >= item.spent ? 'text-emerald-500' : 'text-rose-500')
-                                        }`}>
-                                        {(!isFutureYear || (item.spent !== 0)) && (
-                                            <div className="flex flex-col items-end whitespace-nowrap">
-                                                {(item.budget_amount * elapsedMonths) > 0 && (
-                                                    <span className="text-lg font-black leading-none mb-1">
-                                                        {(() => {
-                                                            const budgetYtd = item.budget_amount * elapsedMonths;
-                                                            const variance = Math.round(((item.spent / budgetYtd) - 1) * 100);
-                                                            return variance > 0 ? `+${variance}%` : `${variance}%`;
-                                                        })()}
-                                                    </span>
-                                                )}
-                                                <div className="flex items-center gap-2 whitespace-nowrap opacity-60 text-[10px] font-bold">
-                                                    {type === 'income' ? (
-                                                        item.spent < (item.budget_amount * elapsedMonths) ? <span className="bg-rose-500 text-white px-1 rounded-sm tracking-tighter text-[9px]">UNDER</span> : <span className="bg-emerald-500 text-white px-1 rounded-sm tracking-tighter text-[9px]">OVER</span>
-                                                    ) : (
-                                                        (item.budget_amount * elapsedMonths) < item.spent ? <span className="bg-rose-500 text-white px-1 rounded-sm tracking-tighter text-[9px]">OVER</span> : <span className="bg-emerald-500 text-white px-1 rounded-sm tracking-tighter text-[9px]">UNDER</span>
-                                                    )}
-                                                    <span className="font-mono">{formatCurrency(Math.abs((item.budget_amount * elapsedMonths) - item.spent), currency)}</span>
+
+                                    {projectionMode ? (
+                                        <>
+                                            <td className="py-3 px-3 text-right font-bold">
+                                                <div className="flex items-center justify-end">
+                                                    <span className="text-foreground/60">{formatCurrency((item as any).avg_6m || 0, currency)}</span>
+                                                    {renderVariance((item as any).avg_6m || 0, item.budget_amount || 0)}
                                                 </div>
-                                            </div>
-                                        )}
-                                    </td>
+                                            </td>
+                                            <td className="py-3 px-3 text-right font-bold">
+                                                <div className="flex items-center justify-end">
+                                                    <span className="text-foreground/60">{formatCurrency((item as any).avg_1y || 0, currency)}</span>
+                                                    {renderVariance((item as any).avg_1y || 0, item.budget_amount || 0)}
+                                                </div>
+                                            </td>
+                                            <EditableCell
+                                                value={item.budget_amount}
+                                                isEditing={editingBudget === `${item.id}-monthly`}
+                                                onEdit={() => isScenario && setEditingBudget(`${item.id}-monthly`)}
+                                                onCancel={() => setEditingBudget(null)}
+                                                onUpdate={(val) => handleUpdateBudget(item, { id: null, name: item.name } as any, val, 'monthly', `${item.id}-monthly`)}
+                                                currency={currency}
+                                                selectedYear={selectedYear}
+                                                lastYearData={item.last_year_data}
+                                                className={!isScenario ? 'opacity-50' : ''}
+                                            />
+                                        </>
+                                    ) : (
+                                        <>
+                                            <EditableCell
+                                                value={item.budget_amount * 12}
+                                                isEditing={editingBudget === `${item.id}-annual`}
+                                                onEdit={() => (type === 'special' || item.name === 'Slush Fund') && setEditingBudget(`${item.id}-annual`)}
+                                                onCancel={() => setEditingBudget(null)}
+                                                onUpdate={(val) => handleUpdateBudget(item, { id: null, name: item.name } as any, val, 'annual', `${item.id}-annual`)}
+                                                currency={currency}
+                                                selectedYear={selectedYear}
+                                                annualMultiplier={12}
+                                                lastYearData={item.last_year_data}
+                                                className={(type !== 'special' && item.name !== 'Slush Fund') ? 'opacity-50' : ''}
+                                            />
+                                            <EditableCell
+                                                value={item.budget_amount}
+                                                isEditing={editingBudget === `${item.id}-monthly`}
+                                                onEdit={() => (type === 'special' || item.name === 'Slush Fund') && setEditingBudget(`${item.id}-monthly`)}
+                                                onCancel={() => setEditingBudget(null)}
+                                                onUpdate={(val) => handleUpdateBudget(item, { id: null, name: item.name } as any, val, 'monthly', `${item.id}-monthly`)}
+                                                currency={currency}
+                                                selectedYear={selectedYear}
+                                                lastYearData={item.last_year_data}
+                                                className={(type !== 'special' && item.name !== 'Slush Fund') ? 'opacity-50' : ''}
+                                            />
+                                        </>
+                                    )}
+
+                                    <td className="py-3 px-6 text-right font-black text-slate-900 whitespace-nowrap">{formatCurrency(item.spent, currency)}</td>
                                 </tr>
                                 {renderSubCategories(item, isExpanded)}
                             </React.Fragment>
