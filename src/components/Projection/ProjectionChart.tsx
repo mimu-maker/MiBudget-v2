@@ -19,7 +19,7 @@ const ProjectionChart = ({
   comparisonData,
   title = "Projection",
   activeLabel = "Current",
-  comparisonLabel = "Master",
+  comparisonLabel = "Baseline",
   unlabeledCategories = []
 }: ProjectionChartProps) => {
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
@@ -64,32 +64,57 @@ const ProjectionChart = ({
   }, [data]);
 
   // Merge data for the chart
-  const combinedData = useMemo(() => data.map((d, i) => {
-    const row: any = {
-      ...d,
-      value: d.value,
-      cumulativeBalance: d.cumulativeBalance,
-      comparisonCumulative: comparisonData?.[i]?.cumulativeBalance
-    };
+  const combinedData = useMemo(() => {
+    let essentialSum = 0;
+    let tightSum = 0;
+    let scroungeSum = 0;
 
-    if (d.breakdown) {
-      Object.entries(d.breakdown.incomeBreakdown).forEach(([k, v]) => row[`in_${k}`] = v || 0);
-      Object.entries(d.breakdown.expenseLabelBreakdown).forEach(([k, v]) => row[`out_${k}`] = v || 0);
-      Object.entries(d.breakdown.slushBreakdown).forEach(([k, v]) => row[`out_${k}`] = v || 0);
+    return data.map((d, i) => {
+      // Base comparison on comparisonData (Master) if available, else use current data
+      const compSource = comparisonData?.[i] || d;
 
-      // Feeder Budget placement based on sign
-      const feederVal = d.breakdown.feederBreakdown['Feeder Budget'] || 0;
-      if (feederVal >= 0) {
-        row[`in_Feeder Budget`] = feederVal;
-        row[`out_Feeder Budget`] = 0;
-      } else {
-        row[`in_Feeder Budget`] = 0;
-        row[`out_Feeder Budget`] = Math.abs(feederVal);
+      // Calculate Essential Spend (FC + VE)
+      const fc = compSource.breakdown?.expenseLabelBreakdown?.['Fixed Committed'] || 0;
+      const ve = compSource.breakdown?.expenseLabelBreakdown?.['Variable Essential'] || 0;
+      const fcVeTotal = fc + ve;
+
+      // Essential Monthly Net = Income + Feeder - (FC + VE)
+      const income = compSource.income || 0;
+      const feeder = compSource.feeder || 0;
+
+      essentialSum += (income + feeder - fcVeTotal);
+      tightSum += (income + feeder - (fcVeTotal * 0.9));
+      scroungeSum += (income + feeder - (fcVeTotal * 0.75));
+
+      const row: any = {
+        ...d,
+        value: d.value,
+        cumulativeBalance: d.cumulativeBalance,
+        essentialBaseline: essentialSum,
+        tightenBelts: tightSum,
+        scrounger: scroungeSum,
+        comparisonCumulative: comparisonData?.[i]?.cumulativeBalance || 0
+      };
+
+      if (d.breakdown) {
+        Object.entries(d.breakdown.incomeBreakdown).forEach(([k, v]) => row[`in_${k}`] = v || 0);
+        Object.entries(d.breakdown.expenseLabelBreakdown).forEach(([k, v]) => row[`out_${k}`] = v || 0);
+        Object.entries(d.breakdown.slushBreakdown).forEach(([k, v]) => row[`out_${k}`] = v || 0);
+
+        // Feeder Budget placement based on sign
+        const feederVal = d.breakdown.feederBreakdown['Feeder Budget'] || 0;
+        if (feederVal >= 0) {
+          row[`in_Feeder Budget`] = feederVal;
+          row[`out_Feeder Budget`] = 0;
+        } else {
+          row[`in_Feeder Budget`] = 0;
+          row[`out_Feeder Budget`] = Math.abs(feederVal);
+        }
       }
-    }
 
-    return row;
-  }), [data, comparisonData]);
+      return row;
+    });
+  }, [data, comparisonData]);
 
   const getIncomeColor = (name: string, index: number) => {
     if (name === 'Feeder Budget') return '#34d399';
@@ -177,6 +202,17 @@ const ProjectionChart = ({
         <CardTitle className="text-lg font-black tracking-tight text-gray-800">{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-6">
+        {/* Modern Chart Key */}
+        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4 mb-8 mt-2 animate-in fade-in slide-in-from-top-4 duration-700">
+          <div className="flex items-center gap-2 group cursor-help transition-all hover:scale-105">
+            <div className="w-8 h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-rose-500 shadow-sm" />
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest leading-none">Net Balance</span>
+              <span className="text-[9px] font-bold text-slate-400">Total projected trajectory</span>
+            </div>
+          </div>
+        </div>
+
         <ResponsiveContainer width="100%" height={450}>
           <ComposedChart
             data={combinedData}
@@ -223,7 +259,6 @@ const ProjectionChart = ({
             />
             <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc' }} />
 
-            <ReferenceLine yAxisId="cumulative" y={0} stroke="#e2e8f0" strokeDasharray="3 3" />
 
             {uniqueSubCats.income.map((name, idx) => (
               <Bar
@@ -257,20 +292,44 @@ const ProjectionChart = ({
               );
             })}
 
-            {/* Cumulative Lines */}
-            {comparisonData && (
-              <Line
-                yAxisId="cumulative"
-                name="Master Balance"
-                type="monotone"
-                dataKey="comparisonCumulative"
-                stroke="#cbd5e1"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                dot={false}
-                onMouseEnter={() => setHoveredKey("comparisonCumulative")}
-              />
-            )}
+            {/* Safety/Optimization Trajectories (Hidden for now as per user request, but logic preserved in combinedData) */}
+            {/* 
+            <Line
+              yAxisId="cumulative"
+              name="Survival Baseline"
+              type="monotone"
+              dataKey="essentialBaseline"
+              stroke="#fbbf24"
+              strokeWidth={2}
+              strokeDasharray="6 4"
+              dot={false}
+              onMouseEnter={() => setHoveredKey("essentialBaseline")}
+            />
+            <Line
+              yAxisId="cumulative"
+              name="Tighten Belts"
+              type="monotone"
+              dataKey="tightenBelts"
+              stroke="#fbbf24"
+              strokeWidth={1}
+              strokeDasharray="4 4"
+              strokeOpacity={0.6}
+              dot={false}
+              onMouseEnter={() => setHoveredKey("tightenBelts")}
+            />
+            <Line
+              yAxisId="cumulative"
+              name="Scrounger"
+              type="monotone"
+              dataKey="scrounger"
+              stroke="#fbbf24"
+              strokeWidth={1}
+              strokeDasharray="2 2"
+              strokeOpacity={0.3}
+              dot={false}
+              onMouseEnter={() => setHoveredKey("scrounger")}
+            />
+            */}
 
             <Line
               yAxisId="cumulative"

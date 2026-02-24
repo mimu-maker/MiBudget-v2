@@ -183,7 +183,18 @@ const Projection = () => {
 
       if (activeScenarioId) {
         // SCENARIO MODE: Update or Create a Projection instead of changing the real budget
-        const existingProj = projections.find(p => p.category === parentCategory.name && p.stream === subCategory.name);
+        let realCategory = parentCategory.name;
+        let realStream = subCategory?.name || '';
+
+        if (realStream.includes(' - ')) {
+          const parts = realStream.split(' - ');
+          realCategory = parts[0];
+          realStream = parts.slice(1).join(' - ');
+        } else if (parentCategory.name === 'Slush Fund' || type === 'annual') {
+          // Keep existing logic for Slush Fund and others
+        }
+
+        const existingProj = projections.find(p => p.category === realCategory && p.stream === realStream);
 
         if (existingProj) {
           await updateProjectionMutation.mutateAsync({
@@ -192,14 +203,14 @@ const Projection = () => {
           });
         } else {
           await addProjectionMutation.mutateAsync({
-            category: parentCategory.name,
-            stream: subCategory.name,
+            category: realCategory,
+            stream: realStream,
             amount: roundedMonthly,
             date: new Date(currentYear, 0, 1).toISOString().slice(0, 10),
             recurring: 'Monthly',
             planned: true,
-            source: subCategory.name,
-            description: `Scenario override for ${subCategory.name}`
+            source: realStream,
+            description: `Scenario override for ${realStream}`
           });
         }
         queryClient.invalidateQueries({ queryKey: ['projections'] });
@@ -487,11 +498,18 @@ const Projection = () => {
         const matchKey = `${cat.name}-${sub.name}`.toLowerCase();
         const avgData = subCategoryAverages[matchKey] || { avg6m: 0, avg1y: 0 };
 
+        let expectedAmount = sub.budget_amount || 0;
+        const overrideProj = projections.find(p => p.category === cat.name && p.stream === sub.name && p.recurring === 'Monthly');
+        if (overrideProj) {
+          expectedAmount = overrideProj.amount;
+        }
+
         labelGroups[label].push({
           ...sub,
           name: `${cat.name} - ${sub.name}`,
           avg_6m: avgData.avg6m,
-          avg_1y: avgData.avg1y
+          avg_1y: avgData.avg1y,
+          expected_amount: expectedAmount
         } as any);
       });
     });
@@ -504,6 +522,7 @@ const Projection = () => {
         name: label,
         type: 'expense',
         budget_amount: subcategories.reduce((sum, sub) => sum + (sub.budget_amount || 0), 0),
+        expected_amount: subcategories.reduce((sum, sub) => sum + ((sub as any).expected_amount || 0), 0),
         spent: subcategories.reduce((sum, sub) => sum + (sub.spent || 0), 0),
         avg_6m: subcategories.reduce((sum, sub) => sum + ((sub as any).avg_6m || 0), 0),
         avg_1y: subcategories.reduce((sum, sub) => sum + ((sub as any).avg_1y || 0), 0),
@@ -517,7 +536,7 @@ const Projection = () => {
       if (indexB === -1) return -1;
       return indexA - indexB;
     });
-  }, [budget, subCategoryAverages]);
+  }, [budget, subCategoryAverages, projections]);
 
   const klintemarkenDataEnhanced = useMemo(() => {
     if (!budget?.category_groups?.klintemarken) return [];
@@ -573,7 +592,7 @@ const Projection = () => {
         if (disabledExpenses.has(labelCat.name)) return;
         const labelTotal = labelCat.sub_categories.reduce((s, sub) => {
           if (disabledExpenses.has(sub.name)) return s;
-          return s + (sub.budget_amount || 0);
+          return s + ((sub as any).expected_amount ?? (sub.budget_amount || 0));
         }, 0);
         if (labelTotal > 0) {
           expenseLabelBreakdownBase[labelCat.name] = labelTotal;
@@ -616,7 +635,7 @@ const Projection = () => {
               const monthOverride = m.overrides?.[monthKey];
               if (monthOverride && monthOverride.amount !== undefined) {
                 amount = monthOverride.amount;
-              } else if (m.recurring === 'Monthly') {
+              } else if (m.recurring === 'Monthly' && m.date.slice(0, 7) <= monthKey) {
                 amount = m.amount;
               } else {
                 // If it's a non-monthly recurring projection, it will be handled in the txs loop below?
@@ -665,25 +684,21 @@ const Projection = () => {
           }
 
           if (isCurrentMonth) {
-            if (amountToUse >= 0) {
-              // Only add if it wasn't handled by the budget loop above
-              // AND ensure it doesn't just match the "Income" category name to avoid doubling
+            const isExpenseCategory = budget?.category_groups?.expenditure?.some(cat => cat.name === t.category);
+
+            if (amountToUse > 0 && !isExpenseCategory) {
+              // positive amounts not matching expense categories are income
               if (!isKnownIncome) {
                 const streamName = t.stream || t.source || 'Other';
-
-                // If it's not a known sub-category (handled in first loop), but it is a positive amount
-                // that belongs to an Income category, we strictly exclude it to avoid doubling.
                 const isIncomeCategory = budget?.category_groups?.income?.some(cat => cat.name === t.category);
                 if (isIncomeCategory && !isKnownIncome) return;
-
-                // Handle generic "Income" or category name as stream name
                 const isTopLevelCategoryName = budget?.category_groups?.income?.some(cat => cat.name === streamName);
                 if (isTopLevelCategoryName || streamName === 'Income') return;
 
                 income += amountToUse;
                 incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
               }
-            } else if (specialCategoryNames.includes(t.category)) {
+            } else if (amountToUse < 0 && !isExpenseCategory && specialCategoryNames.includes(t.category)) {
               // Show individual Slush items as requested
               const itemName = t.source || t.stream || 'Slush Item';
               const uniqueKey = `${itemName} [${t.id?.slice(0, 4) || 'tx'}]`;
@@ -691,6 +706,8 @@ const Projection = () => {
               slush += absVal;
               slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
             }
+            // Note: Expense overrides are already handled during the initialization of expenseMonthlyTotal 
+            // and expenseLabelBreakdownBase using primaryExpensesByLabel logic before this loop.
           }
         });
 
@@ -753,13 +770,22 @@ const Projection = () => {
         if (disabledExpenses.has(labelCat.name)) return;
         const labelTotal = labelCat.sub_categories.reduce((s, sub) => {
           if (disabledExpenses.has(sub.name)) return s;
-          return s + (sub.budget_amount || 0);
+
+          let amt = sub.budget_amount || 0;
+          const parts = sub.name.split(' - ');
+          if (parts.length > 1) {
+            const catName = parts[0];
+            const streamName = parts.slice(1).join(' - ');
+            const overrideProj = masterProjectionsRaw.find(p => p.category === catName && p.stream === streamName && p.recurring === 'Monthly');
+            if (overrideProj) amt = overrideProj.amount;
+          }
+          return s + amt;
         }, 0);
         if (labelTotal > 0) {
           expenseLabelBreakdownBase[labelCat.name] = labelTotal;
         }
       });
-      const expenseMonthlyTotal = Object.values(expenseLabelBreakdownBase).reduce((a, b) => a + b, 0);
+      let expenseMonthlyTotal = Object.values(expenseLabelBreakdownBase).reduce((a, b) => a + b, 0);
 
       let runningBalance = 0;
       const today = new Date();
@@ -793,7 +819,7 @@ const Projection = () => {
               const monthOverride = m.overrides?.[monthKey];
               if (monthOverride && monthOverride.amount !== undefined) {
                 amount = monthOverride.amount;
-              } else if (m.recurring === 'Monthly') {
+              } else if (m.recurring === 'Monthly' && m.date.slice(0, 7) <= monthKey) {
                 amount = m.amount;
               }
             });
@@ -838,7 +864,9 @@ const Projection = () => {
           }
 
           if (isCurrentMonth) {
-            if (amountToUse >= 0) {
+            const isExpenseCategory = budget?.category_groups?.expenditure?.some(cat => cat.name === t.category);
+
+            if (amountToUse > 0 && !isExpenseCategory) {
               if (!isKnownIncome) {
                 const streamName = t.stream || t.source || 'Other';
 
@@ -851,12 +879,18 @@ const Projection = () => {
                 income += amountToUse;
                 incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
               }
-            } else if (specialCategoryNames.includes(t.category)) {
+            } else if (amountToUse < 0 && !isExpenseCategory && specialCategoryNames.includes(t.category)) {
               const itemName = t.source || t.stream || 'Slush Item';
               const uniqueKey = `${itemName} [${t.id?.slice(0, 4) || 'tx'}]`;
               const absVal = Math.abs(amountToUse);
               slush += absVal;
               slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
+            } else if (isExpenseCategory) {
+              // If it's an expense category, update expense totals
+              const absVal = Math.abs(amountToUse);
+              expenseMonthlyTotal += absVal;
+              const categoryName = t.category || 'Other Expenses';
+              expenseLabelBreakdownBase[categoryName] = (expenseLabelBreakdownBase[categoryName] || 0) + absVal;
             }
           }
         });
@@ -1054,7 +1088,7 @@ const Projection = () => {
                 value="master"
                 className="px-6 h-8 data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg font-black uppercase tracking-widest text-[10px] transition-all"
               >
-                Expected
+                Baseline
               </TabsTrigger>
               {scenarios.map(scenario => (
                 <TabsTrigger
@@ -1091,7 +1125,7 @@ const Projection = () => {
 
       <div className="flex items-center gap-2 text-slate-400">
         <Scale className="w-4 h-4" />
-        <span className="text-[10px] font-black uppercase tracking-[0.2em]">{activeScenarioId ? 'Scenario Comparison' : 'Master Projection'}</span>
+        <span className="text-[10px] font-black uppercase tracking-[0.2em]">{activeScenarioId ? 'Scenario Comparison' : 'Baseline Projection'}</span>
       </div>
 
 
@@ -1107,7 +1141,7 @@ const Projection = () => {
         comparisonData={masterProjectionData}
         title=""
         activeLabel={activeScenarioId ? "Scenario" : "Projected"}
-        comparisonLabel="Master"
+        comparisonLabel="Baseline"
         unlabeledCategories={unlabeledCategories}
       />
 
@@ -1115,12 +1149,25 @@ const Projection = () => {
         {/* Slush Fund Section */}
         <div key="slush-fund" className="bg-white/70 backdrop-blur-xl rounded-[2rem] border border-slate-200/60 p-6 shadow-sm animate-in fade-in duration-500 delay-200">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-black text-purple-900 tracking-tight flex items-center gap-2">
-              <div className="p-1.5 bg-purple-50 rounded-lg text-purple-600">
-                <Wallet className="w-4 h-4" />
-              </div>
-              Slush Fund
-            </h2>
+            <div className="flex items-center gap-4">
+              <h2 className="text-lg font-black text-purple-900 tracking-tight flex items-center gap-2">
+                <div className="p-1.5 bg-purple-50 rounded-lg text-purple-600">
+                  <Wallet className="w-4 h-4" />
+                </div>
+                Slush Fund
+              </h2>
+              {slushFundTransactions.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setSlushEditingTx(null); setSlushDialogOpen(true); }}
+                  className="h-8 border-purple-200 font-bold text-purple-700 hover:bg-purple-50 gap-1.5 rounded-lg shadow-sm"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add
+                </Button>
+              )}
+            </div>
             <div className="flex items-center gap-8">
               <div className="text-right">
                 <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Items</p>
@@ -1201,13 +1248,41 @@ const Projection = () => {
                     // Forward mode: set the base amount and clear subsequent overrides?
                     // Or set recurring to Monthly and change amount
                     if (existing) {
+                      const newOverrides = { ...(existing.overrides || {}) };
+
+                      // Preserve history by snapshotting old monthly values as overrides before we shift the start date
+                      if (existing.date && existing.date.slice(0, 7) < monthKey) {
+                        if (existing.recurring === 'Monthly') {
+                          let current = new Date(existing.date);
+                          current.setDate(1); // canonical first of month
+                          const target = new Date(`${monthKey}-01`);
+                          while (current < target) {
+                            const key = current.toISOString().slice(0, 7);
+                            if (newOverrides[key] === undefined) {
+                              newOverrides[key] = { amount: existing.amount };
+                            }
+                            current.setMonth(current.getMonth() + 1);
+                          }
+                        } else if (existing.recurring === 'N/A') {
+                          const key = existing.date.slice(0, 7);
+                          if (newOverrides[key] === undefined) {
+                            newOverrides[key] = { amount: existing.amount };
+                          }
+                        }
+                      }
+
+                      // Filter out overrides that are >= monthKey to let the new amount take effect
+                      Object.keys(newOverrides).forEach(key => {
+                        if (key >= monthKey) delete newOverrides[key];
+                      });
+
                       await updateProjectionMutation.mutateAsync({
                         id: existing.id,
                         updates: {
                           amount,
                           recurring: 'Monthly',
                           date: `${monthKey}-01`,
-                          overrides: {} // Clear overrides to let the new base take effect
+                          overrides: newOverrides
                         }
                       });
                     } else {
@@ -1234,6 +1309,24 @@ const Projection = () => {
         {/* Primary Expenses Section */}
         {budget?.category_groups?.expenditure && (
           <div key="expenses-top" className="bg-white/70 backdrop-blur-xl rounded-[2rem] border border-slate-200/60 p-6 shadow-sm animate-in fade-in duration-500 delay-150">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-black text-rose-900 tracking-tight flex items-center gap-2">
+                <div className="p-1.5 bg-rose-50 rounded-lg text-rose-600">
+                  <TrendingDown className="w-4 h-4" />
+                </div>
+                Expenses
+              </h2>
+              <div className="flex items-center gap-8">
+                <div className="text-right">
+                  <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Monthly</p>
+                  <p className="text-sm font-black text-slate-900 font-mono">{formatCurrency(projectionData[0]?.expense || 0, settings.currency)}</p>
+                </div>
+                <div className="text-right border-l border-slate-200 pl-6">
+                  <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Annual</p>
+                  <p className="text-sm font-black text-slate-900 font-mono">{formatCurrency(stats.expenses, settings.currency)}</p>
+                </div>
+              </div>
+            </div>
             <div>
               <BudgetTable
                 data={primaryExpensesByLabel as any}
@@ -1261,6 +1354,24 @@ const Projection = () => {
         {/* Feeder Budgets */}
         {klintemarkenDataEnhanced.length > 0 && (
           <div key="klintemarken" className="bg-white/70 backdrop-blur-xl rounded-[2rem] border border-slate-200/60 p-6 shadow-sm animate-in fade-in duration-500 delay-100">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-black text-blue-900 tracking-tight flex items-center gap-2">
+                <div className="p-1.5 bg-blue-50 rounded-lg text-blue-600">
+                  <ArrowDownRight className="w-4 h-4" />
+                </div>
+                Feeders
+              </h2>
+              <div className="flex items-center gap-8">
+                <div className="text-right">
+                  <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Monthly</p>
+                  <p className="text-sm font-black text-slate-900 font-mono">{formatCurrency(projectionData[0]?.feeder || 0, settings.currency)}</p>
+                </div>
+                <div className="text-right border-l border-slate-200 pl-6">
+                  <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Annual</p>
+                  <p className="text-sm font-black text-slate-900 font-mono">{formatCurrency(stats.feeder, settings.currency)}</p>
+                </div>
+              </div>
+            </div>
             <div>
               <BudgetTable
                 data={klintemarkenDataEnhanced as any}

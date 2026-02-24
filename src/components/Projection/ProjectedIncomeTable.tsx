@@ -65,7 +65,7 @@ const ProjectedIncomeTable = ({
 
         // Fallback to projection base amount if it's recurring or matches date
         // Actually, if it's 'Monthly', use projection amount.
-        if (proj.recurring === 'Monthly') return proj.amount;
+        if (proj.recurring === 'Monthly' && proj.date.slice(0, 7) <= monthKey) return proj.amount;
 
         // For other recurring types, we rely on the calculateData logic, 
         // but for the table view, showing the "planned" amount for that month is complex.
@@ -78,7 +78,7 @@ const ProjectedIncomeTable = ({
     };
 
     const handleStartEdit = (stream: string, monthKey: string, currentVal: number) => {
-        setEditingCell({ stream, monthKey, value: currentVal.toString() });
+        setEditingCell({ stream, monthKey, value: '' });
     };
 
     const handleSave = (categoryName: string, mode: 'single' | 'forward') => {
@@ -133,13 +133,23 @@ const ProjectedIncomeTable = ({
                                     return (
                                         <td key={m.key} className="py-3 px-2 text-right">
                                             {isEditing ? (
-                                                <div className="flex flex-col items-end gap-1">
+                                                <div className="flex flex-col items-end gap-1 edit-cell-container">
                                                     <div className="flex items-center gap-1">
                                                         <Input
                                                             value={editingCell.value}
                                                             onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
                                                             className="h-7 w-20 text-xs text-right pr-1 font-mono focus-visible:ring-emerald-500"
                                                             autoFocus
+                                                            onBlur={(e) => {
+                                                                // Small delay to allow click events on buttons/popover to register first
+                                                                setTimeout(() => {
+                                                                    const activeElement = document.activeElement;
+                                                                    const container = e.currentTarget.closest('.edit-cell-container');
+                                                                    if (!container?.contains(activeElement) && !document.querySelector('[data-radix-popper-content-wrapper]')?.contains(activeElement)) {
+                                                                        setEditingCell(null);
+                                                                    }
+                                                                }, 150);
+                                                            }}
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Escape') setEditingCell(null);
                                                             }}

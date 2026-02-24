@@ -246,8 +246,10 @@ export const TriageAccordion = ({
             txs,
             count: txs.length,
             total: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0),
-            avgAmount: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0) / txs.length
+            avgAmount: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0) / txs.length,
+            isPendingRecon: txs.some(tx => tx.status === 'Pending Reconciliation')
         })).sort((a, b) => {
+            if (a.isPendingRecon !== b.isPendingRecon) return a.isPendingRecon ? 1 : -1;
             const factor = mappingSort.order === 'asc' ? 1 : -1;
             if (mappingSort.field === 'source') return factor * a.source.localeCompare(b.source);
             if (mappingSort.field === 'count') return factor * (a.count - b.count);
@@ -267,8 +269,10 @@ export const TriageAccordion = ({
             txs,
             count: txs.length,
             total: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0),
-            avgAmount: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0) / txs.length
+            avgAmount: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0) / txs.length,
+            isPendingRecon: txs.some(tx => tx.status === 'Pending Reconciliation')
         })).sort((a, b) => {
+            if (a.isPendingRecon !== b.isPendingRecon) return a.isPendingRecon ? 1 : -1;
             const factor = catSort.order === 'asc' ? 1 : -1;
             if (catSort.field === 'source') return factor * a.source.localeCompare(b.source);
             if (catSort.field === 'count') return factor * (a.count - b.count);
@@ -280,9 +284,10 @@ export const TriageAccordion = ({
         const sources: Record<string, any> = {};
         pendingValidation.forEach(tx => {
             const m = tx.clean_source || tx.source;
-            if (!sources[m]) sources[m] = { sourceName: m, total: 0, categories: {} };
+            if (!sources[m]) sources[m] = { sourceName: m, total: 0, count: 0, categories: {} };
             const mObj = sources[m];
             mObj.total += Math.abs(tx.amount);
+            mObj.count++;
 
             if (!mObj.categories[tx.category]) mObj.categories[tx.category] = { catName: tx.category, total: 0, subCategories: {} };
             const cObj = mObj.categories[tx.category];
@@ -414,20 +419,39 @@ export const TriageAccordion = ({
                         estimateSize={80}
                         className="pr-2"
                         renderItem={(item) => {
-                            const { source, txs, total, avgAmount } = item;
+                            const { source, txs, total, avgAmount, isPendingRecon } = item;
                             return (
-                                <div key={source} className="flex flex-col border rounded-lg overflow-hidden border-slate-200 bg-white hover:border-amber-300 transition-colors shadow-sm">
+                                <div key={source} className={cn(
+                                    "flex flex-col border rounded-lg overflow-hidden border-slate-200 bg-white hover:border-amber-300 transition-colors shadow-sm",
+                                    isPendingRecon && "opacity-60 grayscale-[0.5] border-slate-100 bg-slate-50/30"
+                                )}>
                                     <div className="flex items-center px-4 py-3 bg-slate-50/50 justify-between gap-4">
                                         <div className="flex items-center gap-3 flex-1 min-w-0">
-                                            <div className="p-2 bg-amber-100 rounded-lg shrink-0">
-                                                <HelpCircle className="w-5 h-5 text-amber-600" />
+                                            <div className={cn("p-2 rounded-lg shrink-0", isPendingRecon ? "bg-slate-200" : "bg-amber-100")}>
+                                                {isPendingRecon ? <History className="w-5 h-5 text-slate-600" /> : <HelpCircle className="w-5 h-5 text-amber-600" />}
                                             </div>
                                             <h3 className="font-black text-slate-900 text-[15px] truncate tracking-tight">{source}</h3>
                                             <Badge variant="outline" className="text-[12px] h-7 bg-white border-slate-200 text-slate-500 font-bold px-3">{txs.length} {txs.length === 1 ? 'tx' : 'txs'}</Badge>
+                                            {isPendingRecon && <Badge className="bg-amber-100 text-amber-700 border-amber-200 font-bold text-[10px] uppercase">Pending Recon</Badge>}
                                         </div>
                                         <div className="flex items-center gap-4">
                                             <span className="font-mono text-[15px] font-black text-slate-700">{formatCurrency(total, settings.currency)}</span>
-                                            <Button size="sm" onClick={() => openRuleDialog(source, txs, true)} className="bg-amber-600 hover:bg-amber-700 h-9 px-6 font-bold text-sm">Resolve</Button>
+                                            <div className="flex items-center gap-2">
+                                                <Button size="sm" onClick={() => openRuleDialog(source, txs, true)} className="bg-amber-600 hover:bg-amber-700 h-9 px-6 font-bold text-sm">Resolve</Button>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="outline" size="sm" className="h-9 w-9 p-0 border-slate-200 bg-white shadow-sm">
+                                                            <ChevronDown className="w-4 h-4" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        <DropdownMenuItem onClick={() => onBulkUpdate(txs.map((t: any) => t.id), { status: 'Pending Reconciliation' })}>
+                                                            <History className="w-4 h-4 mr-2" />
+                                                            Mark Pending Recon
+                                                        </DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </div>
                                         </div>
                                     </div>
                                     {expandedSource === txs[0]?.id && (
@@ -480,7 +504,7 @@ export const TriageAccordion = ({
                             estimateSize={80}
                             className="pr-2"
                             renderItem={(item) => {
-                                const { source, txs, total } = item;
+                                const { source, txs, total, isPendingRecon } = item;
                                 const firstTx = txs[0];
                                 const defaultCat = firstTx?.suggested_category || '';
                                 const defaultSub = firstTx?.suggested_sub_category || '';
@@ -497,17 +521,21 @@ export const TriageAccordion = ({
 
                                 return (
                                     <div className="pb-4">
-                                        <AccordionItem key={source} value={source} className="border rounded-xl bg-white overflow-hidden border-slate-200 hover:border-blue-300 transition-colors">
+                                        <AccordionItem key={source} value={source} className={cn(
+                                            "border rounded-xl bg-white overflow-hidden border-slate-200 hover:border-blue-300 transition-colors",
+                                            isPendingRecon && "opacity-60 grayscale-[0.5] border-slate-100 bg-slate-50/30"
+                                        )}>
                                             <AccordionTrigger className="bg-slate-50 border-b border-slate-100 px-6 py-3 hover:no-underline group/trigger">
                                                 <div className="flex items-center justify-between w-full pr-4">
                                                     <div className="flex items-center gap-4">
-                                                        <div className="p-2 bg-blue-100 rounded-lg group-hover/trigger:bg-blue-200 transition-colors">
-                                                            <Store className="w-5 h-5 text-blue-600" />
+                                                        <div className={cn("p-2 rounded-lg group-hover/trigger:bg-blue-200 transition-colors", isPendingRecon ? "bg-slate-200" : "bg-blue-100")}>
+                                                            {isPendingRecon ? <History className="w-5 h-5 text-slate-600" /> : <Store className="w-5 h-5 text-blue-600" />}
                                                         </div>
                                                         <h4 className="text-[15px] font-black text-slate-900 uppercase tracking-tight">{source}</h4>
                                                         <Badge variant="outline" className="text-[12px] h-7 font-bold text-slate-500 bg-white border-slate-200 px-3">
                                                             {txs.length} {txs.length === 1 ? 'match' : 'matches'}
                                                         </Badge>
+                                                        {isPendingRecon && <Badge className="bg-blue-100 text-blue-700 border-blue-200 font-bold text-[10px] uppercase">Pending Recon</Badge>}
                                                     </div>
                                                     <div className="flex gap-3 items-center" onClick={(e) => e.stopPropagation()}>
                                                         <CategorySelector
@@ -546,6 +574,19 @@ export const TriageAccordion = ({
                                                             </SelectContent>
                                                         </Select>
                                                         <Button size="sm" className="h-9 bg-blue-600 hover:bg-blue-700 px-6 font-black text-sm uppercase tracking-tight shrink-0" onClick={() => onBulkUpdate(txs.map((t: any) => t.id), { category: edit.category, sub_category: edit.sub_category, status: (edit.category && edit.sub_category) ? (edit.status || 'Complete') : 'Pending Triage' })}>SAVE ACTIONS</Button>
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button variant="outline" size="sm" className="h-9 w-9 p-0 border-slate-200 bg-white shadow-sm">
+                                                                    <ChevronDown className="w-4 h-4" />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end">
+                                                                <DropdownMenuItem onClick={() => onBulkUpdate(txs.map((t: any) => t.id), { status: 'Pending Reconciliation' })}>
+                                                                    <History className="w-4 h-4 mr-2" />
+                                                                    Mark Pending Recon
+                                                                </DropdownMenuItem>
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
                                                         <div className="ml-4 tabular-nums font-black text-slate-900 text-[16px] shrink-0">{formatCurrency(total, settings.currency)}</div>
                                                     </div>
                                                 </div>
@@ -650,7 +691,7 @@ export const TriageAccordion = ({
                                                     </div>
                                                     <h4 className="text-[15px] font-black text-slate-900 uppercase tracking-tight">{group.sourceName}</h4>
                                                     <Badge variant="outline" className="text-[12px] h-7 font-bold text-slate-500 bg-white border-slate-200 px-3">
-                                                        {group.txCount || group.txs?.length || "?"} {(group.txCount || group.txs?.length) === 1 ? 'match' : 'matches'}
+                                                        {group.count} {group.count === 1 ? 'match' : 'matches'}
                                                     </Badge>
                                                 </div>
                                                 <div className="flex items-center gap-6">
@@ -1289,7 +1330,14 @@ export const TriageAccordion = ({
                                             {confirmingDeleteAllDuplicates ? "CONFIRM DELETE EXTRA COPIES" : "CLEAN ALL DUPLICATES"}
                                         </Button>
                                     )}
-                                    <Badge variant="secondary" className={cn("text-white font-black px-4 py-1.5 text-sm shadow-sm", `bg-${b.color}-600`)}>
+                                    <Badge variant="secondary" className={cn(
+                                        "text-white font-black px-4 py-1.5 text-sm shadow-sm",
+                                        b.color === 'amber' ? 'bg-amber-600' :
+                                            b.color === 'blue' ? 'bg-blue-600' :
+                                                b.color === 'indigo' ? 'bg-indigo-600' :
+                                                    b.color === 'rose' ? 'bg-rose-600' :
+                                                        b.color === 'emerald' ? 'bg-emerald-600' : 'bg-slate-600'
+                                    )}>
                                         {b.count} {b.id === 'potential-duplicates' ? 'Groups' : 'Items'}
                                     </Badge>
                                     <ChevronRight className={cn("w-5 h-5 opacity-40 group-hover/bucket:opacity-100 group-hover/bucket:translate-x-1 transition-all", `text-${b.color}-600`)} />
@@ -1325,7 +1373,14 @@ export const TriageAccordion = ({
                                             <p className="font-medium opacity-80 text-sm">{b.description}</p>
                                         </div>
                                         <div className="ml-auto flex items-center gap-3">
-                                            <Badge variant="secondary" className={cn("text-white font-black px-4 py-1.5 text-sm shadow-sm", `bg-${b.color}-600`)}>
+                                            <Badge variant="secondary" className={cn(
+                                                "text-white font-black px-4 py-1.5 text-sm shadow-sm",
+                                                b.color === 'amber' ? 'bg-amber-600' :
+                                                    b.color === 'blue' ? 'bg-blue-600' :
+                                                        b.color === 'indigo' ? 'bg-indigo-600' :
+                                                            b.color === 'rose' ? 'bg-rose-600' :
+                                                                b.color === 'emerald' ? 'bg-emerald-600' : 'bg-slate-600'
+                                            )}>
                                                 {b.count} {b.id === 'potential-duplicates' ? 'Groups' : 'Items'}
                                             </Badge>
                                         </div>

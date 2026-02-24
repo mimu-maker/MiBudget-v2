@@ -117,8 +117,23 @@ const SlushFundTransactionsTable = ({
                 <tbody className="divide-y divide-purple-50/50">
                     {filteredTransactions.length === 0 ? (
                         <tr>
-                            <td colSpan={6} className="text-center py-12 text-purple-400 italic">
-                                No slush fund expenses planned. Click + to add one.
+                            <td colSpan={6} className="text-center py-16">
+                                <div className="flex flex-col items-center justify-center space-y-3 max-w-sm mx-auto">
+                                    <div className="p-4 bg-purple-100/50 rounded-2xl text-purple-500 mb-2 ring-1 ring-purple-200/50 shadow-sm">
+                                        <Lightbulb className="w-6 h-6" />
+                                    </div>
+                                    <h3 className="text-purple-900 font-black text-lg tracking-tight">Plan one-offs</h3>
+                                    <p className="text-purple-600/80 text-sm font-medium leading-relaxed mb-4">
+                                        For irregular expenses like holidays, new phones, or car repairs.
+                                    </p>
+                                    <Button
+                                        onClick={onAddClick}
+                                        className="mt-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 h-10 px-6 font-bold"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        Add Item
+                                    </Button>
+                                </div>
                             </td>
                         </tr>
                     ) : (

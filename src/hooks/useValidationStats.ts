@@ -59,6 +59,7 @@ export const useValidationStats = () => {
     return {
         pendingMappingCount: pendingSourceMapping.length,
         pendingCategoryCount: pendingCategorisation.length,
+        pendingValidationCount: pendingValidation.length,
         duplicateCount: duplicateGroups.length,
         duplicateGroupCount: duplicateGroups.length,
 
@@ -67,6 +68,6 @@ export const useValidationStats = () => {
         reconciliationTotal,
 
         // Also returning raw data if needed
-        hasPendingActions: pendingSourceMapping.length > 0 || pendingCategorisation.length > 0 || duplicateGroups.length > 0
+        hasPendingActions: pendingSourceMapping.length > 0 || pendingCategorisation.length > 0 || duplicateGroups.length > 0 || pendingValidation.length > 0
     };
 };

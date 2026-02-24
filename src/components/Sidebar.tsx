@@ -11,10 +11,10 @@ import { useValidationStats } from '@/hooks/useValidationStats';
 import { useSettings } from '@/hooks/useSettings';
 
 const PendingBadges = () => {
-  const { pendingMappingCount, pendingCategoryCount, duplicateGroupCount } = useValidationStats();
+  const { pendingMappingCount, pendingCategoryCount, pendingValidationCount, duplicateGroupCount } = useValidationStats();
 
   // If no pending actions, don't render anything
-  if (pendingMappingCount === 0 && pendingCategoryCount === 0 && duplicateGroupCount === 0) {
+  if (pendingMappingCount === 0 && pendingCategoryCount === 0 && pendingValidationCount === 0 && duplicateGroupCount === 0) {
     return null;
   }
 
@@ -22,6 +22,7 @@ const PendingBadges = () => {
   const badges = [
     { type: 'mapping', count: pendingMappingCount, color: 'bg-yellow-500', zIndex: 10, label: 'Pending Mapping' },
     { type: 'category', count: pendingCategoryCount, color: 'bg-orange-500', zIndex: 20, label: 'Pending Category' },
+    { type: 'validation', count: pendingValidationCount, color: 'bg-indigo-500', zIndex: 25, label: 'Pending Validation' },
     { type: 'duplicate', count: duplicateGroupCount, color: 'bg-red-500', zIndex: 30, label: 'Duplicates' }
   ].filter(b => b.count > 0);
 
