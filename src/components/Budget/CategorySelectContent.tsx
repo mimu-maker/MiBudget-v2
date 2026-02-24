@@ -179,18 +179,20 @@ export const CategorySelectContent = ({
 
             {!suggestedOnly && (
                 <>
-                    {(type === 'all' || type === 'income') && renderGroup('Income', income, !hideSuggestions && popular.length > 0)}
+                    {/* Always show Income first */}
+                    {renderGroup('Income', income, !hideSuggestions && popular.length > 0)}
 
-                    {(type === 'all' || type === 'expense') && (
-                        <>
-                            {feeders.map((f, idx) => {
-                                const showSep = (idx === 0) ? (!hideSuggestions && popular.length > 0) || (type === 'all' && income.length > 0) : true;
-                                return renderGroup(`Feeder: ${f.name}`, f.categories, showSep);
-                            })}
-                            {renderGroup('Expenses', expenses, (!hideSuggestions && popular.length > 0) || (type === 'all' && income.length > 0) || feeders.length > 0)}
-                            {renderGroup('Slush Fund 🍧', slush, (!hideSuggestions && popular.length > 0) || (type === 'all' && income.length > 0) || feeders.length > 0 || expenses.length > 0)}
-                        </>
-                    )}
+                    {/* Show Feeder Budgets */}
+                    {feeders.map((f, idx) => {
+                        const showSep = (idx === 0) ? (!hideSuggestions && popular.length > 0) || income.length > 0 : true;
+                        return renderGroup(`Feeder: ${f.name}`, f.categories, showSep);
+                    })}
+
+                    {/* Show standard Expenses */}
+                    {renderGroup('Expenses', expenses, (!hideSuggestions && popular.length > 0) || income.length > 0 || feeders.length > 0)}
+
+                    {/* Show Slush Fund */}
+                    {renderGroup('Slush Fund 🍧', slush, (!hideSuggestions && popular.length > 0) || income.length > 0 || feeders.length > 0 || expenses.length > 0)}
                 </>
             )}
 

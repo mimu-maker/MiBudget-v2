@@ -168,7 +168,7 @@ export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplit
                                             // or let the user choose it
                                         }
                                     }}
-                                    type={transaction.amount > 0 ? 'income' : 'expense'}
+                                    type="all"
                                     hideSuggestions={true} // Hide suggestions for a clean list
                                     showAlwaysAsk={false} // Hide always ask
                                     className="h-8 shadow-sm"
