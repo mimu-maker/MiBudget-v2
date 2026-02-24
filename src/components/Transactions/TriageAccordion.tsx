@@ -348,6 +348,20 @@ export const TriageAccordion = ({
             if (!cObj.subCategories[tx.sub_category]) cObj.subCategories[tx.sub_category] = { subCatName: tx.sub_category, txs: [] };
             cObj.subCategories[tx.sub_category].txs.push(tx);
         });
+
+        // Identify and store uniform categories across all transactions for each source
+        Object.values(sources).forEach(source => {
+            const cats = Object.keys(source.categories);
+            if (cats.length === 1) {
+                const catName = cats[0];
+                const subCats = Object.keys(source.categories[catName].subCategories);
+                if (subCats.length === 1) {
+                    source.uniformCategory = catName;
+                    source.uniformSubCategory = subCats[0];
+                }
+            }
+        });
+
         return Object.values(sources).sort((a: any, b: any) => b.total - a.total);
     }, [pendingValidation]);
 
@@ -1060,7 +1074,7 @@ export const TriageAccordion = ({
                                                 <div className="flex-1 flex items-center justify-end gap-4" onClick={(e) => e.stopPropagation()}>
 
                                                     <CategorySelector
-                                                        value={sourceMappingEdits[group.sourceName]?.category || ''}
+                                                        value={sourceMappingEdits[group.sourceName]?.category || group.uniformCategory || ''}
                                                         onValueChange={(v: string) => {
                                                             if (v.includes(':')) {
                                                                 const [cat, sub] = v.split(':');
@@ -1075,10 +1089,10 @@ export const TriageAccordion = ({
                                                         className="h-9 w-[180px] text-sm font-medium"
                                                     />
                                                     <SmartSelector
-                                                        value={sourceMappingEdits[group.sourceName]?.sub_category || ''}
+                                                        value={sourceMappingEdits[group.sourceName]?.sub_category || group.uniformSubCategory || ''}
                                                         onValueChange={(v: string) => setSourceMappingEdits(p => ({ ...p, [group.sourceName]: { ...p[group.sourceName], sub_category: v } }))}
-                                                        disabled={!sourceMappingEdits[group.sourceName]?.category}
-                                                        options={getSubCategoryList(sourceMappingEdits[group.sourceName]?.category || '').map((s: string) => ({ label: s, value: s }))}
+                                                        disabled={!(sourceMappingEdits[group.sourceName]?.category !== undefined ? sourceMappingEdits[group.sourceName]?.category : group.uniformCategory)}
+                                                        options={getSubCategoryList(sourceMappingEdits[group.sourceName]?.category !== undefined ? sourceMappingEdits[group.sourceName]?.category : (group.uniformCategory || '')).map((s: string) => ({ label: s, value: s }))}
                                                         placeholder="Sub-category"
                                                         className="h-9 w-[150px]"
                                                     />
@@ -1090,17 +1104,20 @@ export const TriageAccordion = ({
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 const edit = sourceMappingEdits[group.sourceName];
-                                                                if (edit?.category && edit?.sub_category) {
+                                                                const categoryToUse = edit?.category !== undefined ? edit.category : group.uniformCategory;
+                                                                const subCategoryToUse = edit?.sub_category !== undefined ? edit.sub_category : group.uniformSubCategory;
+
+                                                                if (categoryToUse && subCategoryToUse) {
                                                                     const ids = Object.values(group.categories).flatMap((c: any) => Object.values(c.subCategories).flatMap((s: any) => s.txs.map((t: any) => t.id)));
                                                                     onBulkUpdate(ids, {
-                                                                        category: edit.category,
-                                                                        sub_category: edit.sub_category,
+                                                                        category: categoryToUse,
+                                                                        sub_category: subCategoryToUse,
                                                                         status: 'Complete'
                                                                     });
                                                                 }
                                                             }}
                                                             className="h-9 w-9 p-0 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all"
-                                                            disabled={!sourceMappingEdits[group.sourceName]?.category || !sourceMappingEdits[group.sourceName]?.sub_category}
+                                                            disabled={!(sourceMappingEdits[group.sourceName]?.category !== undefined ? sourceMappingEdits[group.sourceName]?.category : group.uniformCategory) || !(sourceMappingEdits[group.sourceName]?.sub_category !== undefined ? sourceMappingEdits[group.sourceName]?.sub_category : group.uniformSubCategory)}
                                                             title="Verify and Save Mapping"
                                                         >
                                                             <Check className="w-5 h-5" />
