@@ -196,7 +196,7 @@ export const TriageAccordion = ({
     const [expandedValidationSource, setExpandedValidationSource] = useState<string | null>(null);
     const [expandedCategorisationSource, setExpandedCategorisationSource] = useState<string | null>(null);
     const [editingRowId, setEditingRowId] = useState<string | null>(null);
-    const [editingState, setEditingState] = useState<{ category: string, sub_category: string, excluded: boolean, planned: boolean }>({ category: '', sub_category: '', excluded: false, planned: true });
+    const [editingState, setEditingState] = useState<{ category: string, sub_category: string, excluded: boolean, planned: boolean, pending_recon: boolean }>({ category: '', sub_category: '', excluded: false, planned: true, pending_recon: false });
     const [confirmingExcludeId, setConfirmingExcludeId] = useState<string | null>(null);
     const [pendingReconTx, setPendingReconTx] = useState<any | null>(null);
     const [reconNote, setReconNote] = useState("");
@@ -819,8 +819,8 @@ export const TriageAccordion = ({
                                                                     <div className="text-[10px] text-slate-400 truncate mt-0.5" title={tx.raw_source_name}>{tx.raw_source_name}</div>
                                                                 )}
                                                                 {tx.parent_id && (
-                                                                    <div className="text-[9px] text-amber-600/80 font-bold tracking-tight mt-0.5 truncate flex items-center gap-1 uppercase">
-                                                                        <Split className="w-2.5 h-2.5" /> Split
+                                                                    <div className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded font-bold tracking-tight mt-1 truncate flex items-center gap-1 uppercase w-fit">
+                                                                        <Split className="w-3 h-3" /> Split from {tx.notes?.replace('Split item from ', '') || 'Split Transaction'}
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -1292,7 +1292,7 @@ export const TriageAccordion = ({
                                                                                                             <div className="text-[10px] text-slate-400 truncate mt-0.5" title={tx.raw_source_name}>{tx.raw_source_name}</div>
                                                                                                         )}
                                                                                                         {tx.parent_id && (
-                                                                                                            <div className="text-[10px] text-amber-600/80 font-bold tracking-tight mt-0.5 truncate flex items-center gap-1 uppercase">
+                                                                                                            <div className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded font-bold tracking-tight mt-1 truncate flex items-center gap-1 uppercase w-fit">
                                                                                                                 <Split className="w-3 h-3" /> Split from {tx.notes?.replace('Split item from ', '') || 'Split Transaction'}
                                                                                                             </div>
                                                                                                         )}
@@ -1338,8 +1338,12 @@ export const TriageAccordion = ({
                                                                                                                     />
                                                                                                                     <div className="flex items-center gap-2 px-2 border-l border-slate-200">
                                                                                                                         <div className="flex items-center gap-1.5">
+                                                                                                                            <Label className="text-[10px] uppercase font-bold text-slate-500 cursor-pointer" htmlFor={`recon-${tx.id}`}>Recon</Label>
+                                                                                                                            <Switch id={`recon-${tx.id}`} className="scale-75" checked={editingState.pending_recon} onCheckedChange={(v) => setEditingState(p => ({ ...p, pending_recon: v, excluded: v ? false : p.excluded }))} />
+                                                                                                                        </div>
+                                                                                                                        <div className="flex items-center gap-1.5 ml-1">
                                                                                                                             <Label className="text-[10px] uppercase font-bold text-slate-500 cursor-pointer" htmlFor={`exclude-${tx.id}`}>Exclude</Label>
-                                                                                                                            <Switch id={`exclude-${tx.id}`} className="scale-75" checked={editingState.excluded} onCheckedChange={(v) => setEditingState(p => ({ ...p, excluded: v }))} />
+                                                                                                                            <Switch id={`exclude-${tx.id}`} className="scale-75" checked={editingState.excluded} onCheckedChange={(v) => setEditingState(p => ({ ...p, excluded: v, pending_recon: v ? false : p.pending_recon }))} />
                                                                                                                         </div>
                                                                                                                         <div className="flex items-center gap-1.5 ml-1">
                                                                                                                             <Label className="text-[10px] uppercase font-bold text-slate-500 cursor-pointer" htmlFor={`unplanned-${tx.id}`}>Unplanned</Label>
@@ -1357,8 +1361,8 @@ export const TriageAccordion = ({
                                                                                                                                     sub_category: editingState.sub_category,
                                                                                                                                     excluded: editingState.excluded,
                                                                                                                                     planned: editingState.planned,
-                                                                                                                                    // If manually edited, we treat it as Explicit/verified
-                                                                                                                                    status: (editingState.category && editingState.sub_category) ? 'Complete' : 'Pending Triage'
+                                                                                                                                    // If manually edited, we treat it as Explicit/verified unless recon or exclude is checked
+                                                                                                                                    status: editingState.excluded ? 'Excluded' : (editingState.pending_recon ? 'Pending Reconciliation' : ((editingState.category && editingState.sub_category) ? 'Complete' : 'Pending Triage'))
                                                                                                                                 });
                                                                                                                             }
                                                                                                                             setEditingRowId(null);
@@ -1385,7 +1389,7 @@ export const TriageAccordion = ({
                                                                                                                     onClick={(e) => {
                                                                                                                         e.stopPropagation();
                                                                                                                         setEditingRowId(tx.id);
-                                                                                                                        setEditingState({ category: tx.category || '', sub_category: tx.sub_category || '', excluded: tx.excluded || false, planned: tx.planned !== false });
+                                                                                                                        setEditingState({ category: tx.category || '', sub_category: tx.sub_category || '', excluded: tx.excluded || false, planned: tx.planned !== false, pending_recon: tx.status === 'Pending Reconciliation' });
                                                                                                                     }}
                                                                                                                 >
                                                                                                                     <Tag className="w-3 h-3 opacity-40 group-hover/badge:text-blue-500" />

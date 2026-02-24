@@ -181,52 +181,39 @@ const Projection = () => {
 
       const roundedMonthly = Number(newMonthlyAmount.toFixed(2));
 
-      if (activeScenarioId) {
-        // SCENARIO MODE: Update or Create a Projection instead of changing the real budget
-        let realCategory = parentCategory.name;
-        let realStream = subCategory?.name || '';
+      // Standardize Persistence: ALWAYS use projections for "Expected" overrides
+      // even in master mode (activeScenarioId === null).
+      let realCategory = parentCategory.name;
+      let realStream = subCategory?.name || '';
 
-        if (realStream.includes(' - ')) {
-          const parts = realStream.split(' - ');
-          realCategory = parts[0];
-          realStream = parts.slice(1).join(' - ');
-        } else if (parentCategory.name === 'Slush Fund' || type === 'annual') {
-          // Keep existing logic for Slush Fund and others
-        }
-
-        const existingProj = projections.find(p => p.category === realCategory && p.stream === realStream);
-
-        if (existingProj) {
-          await updateProjectionMutation.mutateAsync({
-            id: existingProj.id,
-            updates: { amount: roundedMonthly }
-          });
-        } else {
-          await addProjectionMutation.mutateAsync({
-            category: realCategory,
-            stream: realStream,
-            amount: roundedMonthly,
-            date: new Date(currentYear, 0, 1).toISOString().slice(0, 10),
-            recurring: 'Monthly',
-            planned: true,
-            source: realStream,
-            description: `Scenario override for ${realStream}`
-          });
-        }
-        queryClient.invalidateQueries({ queryKey: ['projections'] });
-      } else {
-        // MASTER MODE: Standard budget update
-        if (updateSubCategoryBudgetMutation) {
-          await updateSubCategoryBudgetMutation.mutateAsync({
-            subCategoryId: subCategory.id || null,
-            categoryId: parentCategory.id,
-            amount: roundedMonthly,
-            targetBudgetId: budget?.id,
-            year: currentYear
-          });
-          await refreshBudget();
-        }
+      if (realStream.includes(' - ')) {
+        const parts = realStream.split(' - ');
+        realCategory = parts[0];
+        realStream = parts.slice(1).join(' - ');
       }
+
+      const existingProj = projections.find(p => p.category === realCategory && p.stream === realStream);
+
+      if (existingProj) {
+        await updateProjectionMutation.mutateAsync({
+          id: existingProj.id,
+          updates: { amount: roundedMonthly }
+        });
+      } else {
+        await addProjectionMutation.mutateAsync({
+          category: realCategory,
+          stream: realStream,
+          amount: roundedMonthly,
+          date: new Date(currentYear, 0, 1).toISOString().slice(0, 10),
+          recurring: 'Monthly',
+          planned: true,
+          source: realStream,
+          // If we have an active scenario, save it there, otherwise save to master (scenario_id: null)
+          scenario_id: activeScenarioId || null,
+          description: `Override for ${realStream}`
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ['projections'] });
     } catch (e) {
       console.error('Failed to update budget', e);
     } finally {
@@ -614,6 +601,17 @@ const Projection = () => {
     return unlabeled.sort();
   }, [budget]);
 
+  const incomeCategoryNames = useMemo(() => {
+    return new Set(budget?.category_groups?.income?.map(c => c.name) || []);
+  }, [budget]);
+
+  const expenseCategoryNames = useMemo(() => {
+    const names = new Set(budget?.category_groups?.expenditure?.map(c => c.name) || []);
+    // Also include label names since they are used as category names in primaryExpensesByLabel
+    primaryExpensesByLabel.forEach(l => names.add(l.name));
+    return names;
+  }, [budget, primaryExpensesByLabel]);
+
   const projectionData = useMemo(() => {
     const calculateData = (txs: any[]) => {
       const data: ProjectionData[] = [];
@@ -635,7 +633,7 @@ const Projection = () => {
           expenseLabelBreakdownBase[labelCat.name] = labelTotal;
         }
       });
-      const expenseMonthlyTotal = Object.values(expenseLabelBreakdownBase).reduce((a, b) => a + b, 0);
+      let expenseMonthlyTotal = Object.values(expenseLabelBreakdownBase).reduce((a, b) => a + b, 0);
 
       let runningBalance = 0;
       const today = new Date();
@@ -721,16 +719,19 @@ const Projection = () => {
           }
 
           if (isCurrentMonth) {
-            const isExpenseCategory = budget?.category_groups?.expenditure?.some(cat => cat.name === t.category);
+            const isExpenseCategory = expenseCategoryNames.has(t.category);
+
+            // Skip monthly recurring projections for expenses as they are handled in the base rollup
+            if (t.recurring === 'Monthly' && isExpenseCategory) return;
 
             if (amountToUse > 0 && !isExpenseCategory) {
               // positive amounts not matching expense categories are income
               if (!isKnownIncome) {
                 const streamName = t.stream || t.source || 'Other';
-                const isIncomeCategory = budget?.category_groups?.income?.some(cat => cat.name === t.category);
+                const isIncomeCategory = incomeCategoryNames.has(t.category) || t.category === 'Income';
+
                 if (isIncomeCategory && !isKnownIncome) return;
-                const isTopLevelCategoryName = budget?.category_groups?.income?.some(cat => cat.name === streamName);
-                if (isTopLevelCategoryName || streamName === 'Income') return;
+                if (streamName === 'Income') return;
 
                 income += amountToUse;
                 incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
@@ -742,9 +743,14 @@ const Projection = () => {
               const absVal = Math.abs(amountToUse);
               slush += absVal;
               slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
+            } else if (isExpenseCategory) {
+              // Any other expense projection (Annually, Quarterly, etc.)
+              const absVal = Math.abs(amountToUse);
+              const labelName = t.category || 'Other Expenses';
+
+              expenseMonthlyTotal += absVal;
+              expenseLabelBreakdownBase[labelName] = (expenseLabelBreakdownBase[labelName] || 0) + absVal;
             }
-            // Note: Expense overrides are already handled during the initialization of expenseMonthlyTotal 
-            // and expenseLabelBreakdownBase using primaryExpensesByLabel logic before this loop.
           }
         });
 
@@ -901,17 +907,17 @@ const Projection = () => {
           }
 
           if (isCurrentMonth) {
-            const isExpenseCategory = budget?.category_groups?.expenditure?.some(cat => cat.name === t.category);
+            const isExpenseCategory = expenseCategoryNames.has(t.category);
+
+            if (t.recurring === 'Monthly' && isExpenseCategory) return;
 
             if (amountToUse > 0 && !isExpenseCategory) {
               if (!isKnownIncome) {
                 const streamName = t.stream || t.source || 'Other';
+                const isIncomeCategory = incomeCategoryNames.has(t.category) || t.category === 'Income';
 
-                const isIncomeCategory = budget?.category_groups?.income?.some(cat => cat.name === t.category);
                 if (isIncomeCategory && !isKnownIncome) return;
-
-                const isTopLevelCategoryName = budget?.category_groups?.income?.some(cat => cat.name === streamName);
-                if (isTopLevelCategoryName || streamName === 'Income') return;
+                if (streamName === 'Income') return;
 
                 income += amountToUse;
                 incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
@@ -923,10 +929,10 @@ const Projection = () => {
               slush += absVal;
               slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
             } else if (isExpenseCategory) {
-              // If it's an expense category, update expense totals
               const absVal = Math.abs(amountToUse);
-              expenseMonthlyTotal += absVal;
               const categoryName = t.category || 'Other Expenses';
+
+              expenseMonthlyTotal += absVal;
               expenseLabelBreakdownBase[categoryName] = (expenseLabelBreakdownBase[categoryName] || 0) + absVal;
             }
           }

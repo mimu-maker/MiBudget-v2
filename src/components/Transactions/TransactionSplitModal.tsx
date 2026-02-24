@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, EyeOff, History } from 'lucide-react';
 import { useCategorySource } from '@/hooks/useBudgetCategories';
 import { CategorySelector } from '@/components/Budget/CategorySelector';
 import { Transaction } from './hooks/useTransactionTable'; // Adjust import path as needed
@@ -25,6 +25,8 @@ interface SplitItem {
     amount: number;
     category: string;
     sub_category: string | null;
+    excluded?: boolean;
+    pending_recon?: boolean;
 }
 
 export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplitComplete }: TransactionSplitModalProps) => {
@@ -51,7 +53,9 @@ export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplit
                 name: transaction.source || '',
                 amount: remaining,
                 category: '',
-                sub_category: null
+                sub_category: null,
+                excluded: false,
+                pending_recon: false
             }
         ]);
     };
@@ -69,7 +73,7 @@ export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplit
         setIsSaving(true);
         try {
             // 1. Insert items as separate transactions linked to parent
-            const { error: insertError } = await supabase.from('transactions').insert(
+            const { error: insertError } = await (supabase.from('transactions') as any).insert(
                 items.map(item => ({
                     user_id: transaction.user_id,
                     date: transaction.date,
@@ -78,7 +82,8 @@ export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplit
                     clean_source: item.name,
                     amount: item.amount,
                     account: transaction.account,
-                    status: 'Pending Triage',
+                    status: item.excluded ? 'Excluded' : (item.pending_recon ? 'Pending Reconciliation' : ((item.category && item.sub_category) ? 'Complete' : 'Pending Triage')),
+                    excluded: !!item.excluded,
                     category: item.category,
                     sub_category: item.sub_category,
                     budget_month: transaction.budget_month,
@@ -91,8 +96,8 @@ export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplit
             if (insertError) throw insertError;
 
             // 2. Update original parent transaction to mark as split header
-            const { error: updateError } = await supabase
-                .from('transactions')
+            const { error: updateError } = await (supabase
+                .from('transactions') as any)
                 .update({
                     is_split: true,
                     status: 'Complete', // Auto-complete header row
@@ -126,16 +131,17 @@ export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplit
 
                 <div className="space-y-4 my-4">
                     {/* Header Row */}
-                    <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground px-1">
-                        <div className="col-span-4">Item Name</div>
+                    <div className="grid grid-cols-12 gap-2 text-[11px] uppercase tracking-wider font-bold text-slate-400 px-1 mb-2">
+                        <div className="col-span-3">Item Name</div>
                         <div className="col-span-2 text-right">Amount</div>
                         <div className="col-span-3">Category</div>
-                        <div className="col-span-3">Sub-Category</div>
+                        <div className="col-span-2">Sub-Category</div>
+                        <div className="col-span-2 text-right">Actions</div>
                     </div>
 
                     {items.map((item, index) => (
-                        <div key={item.id} className="grid grid-cols-12 gap-2 items-start animate-in fade-in slide-in-from-left-2 duration-300">
-                            <div className="col-span-4">
+                        <div key={item.id} className={`grid grid-cols-12 gap-2 items-center animate-in fade-in slide-in-from-left-2 duration-300 p-1.5 rounded-lg border ${item.excluded ? 'bg-rose-50/50 border-rose-100' : (item.pending_recon ? 'bg-amber-50/50 border-amber-100' : 'bg-white border-transparent hover:border-slate-100')}`}>
+                            <div className="col-span-3">
                                 <Input
                                     value={item.name}
                                     onChange={(e) => updateItem(item.id, 'name', e.target.value)}
@@ -190,11 +196,30 @@ export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplit
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="col-span-1 flex justify-end">
+                            <div className="col-span-2 flex items-center justify-end gap-0.5">
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8 text-muted-foreground hover:text-red-500"
+                                    title="Set to Pending Reconciliation"
+                                    className={`h-8 w-8 ${item.pending_recon ? 'text-amber-600 bg-amber-100 hover:bg-amber-200 hover:text-amber-700' : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'}`}
+                                    onClick={() => { updateItem(item.id, 'pending_recon', !item.pending_recon); updateItem(item.id, 'excluded', false); }}
+                                >
+                                    <History className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Exclude Item"
+                                    className={`h-8 w-8 ${item.excluded ? 'text-rose-600 bg-rose-100 hover:bg-rose-200 hover:text-rose-700' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'}`}
+                                    onClick={() => { updateItem(item.id, 'excluded', !item.excluded); updateItem(item.id, 'pending_recon', false); }}
+                                >
+                                    <EyeOff className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Remove Split"
+                                    className="h-8 w-8 text-slate-300 hover:text-red-500 hover:bg-red-50"
                                     onClick={() => handleRemoveItem(item.id)}
                                 >
                                     <Trash2 className="w-4 h-4" />

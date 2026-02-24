@@ -173,7 +173,7 @@ const ProjectedIncomeTable = ({
                                                                         className="w-full justify-start text-xs h-9 font-bold bg-emerald-600 hover:bg-emerald-700 text-white border-none shadow-md"
                                                                         onClick={() => handleSave(cat.name, 'forward')}
                                                                     >
-                                                                        Apply to {m.label} & moving forward
+                                                                        Apply to {m.label} & Recur Monthly
                                                                     </Button>
                                                                 </div>
                                                             </PopoverContent>
