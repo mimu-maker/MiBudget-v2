@@ -15,6 +15,9 @@ interface SlushFundTransactionsTableProps {
     onAddClick: () => void;
     selectedYear: string;
     showPastProjections: boolean;
+    baselineTransactions?: FutureTransaction[];
+    onAddBaselineItem?: (item: FutureTransaction) => void;
+    onAddAllBaselineItems?: (items: FutureTransaction[]) => void;
 }
 
 const SlushFundTransactionsTable = ({
@@ -24,7 +27,10 @@ const SlushFundTransactionsTable = ({
     onEdit,
     onAddClick,
     selectedYear,
-    showPastProjections
+    showPastProjections,
+    baselineTransactions = [],
+    onAddBaselineItem,
+    onAddAllBaselineItems
 }: SlushFundTransactionsTableProps) => {
     const [expandedIds, setExpandedIds] = useState<Set<string | number>>(new Set());
     const [editingOccurrence, setEditingOccurrence] = useState<{ id: string | number, monthKey: string, amount: string } | null>(null);
@@ -93,10 +99,25 @@ const SlushFundTransactionsTable = ({
     // Filter out past projections if not requested
     const filteredTransactions = transactions.filter(t => {
         if (showPastProjections) return true;
-        // If it's recurring, we don't hide the "template" row based on date, we hide occurrences
-        // But for single transactions (recurring === 'N/A'), we hide based on date
         if (t.recurring === 'N/A') {
             return t.date >= todayStr;
+        }
+        return true;
+    });
+
+    const missingBaselineItems = baselineTransactions.filter(bt => {
+        // Is this baseline item already in our current set?
+        const isPresent = transactions.some(t =>
+            t.source === bt.source &&
+            t.date === bt.date &&
+            t.amount === bt.amount &&
+            t.recurring === bt.recurring
+        );
+        if (isPresent) return false;
+
+        if (showPastProjections) return true;
+        if (bt.recurring === 'N/A') {
+            return bt.date >= todayStr;
         }
         return true;
     });
@@ -272,6 +293,62 @@ const SlushFundTransactionsTable = ({
                     )}
                 </tbody>
             </table>
+
+            {missingBaselineItems.length > 0 && (
+                <div className="mt-8 border-t border-purple-100 bg-purple-50/10 p-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-purple-100 rounded-lg text-purple-600">
+                                <Sparkles className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <h3 className="text-purple-900 font-black text-sm tracking-tight capitalize">Missing from Baseline</h3>
+                                <p className="text-purple-500/80 text-[10px] font-medium leading-relaxed">
+                                    These items exist in the Baseline projection but are missing in this scenario.
+                                </p>
+                            </div>
+                        </div>
+                        {onAddAllBaselineItems && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onAddAllBaselineItems(missingBaselineItems)}
+                                className="h-8 border-purple-200 font-bold text-purple-700 hover:bg-purple-50 gap-1.5 rounded-lg shadow-sm"
+                            >
+                                <Plus className="w-3.5 h-3.5" />
+                                Add All Baseline Items
+                            </Button>
+                        )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {missingBaselineItems.map(item => (
+                            <div key={item.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-purple-100 shadow-sm hover:border-purple-200 transition-colors group">
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-black text-purple-900">{item.source || item.stream || 'Unknown'}</span>
+                                        {item.recurring !== 'N/A' && (
+                                            <span className="text-[8px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-black uppercase">{item.recurring}</span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-3 text-[10px] font-medium text-purple-400">
+                                        <span className="font-mono">{new Date(item.date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                        <span className="font-bold text-slate-400">DKK {Math.abs(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                </div>
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => onAddBaselineItem?.(item)}
+                                    className="h-7 w-7 p-0 rounded-lg text-purple-400 hover:text-purple-600 hover:bg-purple-50"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

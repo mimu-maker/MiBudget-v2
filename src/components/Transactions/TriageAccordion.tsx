@@ -20,7 +20,8 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { TransactionNote } from './TransactionNote';
-import { Info } from 'lucide-react';
+import { Info, EyeOff, Trash } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 
 const BucketHeader = ({ fields, sortBy, sortOrder, onSort, color = "blue" }: any) => (
     <div className="flex items-center px-6 py-2 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-50/50 rounded-t-xl mb-4">
@@ -105,6 +106,53 @@ const RuleForm = ({ rule, setRule, onSave, onCancel, getSubCategoryList }: any) 
     );
 };
 
+const TransactionQuickActions = ({ tx, onSplit, onVerify, onPendingRecon, onExclude, confirmingExcludeId, setConfirmingExcludeId }: any) => {
+    return (
+        <div className="w-fit flex items-center gap-2 shrink-0 px-4 h-full border-l border-slate-50 bg-white">
+            <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onSplit(tx); }} className="h-9 w-9 p-0 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all rounded-lg" title="Split Transaction"><Split className="w-4 h-4" /></Button>
+
+            <Button
+                size="sm"
+                variant="ghost"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onPendingRecon(tx);
+                }}
+                className="h-9 w-9 p-0 text-slate-300 hover:text-amber-600 hover:bg-amber-50 transition-all rounded-lg"
+                title="Set to Pending Reconciliation"
+            >
+                <History className="w-4 h-4" />
+            </Button>
+
+            <Button
+                size="sm"
+                variant={confirmingExcludeId === tx.id ? "destructive" : "ghost"}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirmingExcludeId === tx.id) {
+                        onExclude(tx.id);
+                        setConfirmingExcludeId(null);
+                    } else {
+                        setConfirmingExcludeId(tx.id);
+                        setTimeout(() => setConfirmingExcludeId((prev: any) => prev === tx.id ? null : prev), 3000);
+                    }
+                }}
+                className={cn(
+                    "transition-all duration-200 rounded-lg",
+                    confirmingExcludeId === tx.id ? "h-9 px-3 w-auto text-[10px] font-black uppercase" : "h-9 w-9 p-0 text-slate-300 hover:text-rose-600 hover:bg-rose-50"
+                )}
+                title={confirmingExcludeId === tx.id ? "Click again to confirm" : "Exclude Transaction"}
+            >
+                {confirmingExcludeId === tx.id ? "CONFIRM" : <EyeOff className="w-4 h-4" />}
+            </Button>
+
+            {onVerify && (
+                <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onVerify(tx); }} className="h-9 w-9 p-0 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-100/50 transition-all rounded-lg" title="Verify Transaction"><Check className="w-5 h-5" /></Button>
+            )}
+        </div>
+    );
+};
+
 interface TriageAccordionProps {
     transactions: any[];
     onVerifySingle: (tx: any, category?: string, sub_category?: string | null) => void;
@@ -139,6 +187,7 @@ export const TriageAccordion = ({
     const [expandedSource, setExpandedSource] = useState<string | null>(null);
     const [selectedSourceRule, setSelectedSourceRule] = useState<any | null>(null);
     const [categorisationEdits, setCategorisationEdits] = useState<Record<string, { category: string, sub_category: string, status?: string }>>({});
+    const [sourceMappingEdits, setSourceMappingEdits] = useState<Record<string, { category: string, sub_category: string }>>({});
     const [showAllAudit, setShowAllAudit] = useState(false);
     const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
     const [confirmingKeepGroupId, setConfirmingKeepGroupId] = useState<string | null>(null);
@@ -148,6 +197,9 @@ export const TriageAccordion = ({
     const [expandedCategorisationSource, setExpandedCategorisationSource] = useState<string | null>(null);
     const [editingRowId, setEditingRowId] = useState<string | null>(null);
     const [editingState, setEditingState] = useState<{ category: string, sub_category: string, excluded: boolean, planned: boolean }>({ category: '', sub_category: '', excluded: false, planned: true });
+    const [confirmingExcludeId, setConfirmingExcludeId] = useState<string | null>(null);
+    const [pendingReconTx, setPendingReconTx] = useState<any | null>(null);
+    const [reconNote, setReconNote] = useState("");
 
     const [mappingSort, setMappingSort] = useState({ field: 'total', order: 'desc' });
     const [catSort, setCatSort] = useState({ field: 'total', order: 'desc' });
@@ -201,17 +253,17 @@ export const TriageAccordion = ({
 
     const pendingSourceMapping = useMemo(() =>
         // confidence <= 0 means source unknown
-        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && tx.status !== 'Complete' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && tx.status !== 'Complete' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
     const pendingCategorisation = useMemo(() =>
         // confidence > 0 but missing cat/subcat
-        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && tx.status !== 'Complete' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && tx.status !== 'Complete' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
     const pendingValidation = useMemo(() =>
         // confidence > 0 and has cat/subcat - hidden if 'Pending Reconciliation' or 'Complete'
-        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && tx.status !== 'Complete' && tx.status !== 'Pending Reconciliation' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && tx.status !== 'Complete' && tx.status !== 'Pending Reconciliation' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
     const groupedAuditLog = useMemo(() => {
@@ -436,40 +488,90 @@ export const TriageAccordion = ({
                                         </div>
                                         <div className="flex items-center gap-4">
                                             <span className="font-mono text-[15px] font-black text-slate-700">{formatCurrency(total, settings.currency)}</span>
-                                            <div className="flex items-center gap-2">
-                                                <Button size="sm" onClick={() => openRuleDialog(source, txs, true)} className="bg-amber-600 hover:bg-amber-700 h-9 px-6 font-bold text-sm">Resolve</Button>
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild>
-                                                        <Button variant="outline" size="sm" className="h-9 w-9 p-0 border-slate-200 bg-white shadow-sm">
-                                                            <ChevronDown className="w-4 h-4" />
-                                                        </Button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end">
-                                                        <DropdownMenuItem onClick={() => onBulkUpdate(txs.map((t: any) => t.id), { status: 'Pending Reconciliation' })}>
-                                                            <History className="w-4 h-4 mr-2" />
-                                                            Mark Pending Recon
-                                                        </DropdownMenuItem>
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
+
+                                            <div className="flex items-center gap-1">
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setPendingReconTx({ source, _isGroup: true, _ids: txs.map((t: any) => t.id) });
+                                                    }}
+                                                    className="h-9 w-9 p-0 text-slate-300 hover:text-amber-600 hover:bg-amber-50 rounded-lg"
+                                                    title="Set to Pending Reconciliation"
+                                                >
+                                                    <History className="w-4 h-4" />
+                                                </Button>
+
+                                                <Button
+                                                    size="sm"
+                                                    variant={confirmingExcludeId === `group:${source}` ? "destructive" : "ghost"}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirmingExcludeId === `group:${source}`) {
+                                                            onBulkUpdate(txs.map((t: any) => t.id), { status: 'Excluded', excluded: true });
+                                                            setConfirmingExcludeId(null);
+                                                        } else {
+                                                            setConfirmingExcludeId(`group:${source}`);
+                                                            setTimeout(() => setConfirmingExcludeId(p => p === `group:${source}` ? null : p), 3000);
+                                                        }
+                                                    }}
+                                                    className={cn(
+                                                        "transition-all duration-200 rounded-lg",
+                                                        confirmingExcludeId === `group:${source}` ? "h-9 px-3 w-auto text-[10px] font-black uppercase" : "h-9 w-9 p-0 text-slate-300 hover:text-rose-600 hover:bg-rose-50"
+                                                    )}
+                                                >
+                                                    {confirmingExcludeId === `group:${source}` ? "CONFIRM" : <EyeOff className="w-4 h-4" />}
+                                                </Button>
+
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (expandedSource === txs[0]?.id) {
+                                                            setExpandedSource(null);
+                                                        } else {
+                                                            openRuleDialog(source, txs, true);
+                                                        }
+                                                    }}
+                                                    className="h-9 px-3 text-[12px] font-black uppercase tracking-tighter text-slate-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg flex items-center gap-1"
+                                                >
+                                                    {expandedSource === txs[0]?.id ? "Hide details" : "Show Transactions"}
+                                                </Button>
                                             </div>
                                         </div>
                                     </div>
                                     {expandedSource === txs[0]?.id && (
-                                        <div className="p-6 border-t border-slate-100 bg-slate-50/30">
-                                            <RuleForm
-                                                rule={selectedSourceRule}
-                                                setRule={setSelectedSourceRule}
-                                                onSave={handleSaveRuleInternal}
-                                                onCancel={() => setExpandedSource(null)}
-                                                getSubCategoryList={getSubCategoryList}
-                                            />
+                                        <div className="border-t border-slate-100 bg-slate-50/10">
+                                            <div className="divide-y divide-slate-50 border-b border-slate-100">
+                                                {txs.map((tx: any) => (
+                                                    <div key={tx.id} className="flex items-center h-12 px-6 hover:bg-white/50 transition-colors">
+                                                        <div className="flex-1 flex items-center gap-6">
+                                                            <span className="text-[10px] font-black uppercase text-slate-400 tabular-nums">{formatDate(tx.date)}</span>
+                                                            <span className="text-xs text-slate-600 font-medium truncate">{tx.description || tx.source}</span>
+                                                        </div>
+                                                        <span className="font-mono text-xs font-black text-slate-900">{formatCurrency(tx.amount, settings.currency)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="p-6 bg-slate-50/30">
+                                                <div className="mb-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Advanced Rule Mapping</div>
+                                                <RuleForm
+                                                    rule={selectedSourceRule}
+                                                    setRule={setSelectedSourceRule}
+                                                    onSave={handleSaveRuleInternal}
+                                                    onCancel={() => setExpandedSource(null)}
+                                                    getSubCategoryList={getSubCategoryList}
+                                                />
+                                            </div>
                                         </div>
                                     )}
                                 </div>
                             );
                         }}
                     />
-                </div>
+                </div >
             )
         },
         {
@@ -527,17 +629,18 @@ export const TriageAccordion = ({
                                         )}>
                                             <AccordionTrigger className="bg-slate-50 border-b border-slate-100 px-6 py-3 hover:no-underline group/trigger">
                                                 <div className="flex items-center justify-between w-full pr-4">
-                                                    <div className="flex items-center gap-4">
+                                                    <div className="w-[28%] flex items-center gap-4 shrink-0 px-5">
                                                         <div className={cn("p-2 rounded-lg group-hover/trigger:bg-blue-200 transition-colors", isPendingRecon ? "bg-slate-200" : "bg-blue-100")}>
                                                             {isPendingRecon ? <History className="w-5 h-5 text-slate-600" /> : <Store className="w-5 h-5 text-blue-600" />}
                                                         </div>
-                                                        <h4 className="text-[15px] font-black text-slate-900 uppercase tracking-tight">{source}</h4>
-                                                        <Badge variant="outline" className="text-[12px] h-7 font-bold text-slate-500 bg-white border-slate-200 px-3">
-                                                            {txs.length} {txs.length === 1 ? 'match' : 'matches'}
+                                                        <h4 className="text-[15px] font-black text-slate-900 uppercase tracking-tight truncate">{source}</h4>
+                                                        <Badge variant="outline" className="text-[12px] h-7 font-bold text-slate-500 bg-white border-slate-200 px-3 shrink-0">
+                                                            {txs.length}
                                                         </Badge>
                                                         {isPendingRecon && <Badge className="bg-blue-100 text-blue-700 border-blue-200 font-bold text-[10px] uppercase">Pending Recon</Badge>}
                                                     </div>
-                                                    <div className="flex gap-3 items-center" onClick={(e) => e.stopPropagation()}>
+                                                    <div className="flex-1 flex gap-3 items-center justify-end" onClick={(e) => e.stopPropagation()}>
+
                                                         <CategorySelector
                                                             value={edit.category}
                                                             onValueChange={(v: string) => {
@@ -561,75 +664,245 @@ export const TriageAccordion = ({
                                                             placeholder="Sub-category"
                                                             className="h-9 w-[150px]"
                                                         />
-                                                        <Select
-                                                            value={edit.status || 'Complete'}
-                                                            onValueChange={(v: string) => setCategorisationEdits(p => ({ ...p, [source]: { ...p[source], status: v } }))}
-                                                        >
-                                                            <SelectTrigger className="h-9 w-[160px] bg-slate-50 border-slate-200">
-                                                                <SelectValue />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                <SelectItem value="Complete">Complete</SelectItem>
-                                                                <SelectItem value="Pending Reconciliation">Pending Recon</SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
-                                                        <Button size="sm" className="h-9 bg-blue-600 hover:bg-blue-700 px-6 font-black text-sm uppercase tracking-tight shrink-0" onClick={() => onBulkUpdate(txs.map((t: any) => t.id), { category: edit.category, sub_category: edit.sub_category, status: (edit.category && edit.sub_category) ? (edit.status || 'Complete') : 'Pending Triage' })}>SAVE ACTIONS</Button>
-                                                        <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild>
-                                                                <Button variant="outline" size="sm" className="h-9 w-9 p-0 border-slate-200 bg-white shadow-sm">
-                                                                    <ChevronDown className="w-4 h-4" />
-                                                                </Button>
-                                                            </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end">
-                                                                <DropdownMenuItem onClick={() => onBulkUpdate(txs.map((t: any) => t.id), { status: 'Pending Reconciliation' })}>
-                                                                    <History className="w-4 h-4 mr-2" />
-                                                                    Mark Pending Recon
-                                                                </DropdownMenuItem>
-                                                            </DropdownMenuContent>
-                                                        </DropdownMenu>
-                                                        <div className="ml-4 tabular-nums font-black text-slate-900 text-[16px] shrink-0">{formatCurrency(total, settings.currency)}</div>
+
+                                                        <div className="flex items-center gap-1 border-l border-slate-200 pl-3 ml-1 bg-white/50 py-1 rounded-lg">
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    onBulkUpdate(txs.map((t: any) => t.id), {
+                                                                        category: edit.category,
+                                                                        sub_category: edit.sub_category,
+                                                                        status: (edit.category && edit.sub_category) ? 'Complete' : 'Pending Triage'
+                                                                    });
+                                                                }}
+                                                                className="h-9 w-9 p-0 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all"
+                                                                disabled={!edit.category || !edit.sub_category}
+                                                                title="Apply to All"
+                                                            >
+                                                                <Check className="w-5 h-5" />
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setCategorisationEdits(p => { const n = { ...p }; delete n[source]; return n; });
+                                                                }}
+                                                                className="h-9 w-9 p-0 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
+                                                                title="Reset Changes"
+                                                            >
+                                                                <X className="w-4 h-4" />
+                                                            </Button>
+                                                        </div>
+
+                                                        <div className="w-px h-6 bg-slate-200 mx-1" />
+
+                                                        <div className="flex items-center gap-1">
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setPendingReconTx({ ...txs[0], _isGroup: true, _ids: txs.map((t: any) => t.id) });
+                                                                }}
+                                                                className="h-9 w-9 p-0 text-slate-300 hover:text-amber-600 hover:bg-amber-50 rounded-lg"
+                                                                title="Set to Pending Reconciliation"
+                                                            >
+                                                                <History className="w-4 h-4" />
+                                                            </Button>
+
+                                                            <Button
+                                                                size="sm"
+                                                                variant={confirmingExcludeId === `group:${source}` ? "destructive" : "ghost"}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (confirmingExcludeId === `group:${source}`) {
+                                                                        onBulkUpdate(txs.map((t: any) => t.id), { status: 'Excluded', excluded: true });
+                                                                        setConfirmingExcludeId(null);
+                                                                    } else {
+                                                                        setConfirmingExcludeId(`group:${source}`);
+                                                                        setTimeout(() => setConfirmingExcludeId(p => p === `group:${source}` ? null : p), 3000);
+                                                                    }
+                                                                }}
+                                                                className={cn(
+                                                                    "transition-all duration-200 rounded-lg",
+                                                                    confirmingExcludeId === `group:${source}` ? "h-9 px-3 w-auto text-[10px] font-black uppercase" : "h-9 w-9 p-0 text-slate-300 hover:text-rose-600 hover:bg-rose-50"
+                                                                )}
+                                                            >
+                                                                {confirmingExcludeId === `group:${source}` ? "CONFIRM" : <EyeOff className="w-4 h-4" />}
+                                                            </Button>
+                                                        </div>
+
+                                                        <div className="ml-4 tabular-nums font-black text-slate-900 text-[16px] shrink-0 border-l border-slate-100 pl-4 min-w-[120px] text-right">{formatCurrency(total, settings.currency)}</div>
+
                                                     </div>
                                                 </div>
                                             </AccordionTrigger>
+
+
                                             <AccordionContent className="p-0">
                                                 <div className="p-6 space-y-2 bg-slate-50/20">
                                                     {txsToRender.map((tx: any) => (
                                                         <div key={tx.id} className="relative z-0 group/card-wrapper w-full mb-2">
-                                                            <Card className="p-0 transition-all bg-white border-slate-200 overflow-hidden group/card shadow-sm border-slate-200/80 rounded-xl">
-                                                                <div className="flex items-center h-14">
-                                                                    <div className="w-[28%] min-w-0 px-5 h-full flex flex-col justify-center border-r border-slate-50 bg-slate-50/30">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <div className="font-black text-[14px] text-slate-900 leading-tight truncate">{tx.clean_source || tx.source}</div>
-                                                                            {onUpdateRow && (
-                                                                                <TransactionNote transaction={tx} onSave={(id, note) => onUpdateRow(id, { notes: note })} />
+                                                            <Card
+                                                                className={cn("p-0 hover:shadow-lg transition-all bg-white border-slate-200 overflow-hidden group/card shadow-sm border-slate-200/80 cursor-pointer relative z-10", expandedSource === tx.id ? "rounded-t-xl rounded-b-none border-b-0 shadow-md ring-2 ring-indigo-500/20" : "rounded-xl")}
+                                                                onClick={() => {
+                                                                    if (expandedSource === tx.id) {
+                                                                        setExpandedSource(null);
+                                                                    } else {
+                                                                        setSelectedSourceRule({
+                                                                            id: 'new',
+                                                                            source_string: tx.source || tx.clean_source,
+                                                                            rule_type: 'exact',
+                                                                            category: tx.category || '',
+                                                                            sub_category: tx.sub_category || '',
+                                                                        });
+                                                                        setExpandedSource(tx.id);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <div className="flex items-center h-14 w-full">
+                                                                    <div className="w-[28%] min-w-0 px-5 h-full flex items-center border-r border-slate-50 bg-slate-50/30 gap-3 shrink-0">
+                                                                        <div className="flex flex-col items-center justify-center mr-1">
+                                                                            <ChevronRight className={cn("w-3.5 h-3.5 text-slate-300 transition-transform duration-200", expandedSource === tx.id && "rotate-90 text-indigo-500")} />
+                                                                        </div>
+                                                                        <span className={cn("text-[10px] font-black uppercase tracking-wider tabular-nums leading-none shrink-0 text-slate-400", tx.needs_date_verification && "text-amber-600")}>
+                                                                            {tx.date && formatDate(tx.date, false, "DD/MM")}
+                                                                        </span>
+                                                                        <div className="flex-1 min-w-0 overflow-hidden">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <div className="font-black text-[13px] text-slate-700 leading-tight truncate">{tx.description || tx.clean_source || tx.source}</div>
+                                                                                {onUpdateRow && (
+                                                                                    <TransactionNote transaction={tx} onSave={(id, note) => onUpdateRow(id, { notes: note })} />
+                                                                                )}
+                                                                            </div>
+                                                                            {tx.parent_id && (
+                                                                                <div className="text-[9px] text-amber-600/80 font-bold tracking-tight mt-0.5 truncate flex items-center gap-1 uppercase">
+                                                                                    <Split className="w-2.5 h-2.5" /> Split
+                                                                                </div>
                                                                             )}
                                                                         </div>
-                                                                        {tx.parent_id && (
-                                                                            <div className="text-[10px] text-amber-600/80 font-bold tracking-tight mt-0.5 truncate flex items-center gap-1 uppercase">
-                                                                                <Split className="w-3 h-3" /> Split from {tx.notes?.replace('Split item from ', '') || 'Split Transaction'}
-                                                                            </div>
-                                                                        )}
                                                                     </div>
-                                                                    <div className="flex-1 flex items-center px-6 h-full gap-8 bg-slate-50/5">
-                                                                        <div className="flex items-center gap-4 shrink-0">
-                                                                            <span className={cn("text-[10px] font-black uppercase tracking-wider tabular-nums leading-none", tx.needs_date_verification ? "text-amber-600 flex items-center gap-1" : "text-slate-400")}>
-                                                                                {tx.needs_date_verification && <AlertTriangle className="w-3 h-3" />}
-                                                                                {formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}
-                                                                            </span>
+
+                                                                    <div className="flex-1 flex items-center justify-end px-5 h-full gap-3">
+                                                                        <CategorySelector
+                                                                            value={tx.category || ''}
+                                                                            onValueChange={(v: string) => {
+                                                                                if (v.includes(':')) {
+                                                                                    const [cat, sub] = v.split(':');
+                                                                                    onUpdateRow?.(tx.id, { category: cat, sub_category: sub });
+                                                                                } else {
+                                                                                    onUpdateRow?.(tx.id, { category: v, sub_category: '' });
+                                                                                }
+                                                                            }}
+                                                                            type="all"
+                                                                            suggestionLimit={3}
+                                                                            placeholder="Category"
+                                                                            className="h-9 w-[180px] text-sm font-medium"
+                                                                        />
+                                                                        <SmartSelector
+                                                                            value={tx.sub_category || ''}
+                                                                            onValueChange={(v: string) => onUpdateRow?.(tx.id, { sub_category: v })}
+                                                                            disabled={!tx.category}
+                                                                            options={getSubCategoryList(tx.category || '').map((s: string) => ({ label: s, value: s }))}
+                                                                            placeholder="Sub-category"
+                                                                            className="h-9 w-[150px]"
+                                                                        />
+
+                                                                        <div className="flex items-center gap-1 border-l border-slate-200 pl-3 ml-1 bg-slate-50/50 py-1 rounded-lg">
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="ghost"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    onVerifySingle(tx, tx.category, tx.sub_category);
+                                                                                }}
+                                                                                className="h-9 w-9 p-0 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all"
+                                                                                disabled={!tx.category || !tx.sub_category}
+                                                                                title="Verify Transaction"
+                                                                            >
+                                                                                <Check className="w-5 h-5" />
+                                                                            </Button>
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="ghost"
+                                                                                onClick={(e) => { e.stopPropagation(); onUpdateRow?.(tx.id, { category: '', sub_category: '' }); }}
+                                                                                className="h-9 w-9 p-0 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
+                                                                                title="Clear Selection"
+                                                                            >
+                                                                                <X className="w-4 h-4" />
+                                                                            </Button>
                                                                         </div>
-                                                                        <div className="flex-1 min-w-0 flex items-center gap-2">
-                                                                            {tx.description && <span className="text-xs text-slate-500 truncate" title={tx.description}>{tx.description}</span>}
+
+                                                                        <div className="w-px h-6 bg-slate-200 mx-1" />
+
+                                                                        <div className="flex items-center gap-1 opacity-40 hover:opacity-100 transition-opacity">
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="ghost"
+                                                                                onClick={(e) => { e.stopPropagation(); onSplit(tx); }}
+                                                                                className="h-9 w-9 p-0 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all rounded-lg"
+                                                                                title="Split Transaction"
+                                                                            >
+                                                                                <Split className="w-4 h-4" />
+                                                                            </Button>
+
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="ghost"
+                                                                                onClick={(e) => { e.stopPropagation(); setPendingReconTx(tx); }}
+                                                                                className="h-9 w-9 p-0 text-slate-300 hover:text-amber-600 hover:bg-amber-50 rounded-lg"
+                                                                                title="Set to Pending Reconciliation"
+                                                                            >
+                                                                                <History className="w-4 h-4" />
+                                                                            </Button>
+
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant={confirmingExcludeId === tx.id ? "destructive" : "ghost"}
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    if (confirmingExcludeId === tx.id) {
+                                                                                        onBulkUpdate([tx.id], { status: 'Excluded', excluded: true });
+                                                                                        setConfirmingExcludeId(null);
+                                                                                    } else {
+                                                                                        setConfirmingExcludeId(tx.id);
+                                                                                        setTimeout(() => setConfirmingExcludeId(p => p === tx.id ? null : p), 3000);
+                                                                                    }
+                                                                                }}
+                                                                                className={cn(
+                                                                                    "transition-all duration-200 rounded-lg",
+                                                                                    confirmingExcludeId === tx.id ? "h-9 px-3 w-auto text-[10px] font-black uppercase" : "h-9 w-9 p-0 text-slate-300 hover:text-rose-600 hover:bg-rose-50"
+                                                                                )}
+                                                                            >
+                                                                                {confirmingExcludeId === tx.id ? "CONFIRM" : <EyeOff className="w-4 h-4" />}
+                                                                            </Button>
                                                                         </div>
-                                                                        <div className="flex items-center gap-6 shrink-0 font-mono">
-                                                                            <span className={cn("text-[15px] font-black text-right min-w-[100px]", tx.amount > 0 ? "text-emerald-600" : "text-slate-900")}>
-                                                                                {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount, settings.currency)}
-                                                                            </span>
+
+                                                                        <div className="ml-4 tabular-nums font-black text-slate-900 text-[15px] shrink-0 border-l border-slate-100 pl-4 min-w-[120px] text-right">
+                                                                            {formatCurrency(tx.amount, settings.currency)}
                                                                         </div>
                                                                     </div>
                                                                 </div>
                                                             </Card>
+
+                                                            {expandedSource === tx.id && (
+                                                                <div className="border-x border-b border-indigo-200 bg-slate-50/50 p-6 animate-in slide-in-from-top-4 duration-300 rounded-b-xl shadow-inner mb-2">
+                                                                    <RuleForm
+                                                                        rule={selectedSourceRule}
+                                                                        setRule={setSelectedSourceRule}
+                                                                        onSave={handleSaveRuleInternal}
+                                                                        onCancel={() => setExpandedSource(null)}
+                                                                        getSubCategoryList={getSubCategoryList}
+                                                                    />
+                                                                </div>
+                                                            )}
                                                         </div>
+
                                                     ))}
+
                                                     {showMoreAvailable && (
                                                         <Button variant="outline" className="w-full mt-4 bg-white/50 border-dashed" onClick={(e) => {
                                                             e.stopPropagation();
@@ -641,12 +914,12 @@ export const TriageAccordion = ({
                                                 </div>
                                             </AccordionContent>
                                         </AccordionItem>
-                                    </div>
+                                    </div >
                                 );
                             }}
                         />
-                    </Accordion>
-                </div>
+                    </Accordion >
+                </div >
             )
         },
         {
@@ -685,72 +958,158 @@ export const TriageAccordion = ({
                                     <AccordionItem key={group.sourceName} value={group.sourceName} className="border rounded-xl bg-white overflow-hidden border-slate-200 hover:border-indigo-300 transition-colors">
                                         <AccordionTrigger className="bg-slate-50 border-b border-slate-100 px-6 py-3 hover:no-underline group/trigger">
                                             <div className="flex items-center justify-between w-full pr-4">
-                                                <div className="flex items-center gap-4">
+                                                <div className="w-[28%] flex items-center gap-4 shrink-0 px-5">
+
                                                     <div className="p-2 bg-indigo-100 rounded-lg group-hover/trigger:bg-indigo-200 transition-colors">
                                                         <Zap className="w-5 h-5 text-indigo-600" />
                                                     </div>
-                                                    <h4 className="text-[15px] font-black text-slate-900 uppercase tracking-tight">{group.sourceName}</h4>
-                                                    <Badge variant="outline" className="text-[12px] h-7 font-bold text-slate-500 bg-white border-slate-200 px-3">
-                                                        {group.count} {group.count === 1 ? 'match' : 'matches'}
+                                                    <h4 className="text-[15px] font-black text-slate-900 uppercase tracking-tight truncate">{group.sourceName}</h4>
+                                                    <Badge variant="outline" className="text-[12px] h-7 font-bold text-slate-500 bg-white border-slate-200 px-3 shrink-0">
+                                                        {group.count}
                                                     </Badge>
                                                 </div>
-                                                <div className="flex items-center gap-6">
-                                                    <span className="font-black text-slate-900 text-[16px] font-mono tabular-nums">{formatCurrency(group.total, settings.currency)}</span>
+                                                <div className="flex-1 flex items-center justify-end gap-4" onClick={(e) => e.stopPropagation()}>
+
+                                                    <CategorySelector
+                                                        value={sourceMappingEdits[group.sourceName]?.category || ''}
+                                                        onValueChange={(v: string) => {
+                                                            if (v.includes(':')) {
+                                                                const [cat, sub] = v.split(':');
+                                                                setSourceMappingEdits(p => ({ ...p, [group.sourceName]: { category: cat, sub_category: sub } }));
+                                                            } else {
+                                                                setSourceMappingEdits(p => ({ ...p, [group.sourceName]: { category: v, sub_category: '' } }));
+                                                            }
+                                                        }}
+                                                        type="all"
+                                                        suggestionLimit={3}
+                                                        placeholder="Category"
+                                                        className="h-9 w-[180px] text-sm font-medium"
+                                                    />
+                                                    <SmartSelector
+                                                        value={sourceMappingEdits[group.sourceName]?.sub_category || ''}
+                                                        onValueChange={(v: string) => setSourceMappingEdits(p => ({ ...p, [group.sourceName]: { ...p[group.sourceName], sub_category: v } }))}
+                                                        disabled={!sourceMappingEdits[group.sourceName]?.category}
+                                                        options={getSubCategoryList(sourceMappingEdits[group.sourceName]?.category || '').map((s: string) => ({ label: s, value: s }))}
+                                                        placeholder="Sub-category"
+                                                        className="h-9 w-[150px]"
+                                                    />
+
+                                                    <div className="flex items-center gap-1 border-l border-slate-200 pl-3 ml-1">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const edit = sourceMappingEdits[group.sourceName];
+                                                                if (edit?.category && edit?.sub_category) {
+                                                                    const ids = Object.values(group.categories).flatMap((c: any) => Object.values(c.subCategories).flatMap((s: any) => s.txs.map((t: any) => t.id)));
+                                                                    onBulkUpdate(ids, {
+                                                                        category: edit.category,
+                                                                        sub_category: edit.sub_category,
+                                                                        status: 'Complete'
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className="h-9 w-9 p-0 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all"
+                                                            disabled={!sourceMappingEdits[group.sourceName]?.category || !sourceMappingEdits[group.sourceName]?.sub_category}
+                                                            title="Verify and Save Mapping"
+                                                        >
+                                                            <Check className="w-5 h-5" />
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setSourceMappingEdits(p => { const n = { ...p }; delete n[group.sourceName]; return n; });
+                                                            }}
+                                                            className="h-9 w-9 p-0 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
+                                                            title="Reset Changes"
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </Button>
+                                                    </div>
+
+                                                    <div className="w-px h-6 bg-slate-200 mx-1" />
+
+                                                    <span className="font-black text-slate-900 text-[16px] font-mono tabular-nums border-r border-slate-100 pr-4">{formatCurrency(group.total, settings.currency)}</span>
+
+                                                    <div className="flex items-center gap-1">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={() => handleVerifyAllInGroup(group, 'Complete')}
+                                                            className="h-9 w-9 p-0 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all"
+                                                            title="Validate All"
+                                                        >
+                                                            <Check className="w-5 h-5" />
+                                                        </Button>
+
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={() => setPendingReconTx({ source: group.sourceName, _isGroup: true, _ids: Object.values(group.categories).flatMap((c: any) => Object.values(c.subCategories).flatMap((s: any) => s.txs.map((t: any) => t.id))) })}
+                                                            className="h-9 w-9 p-0 text-slate-300 hover:text-amber-600 hover:bg-amber-50 rounded-lg"
+                                                            title="Set Group to Pending Reconciliation"
+                                                        >
+                                                            <History className="w-4 h-4" />
+                                                        </Button>
+
+                                                        <Button
+                                                            size="sm"
+                                                            variant={confirmingExcludeId === `group:${group.sourceName}` ? "destructive" : "ghost"}
+                                                            onClick={() => {
+                                                                if (confirmingExcludeId === `group:${group.sourceName}`) {
+                                                                    const ids = Object.values(group.categories).flatMap((c: any) => Object.values(c.subCategories).flatMap((s: any) => s.txs.map((t: any) => t.id)));
+                                                                    onBulkUpdate(ids, { status: 'Excluded', excluded: true });
+                                                                    setConfirmingExcludeId(null);
+                                                                } else {
+                                                                    setConfirmingExcludeId(`group:${group.sourceName}`);
+                                                                    setTimeout(() => setConfirmingExcludeId(p => p === `group:${group.sourceName}` ? null : p), 3000);
+                                                                }
+                                                            }}
+                                                            className={cn(
+                                                                "transition-all duration-200 rounded-lg",
+                                                                confirmingExcludeId === `group:${group.sourceName}` ? "h-9 px-3 w-auto text-[10px] font-black uppercase" : "h-9 w-9 p-0 text-slate-300 hover:text-rose-600 hover:bg-rose-50"
+                                                            )}
+                                                        >
+                                                            {confirmingExcludeId === `group:${group.sourceName}` ? "CONFIRM" : <EyeOff className="w-4 h-4" />}
+                                                        </Button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </AccordionTrigger>
                                         <AccordionContent className="p-0">
                                             <div className="p-6 space-y-6 bg-slate-50/20">
-                                                <div className="flex justify-center items-center gap-3 border-b border-slate-100/50 pb-5 mb-2">
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm h-11 px-10 shadow-lg shadow-emerald-900/10 border-none tracking-tight rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleVerifyAllInGroup(group, 'Complete');
-                                                        }}
-                                                    >
-                                                        <Check className="w-5 h-5 mr-2" />
-                                                        Validate All (Complete)
-                                                    </Button>
+                                                <div className="flex justify-start items-center gap-3 border-b border-slate-100 pb-5 mb-2">
+                                                    <div className="flex items-center gap-2 bg-emerald-50 p-1.5 rounded-xl border border-emerald-100">
+                                                        <Button
+                                                            size="sm"
+                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs h-9 px-6 shadow-sm border-none tracking-tight rounded-lg transition-all"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleVerifyAllInGroup(group, 'Complete');
+                                                            }}
+                                                        >
+                                                            <Check className="w-4 h-4 mr-2" />
+                                                            VALIDATE ALL
+                                                        </Button>
+                                                    </div>
 
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        className="bg-white hover:bg-amber-50 text-amber-600 border-amber-200 font-bold text-sm h-11 px-4 shadow-sm transition-all flex items-center gap-2 rounded-xl"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleVerifyAllInGroup(group, 'Pending Reconciliation');
-                                                        }}
-                                                    >
-                                                        <History className="w-4 h-4" />
-                                                        Pending Recon
-                                                    </Button>
-
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button
-                                                                size="sm"
-                                                                variant="outline"
-                                                                className="bg-white hover:bg-slate-50 text-slate-600 border-slate-200 font-bold text-sm h-11 w-11 p-0 rounded-xl shadow-sm transition-all"
-                                                            >
-                                                                <ChevronDown className="w-5 h-5" />
-                                                            </Button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end" className="w-[240px]">
-                                                            <DropdownMenuItem
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleVerifyAllInGroup(group, 'Pending Reconciliation');
-                                                                }}
-                                                                className="font-bold text-slate-700 py-3"
-                                                            >
-                                                                <History className="w-4 h-4 mr-3" />
-                                                                Mark Pending Reconciliation
-                                                            </DropdownMenuItem>
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
+                                                    <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-100">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="text-amber-600 hover:bg-amber-100/50 font-bold text-xs h-9 px-4 transition-all flex items-center gap-2 rounded-lg"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setPendingReconTx({ source: group.sourceName, _isGroup: true, _ids: Object.values(group.categories).flatMap((c: any) => Object.values(c.subCategories).flatMap((s: any) => s.txs.map((t: any) => t.id))) });
+                                                            }}
+                                                        >
+                                                            <History className="w-4 h-4" />
+                                                            PENDING RECON
+                                                        </Button>
+                                                    </div>
                                                 </div>
                                                 <div className="space-y-6">
                                                     {(() => {
@@ -810,6 +1169,9 @@ export const TriageAccordion = ({
                                                                                                         title="Click to Edit Source Mapping"
                                                                                                     >
                                                                                                         <div className="flex items-center gap-2">
+                                                                                                            <div className="flex flex-col items-center justify-center mr-1">
+                                                                                                                <ChevronRight className={cn("w-3.5 h-3.5 text-slate-300 transition-transform duration-200", expandedSource === tx.id && "rotate-90 text-indigo-500")} />
+                                                                                                            </div>
                                                                                                             <div className="font-black text-[14px] text-slate-900 leading-tight truncate hover:text-indigo-600 transition-colors" title={tx.clean_source || tx.source}>
                                                                                                                 {tx.clean_source || tx.source}
                                                                                                             </div>
@@ -934,10 +1296,15 @@ export const TriageAccordion = ({
                                                                                                         </div>
                                                                                                     </div>
 
-                                                                                                    <div className="w-fit flex items-center gap-2 shrink-0 px-4 h-full border-l border-slate-50 bg-white">
-                                                                                                        <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onSplit(tx); }} className="h-9 w-9 p-0 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all rounded-lg" title="Split Transaction"><Split className="w-4 h-4" /></Button>
-                                                                                                        <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onVerifySingle(tx); }} className="h-9 w-9 p-0 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-100/50 transition-all rounded-lg" title="Verify Transaction"><Check className="w-5 h-5" /></Button>
-                                                                                                    </div>
+                                                                                                    <TransactionQuickActions
+                                                                                                        tx={tx}
+                                                                                                        onSplit={onSplit}
+                                                                                                        onVerify={onVerifySingle}
+                                                                                                        onPendingRecon={(t: any) => setPendingReconTx(t)}
+                                                                                                        onExclude={(id: string) => onBulkUpdate([id], { status: 'Excluded', excluded: true })}
+                                                                                                        confirmingExcludeId={confirmingExcludeId}
+                                                                                                        setConfirmingExcludeId={setConfirmingExcludeId}
+                                                                                                    />
                                                                                                 </div>
                                                                                             </Card>
                                                                                             {expandedSource === tx.id && (
@@ -1394,6 +1761,65 @@ export const TriageAccordion = ({
                     })()}
                 </div>
             )}
-        </div>
+            <Dialog open={!!pendingReconTx} onOpenChange={(open) => !open && setPendingReconTx(null)}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                            <History className="w-5 h-5 text-amber-500" />
+                            Pending Reconciliation
+                        </DialogTitle>
+                        <DialogDescription className="text-slate-500 font-medium pb-2 border-b">
+                            This transaction will be moved to the Reconciliation bucket.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="py-6 space-y-4">
+                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest leading-none truncate max-w-[200px]">{pendingReconTx?.clean_source || pendingReconTx?.source}</span>
+                                <span className="font-mono font-black text-slate-900 leading-none">{formatCurrency(pendingReconTx?.amount || 0, settings.currency)}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-bold uppercase">{pendingReconTx?.date && formatDate(pendingReconTx.date)}</div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Optional Note</Label>
+                            <Input
+                                placeholder="Why is this pending reconciliation?"
+                                value={reconNote}
+                                onChange={(e) => setReconNote(e.target.value)}
+                                className="bg-white border-slate-200"
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter className="gap-3">
+                        <Button
+                            variant="ghost"
+                            onClick={() => setPendingReconTx(null)}
+                            className="text-slate-400 hover:text-slate-600 font-bold uppercase text-[10px] tracking-widest"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            className="bg-amber-600 hover:bg-amber-700 text-white font-black uppercase text-[10px] tracking-widest px-6 shadow-lg shadow-amber-200/50"
+                            onClick={() => {
+                                if (pendingReconTx) {
+                                    const ids = pendingReconTx._isGroup ? pendingReconTx._ids : [pendingReconTx.id];
+                                    onBulkUpdate(ids, {
+                                        status: 'Pending Reconciliation',
+                                        notes: reconNote ? `${pendingReconTx.notes || ''} [Recon: ${reconNote}]`.trim() : pendingReconTx.notes
+                                    });
+                                    setPendingReconTx(null);
+                                    setReconNote("");
+                                }
+                            }}
+                        >
+                            Set to Pending Recon
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </div >
     );
 };

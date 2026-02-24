@@ -26,6 +26,7 @@ import { useSettings, APP_STATUSES } from '@/hooks/useSettings';
 import { useGroupedCategories } from '@/hooks/useBudgetCategories'; // Import the hook
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { formatCurrency } from '@/lib/formatUtils';
+import { cn } from '@/lib/utils';
 
 export const TransactionsTable = () => {
   const {
@@ -117,13 +118,28 @@ export const TransactionsTable = () => {
 
   const [addTransactionsOpen, setAddTransactionsOpen] = useState(false);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [isFeederOnly, setIsFeederOnly] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [splitModalOpen, setSplitModalOpen] = useState(false);
   const [transactionToSplit, setTransactionToSplit] = useState<Transaction | null>(null);
 
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
 
-  const filteredAndSortedTransactions = transactions;
+  const feederCategoryNames = useMemo(() =>
+    feeders.flatMap(f => f.categories.map(c => c.name.toLowerCase())),
+    [feeders]
+  );
+
+  const filteredAndSortedTransactions = useMemo(() => {
+    let list = transactions;
+    if (isFeederOnly) {
+      list = list.filter(t =>
+        t.budget === 'Klintemarken' ||
+        (t.category && feederCategoryNames.includes(t.category.toLowerCase()))
+      );
+    }
+    return list;
+  }, [transactions, isFeederOnly, feederCategoryNames]);
 
   const handleStartEdit = (id: string, field: keyof Transaction) => {
     setEditingCell({ id, field });
@@ -191,21 +207,39 @@ export const TransactionsTable = () => {
               </span>
             )}
           </CardTitle>
-          <Button
-            size="lg"
-            onClick={() => setAddTransactionsOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all active:scale-95"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Add Transactions
-          </Button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded-full border border-border">
+              <span className={cn("text-xs font-bold transition-colors", isFeederOnly ? "text-amber-600" : "text-muted-foreground")}>Feeder Only</span>
+              <button
+                onClick={() => setIsFeederOnly(!isFeederOnly)}
+                className={cn(
+                  "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-600 focus:ring-offset-2",
+                  isFeederOnly ? "bg-amber-500" : "bg-zinc-200 dark:bg-zinc-700"
+                )}
+              >
+                <span
+                  className={cn(
+                    "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                    isFeederOnly ? "translate-x-4" : "translate-x-0"
+                  )}
+                />
+              </button>
+            </div>
+            <Button
+              size="lg"
+              onClick={() => setAddTransactionsOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all active:scale-95"
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              Add Transactions
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="flex-1 overflow-hidden p-0 relative">
           <div
             ref={parentRef}
             className="h-full w-full overflow-y-auto overflow-x-auto relative"
           >
-            {/* The single table container */}
             <table className="w-full text-sm text-left relative min-w-[1000px]">
               <TransactionsTableHeader
                 sortBy={sortBy}
@@ -235,6 +269,7 @@ export const TransactionsTable = () => {
                 )}
                 {virtualItems.map((virtualRow) => {
                   const transaction = filteredAndSortedTransactions[virtualRow.index];
+                  if (!transaction) return null;
                   return (
                     <TransactionsTableRow
                       key={transaction.id}

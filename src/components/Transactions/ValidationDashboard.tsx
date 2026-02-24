@@ -109,11 +109,11 @@ export const ValidationDashboard = () => {
         [transactions, duplicateIds]);
 
     const pendingSourceMapping = useMemo(() =>
-        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && tx.status !== 'Complete' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && tx.status !== 'Complete' && tx.status !== 'Excluded' && tx.status !== 'Pending Reconciliation' && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
     const pendingCategorisation = useMemo(() =>
-        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && tx.status !== 'Complete' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && tx.status !== 'Complete' && tx.status !== 'Excluded' && tx.status !== 'Pending Reconciliation' && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
     const pendingValidation = useMemo(() =>

@@ -353,6 +353,33 @@ const Projection = () => {
     }
   });
 
+  const batchAddProjectionsMutation = useMutation({
+    mutationFn: async (items: any[]) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const dbPayloads = items.map(p => {
+        const { source, ...rest } = p;
+        return {
+          ...rest,
+          merchant: source,
+          user_id: userData.user?.id,
+          scenario_id: activeScenarioId
+        };
+      });
+
+      const { error } = await (supabase.from('projections' as any) as any)
+        .insert(dbPayloads);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projections'] });
+      toast({ title: "Success", description: "All baseline items added" });
+    },
+    onError: (error) => {
+      console.error('Batch Add Projections error:', error);
+      toast({ title: "Error", description: "Failed to add some projections", variant: "destructive" });
+    }
+  });
+
   const deleteProjectionMutation = useMutation({
     mutationFn: async (id: string | number) => {
       const { error } = await supabase.from('projections' as any).delete().eq('id', id);
@@ -424,6 +451,16 @@ const Projection = () => {
     ),
     [futureTransactions, selectedYear, specialCategoryNames]
   );
+
+  const baselineSlushFundTransactions = useMemo(() => {
+    if (!activeScenarioId) return [];
+    const masterTxs = matchProjectionsToActuals(masterProjectionsRaw, transactions);
+    return (masterTxs as any[]).filter(t =>
+      t.amount < 0 &&
+      specialCategoryNames.includes(t.category) &&
+      (t.recurring !== 'N/A' || t.date?.slice(0, 4) >= currentYear.toString())
+    );
+  }, [masterProjectionsRaw, transactions, currentYear, specialCategoryNames, activeScenarioId]);
 
   const handleEditTransaction = (tx: FutureTransaction) => {
     setEditingId(tx.id);
@@ -1187,6 +1224,18 @@ const Projection = () => {
             onAddClick={() => { setSlushEditingTx(null); setSlushDialogOpen(true); }}
             selectedYear={selectedYear}
             showPastProjections={showPastProjections}
+            baselineTransactions={baselineSlushFundTransactions}
+            onAddBaselineItem={(item) => {
+              const { id, actual_amount, is_matched, scenario_id, ...rest } = item;
+              addProjectionMutation.mutate(rest);
+            }}
+            onAddAllBaselineItems={(items) => {
+              const mappedItems = items.map(item => {
+                const { id, actual_amount, is_matched, scenario_id, ...rest } = item;
+                return rest;
+              });
+              batchAddProjectionsMutation.mutate(mappedItems);
+            }}
           />
         </div>
 
