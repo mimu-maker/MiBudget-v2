@@ -75,23 +75,27 @@ const EntityRow = ({
     isSelected,
     onToggle,
     onSplit,
+    onRevert,
     currency,
     isEditing,
     editingField,
     onEdit,
     onStartEdit,
-    onStopEdit
+    onStopEdit,
+    onBulkEdit
 }: {
     item: Transaction,
     isSelected: boolean,
     onToggle: () => void,
     onSplit: (id: string) => void,
+    onRevert: (id: string) => void,
     currency: string,
     isEditing: boolean,
     editingField: keyof Transaction | null,
     onEdit: (id: string, field: keyof Transaction, value: any) => void,
     onStartEdit: (id: string, field: keyof Transaction) => void,
-    onStopEdit: () => void
+    onStopEdit: () => void,
+    onBulkEdit: (id: string, updates: Partial<Transaction>) => void
 }) => {
     return (
         <div
@@ -153,18 +157,49 @@ const EntityRow = ({
                 </div>
             </div>
 
-            <Button
-                variant="ghost"
-                size="sm"
-                className="opacity-0 group-hover:opacity-100 h-8 w-8 p-0 text-muted-foreground hover:text-primary transition-all"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onSplit(item.id);
-                }}
-                title="Partial Refund (Split)"
-            >
-                <Split className="w-4 h-4" />
-            </Button>
+            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                <div className={cn("transition-all flex items-center gap-1", (isEditing && editingField === 'status') ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
+                    <EditableCell
+                        transaction={item}
+                        field="status"
+                        isEditing={isEditing && editingField === 'status'}
+                        onEdit={onEdit}
+                        onStartEdit={onStartEdit}
+                        onStopEdit={onStopEdit}
+                        onBulkEdit={onBulkEdit}
+                        customDisplay={
+                            <div
+                                className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent text-muted-foreground hover:text-blue-500 transition-colors"
+                                title="Change Entity / Status"
+                            >
+                                <Building className="w-4 h-4" />
+                            </div>
+                        }
+                    />
+                    {!(isEditing && editingField === 'status') && (
+                        <>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500 transition-all"
+                                onClick={() => onRevert(item.id)}
+                                title="Revert to Triage"
+                            >
+                                <History className="w-4 h-4" />
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-primary transition-all"
+                                onClick={() => onSplit(item.id)}
+                                title="Partial Refund (Split)"
+                            >
+                                <Split className="w-4 h-4" />
+                            </Button>
+                        </>
+                    )}
+                </div>
+            </div>
 
             <div className="w-[120px] text-right" onClick={(e) => e.stopPropagation()}>
                 <EditableCell
@@ -208,6 +243,16 @@ const Reconciliation = () => {
         if (field !== 'status') {
             // handleStopEdit(); // Let EditableCell decide when to stop via onStopEdit
         }
+    };
+
+    const handleRevertToTriage = (id: string) => {
+        bulkUpdate({
+            ids: [id],
+            updates: { status: 'Pending Triage', entity: null as any }
+        });
+        toast.success("Transaction Reverted", {
+            description: "Moved to Pending Triage."
+        });
     };
 
     // Filter for Pending Reconciliation items
@@ -320,16 +365,10 @@ const Reconciliation = () => {
         });
     };
 
-    const handleReconcileSelected = (entity: string) => {
-        const selectedForEntity = Array.from(selectedIds).filter(id => {
-            const tx = transactions.find(t => t.id === id);
-            const txEntity = tx?.entity || (tx?.status?.startsWith('Pending: ') ? tx.status.replace('Pending: ', '') : 'Unassigned');
-            return txEntity === entity;
-        });
+    const handleReconcileSelected = (entity: string, itemIds: string[]) => {
+        if (itemIds.length === 0) return;
 
-        if (selectedForEntity.length === 0) return;
-
-        const sum = selectedForEntity.reduce((acc, id) => {
+        const sum = itemIds.reduce((acc, id) => {
             const tx = transactions.find(t => t.id === id);
             return acc + (tx?.amount || 0);
         }, 0);
@@ -342,13 +381,17 @@ const Reconciliation = () => {
         }
 
         bulkUpdate({
-            ids: selectedForEntity,
+            ids: itemIds,
             updates: { status: 'Reconciled' }
         });
 
-        setSelectedIds(new Set());
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            itemIds.forEach(id => next.delete(id));
+            return next;
+        });
         toast.success("Batch Reconciled", {
-            description: `Successfully reconciled ${selectedForEntity.length} items for ${entity}`
+            description: `Successfully reconciled ${itemIds.length} items for ${entity}`
         });
     };
 
@@ -513,7 +556,7 @@ const Reconciliation = () => {
                                                 </span>
                                             </div>
                                             <Button
-                                                onClick={() => handleReconcileSelected(entity)}
+                                                onClick={() => handleReconcileSelected(entity, selectedForEntity.map(i => i.id))}
                                                 disabled={!isBalanced}
                                                 className={cn(
                                                     "h-12 px-6 font-black transition-all shadow-lg hover:shadow-xl",
@@ -535,12 +578,14 @@ const Reconciliation = () => {
                                         isSelected={selectedIds.has(item.id)}
                                         onToggle={() => toggleSelection(item.id)}
                                         onSplit={handleSplit}
+                                        onRevert={handleRevertToTriage}
                                         currency={settings.currency}
                                         isEditing={editingId === item.id}
                                         editingField={editingField}
                                         onEdit={handleLocalEdit}
                                         onStartEdit={handleStartEdit}
                                         onStopEdit={handleStopEdit}
+                                        onBulkEdit={(id, updates) => bulkUpdate({ ids: [id], updates })}
                                     />
                                 ))}
                             </CardContent>

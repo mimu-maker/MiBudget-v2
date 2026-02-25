@@ -10,8 +10,9 @@ import ProjectedIncomeTable from '@/components/Projection/ProjectedIncomeTable';
 import PasteDataDialog from '@/components/Projection/PasteDataDialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Sparkles, ChevronDown, ChevronUp, Clock, History, TrendingUp, TrendingDown, Scale, ArrowUpRight, ArrowDownRight, Wallet, PieChart, Plus, Trash2, BarChart3 } from 'lucide-react';
+import { Sparkles, ChevronDown, ChevronUp, Clock, History, TrendingUp, TrendingDown, Scale, ArrowUpRight, ArrowDownRight, Wallet, PieChart, Plus, Trash2, BarChart3, UploadCloud } from 'lucide-react';
 import CreateScenarioDialog from '@/components/Projection/CreateScenarioDialog';
+import ScenarioMergeDialog from '@/components/Projection/ScenarioMergeDialog';
 import SuggestProjectionsWizard from '@/components/Projection/SuggestProjectionsWizard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -45,6 +46,8 @@ const Projection = () => {
   const [disabledExpenses, setDisabledExpenses] = useState<Set<string>>(new Set());
   const [slushDialogOpen, setSlushDialogOpen] = useState(false);
   const [slushEditingTx, setSlushEditingTx] = useState<FutureTransaction | null>(null);
+  const [showScenarioMerge, setShowScenarioMerge] = useState(false);
+  const [isMergingScenario, setIsMergingScenario] = useState(false);
   const currentYear = new Date().getFullYear();
   const selectedYear = currentYear.toString();
 
@@ -163,6 +166,24 @@ const Projection = () => {
   const expandAll = (categories: string[]) => setExpandedCategories(new Set(categories));
   const collapseAll = () => setExpandedCategories(new Set());
 
+  const handlePushToBudget = async (parentCategory: BudgetCategory, subCategory: BudgetSubCategory, amount: number) => {
+    if (!budget?.id || !subCategory.id || !parentCategory.id) return;
+    try {
+      await updateSubCategoryBudgetMutation.mutateAsync({
+        categoryId: parentCategory.id,
+        subCategoryId: subCategory.id,
+        amount: amount,
+        targetBudgetId: budget.id,
+        year: currentYear
+      });
+      toast({ title: 'Budget Updated', description: `Successfully pushed ${formatCurrency(amount, settings.currency)} to ${subCategory.name} budget.` });
+      refreshBudget();
+    } catch (e) {
+      console.error('Failed to push to budget', e);
+      toast({ title: 'Error', description: 'Failed to push expected amount to budget', variant: 'destructive' });
+    }
+  };
+
   const handleUpdateBudget = async (parentCategory: BudgetCategory, subCategory: BudgetSubCategory, value: string, type: 'annual' | 'monthly' | 'percent', currentKey: string) => {
     try {
       const numValue = parseFloat(value) || 0;
@@ -218,6 +239,73 @@ const Projection = () => {
       console.error('Failed to update budget', e);
     } finally {
       setEditingBudget(prev => prev === currentKey ? null : prev);
+    }
+  };
+
+  const handleMergeScenario = async (saveBackup: boolean) => {
+    if (!activeScenarioId) return;
+    setIsMergingScenario(true);
+    try {
+      const scenarioName = scenarios.find(s => s.id === activeScenarioId)?.name || 'Scenario';
+
+      // 1. Save backup if requested
+      if (saveBackup) {
+        const { data: backupScenario, error: backupError } = await (supabase.from('scenarios') as any)
+          .insert({ name: `Baseline Backup - ${new Date().toISOString().slice(0, 10)}` })
+          .select()
+          .single();
+
+        if (backupError) throw backupError;
+        if (!backupScenario) throw new Error('Failed to create backup scenario');
+
+        // Copy baseline projections to backup
+        const baselineProjsToCopy = masterProjectionsRaw.map(p => {
+          const { id, actual_amount, is_matched, scenario_id, ...rest } = p;
+          return { ...rest, scenario_id: backupScenario.id };
+        });
+
+        if (baselineProjsToCopy.length > 0) {
+          const { error: copyError } = await (supabase.from('projections') as any).insert(baselineProjsToCopy);
+          if (copyError) throw copyError;
+        }
+      }
+
+      const activeModifications = allProjections.filter(p => p.scenario_id === activeScenarioId);
+
+      // 2. Identify Baseline projections to update/delete/add
+      for (const sp of activeModifications) {
+        const bp = masterProjectionsRaw.find(b => b.category === sp.category && b.stream === sp.stream && b.source === sp.source);
+
+        if (bp) {
+          await updateProjectionMutation.mutateAsync({
+            id: bp.id,
+            updates: {
+              amount: sp.amount,
+              recurring: sp.recurring,
+              date: sp.date,
+              overrides: sp.overrides
+            }
+          });
+        } else {
+          const { id, actual_amount, is_matched, scenario_id, ...rest } = sp;
+          await addProjectionMutation.mutateAsync({
+            ...rest,
+            scenario_id: null
+          });
+        }
+      }
+
+      // 3. Delete the active scenario
+      await deleteScenarioMutation.mutateAsync(activeScenarioId);
+
+      toast({ title: 'Success', description: `Merged ${scenarioName} into Baseline` });
+      setActiveScenarioId(null);
+      setShowScenarioMerge(false);
+    } catch (error) {
+      console.error('Merge error:', error);
+      toast({ title: 'Error', description: 'Failed to merge scenario', variant: 'destructive' });
+    } finally {
+      setIsMergingScenario(false);
     }
   };
 
@@ -523,9 +611,41 @@ const Projection = () => {
         const avgData = subCategoryAverages[matchKey] || { avg6m: 0, avg1y: 0 };
 
         let expectedAmount = sub.budget_amount || 0;
-        const overrideProj = projections.find(p => p.category === cat.name && p.stream === sub.name && p.recurring === 'Monthly');
-        if (overrideProj) {
-          expectedAmount = overrideProj.amount;
+        const defaultProj = projections.find(p => p.category === cat.name && p.stream === sub.name);
+        if (defaultProj) {
+          let total12Months = 0;
+          const start = new Date(defaultProj.date || new Date());
+          const today = new Date();
+          let currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+          for (let i = 0; i < 12; i++) {
+            const mKey = currentMonth.toISOString().slice(0, 7);
+            let monthAmount = defaultProj.amount;
+
+            const monthsDiff = (currentMonth.getFullYear() - start.getFullYear()) * 12 + (currentMonth.getMonth() - start.getMonth());
+
+            if (defaultProj.recurring === 'N/A') {
+              if (defaultProj.date?.slice(0, 7) !== mKey) monthAmount = 0;
+            } else if (defaultProj.recurring === 'Quarterly') {
+              if (monthsDiff < 0 || monthsDiff % 3 !== 0) monthAmount = 0;
+            } else if (defaultProj.recurring === 'Bi-annually') {
+              if (monthsDiff < 0 || monthsDiff % 6 !== 0) monthAmount = 0;
+            } else if (defaultProj.recurring === 'Annually') {
+              if (monthsDiff < 0 || monthsDiff % 12 !== 0) monthAmount = 0;
+            } else {
+              // Monthly
+              if (monthsDiff < 0) monthAmount = 0;
+            }
+
+            if (defaultProj.overrides && defaultProj.overrides[mKey] !== undefined) {
+              monthAmount = defaultProj.overrides[mKey].amount;
+            }
+
+            total12Months += monthAmount;
+            currentMonth.setMonth(currentMonth.getMonth() + 1);
+          }
+
+          expectedAmount = total12Months / 12;
         }
 
         labelGroups[label].push({
@@ -1113,6 +1233,12 @@ const Projection = () => {
                 <span className="text-[10px] font-bold uppercase tracking-widest">
                   Simulation: {scenarios.find(s => s.id === activeScenarioId)?.name}
                 </span>
+                <button
+                  onClick={() => setShowScenarioMerge(true)}
+                  className="ml-2 flex items-center gap-1 text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded hover:bg-blue-200 transition-colors"
+                >
+                  <UploadCloud className="w-3 h-3" /> Apply Scenario
+                </button>
               </div>
             )}
           </div>
@@ -1401,6 +1527,83 @@ const Projection = () => {
                 isScenario={!!activeScenarioId}
                 projectionMode={true}
                 onBatchAdjust={handleBatchAdjust}
+                projections={futureTransactions}
+                onUpdateProjectionValue={async (cat, stream, monthKey, amount, mode) => {
+                  const existing = futureTransactions.find(p => p.stream === stream && p.category === cat);
+                  if (mode === 'single') {
+                    if (existing) {
+                      const newOverrides = { ...(existing.overrides || {}) };
+                      newOverrides[monthKey] = { amount };
+                      await updateProjectionMutation.mutateAsync({ id: existing.id, updates: { overrides: newOverrides } });
+                    } else {
+                      await addProjectionMutation.mutateAsync({
+                        category: cat,
+                        stream,
+                        amount: amount,
+                        date: `${monthKey}-01`,
+                        recurring: 'N/A',
+                        planned: true,
+                        source: stream,
+                        description: `Expense override for ${stream}`,
+                        scenario_id: activeScenarioId || null
+                      });
+                    }
+                  } else {
+                    let recurringStr = 'Monthly';
+                    if (mode === 'quarterly') recurringStr = 'Quarterly';
+                    if (mode === 'biannual') recurringStr = 'Bi-annually';
+                    if (mode === 'annual') recurringStr = 'Annually';
+
+                    if (existing) {
+                      const newOverrides = { ...(existing.overrides || {}) };
+                      if (existing.date && existing.date.slice(0, 7) < monthKey) {
+                        if (existing.recurring === 'Monthly') {
+                          let current = new Date(existing.date);
+                          current.setDate(1);
+                          const target = new Date(`${monthKey}-01`);
+                          while (current < target) {
+                            const key = current.toISOString().slice(0, 7);
+                            if (newOverrides[key] === undefined) {
+                              newOverrides[key] = { amount: existing.amount };
+                            }
+                            current.setMonth(current.getMonth() + 1);
+                          }
+                        } else if (existing.recurring === 'N/A') {
+                          const key = existing.date.slice(0, 7);
+                          if (newOverrides[key] === undefined) {
+                            newOverrides[key] = { amount: existing.amount };
+                          }
+                        }
+                      }
+                      Object.keys(newOverrides).forEach(key => {
+                        if (key >= monthKey) delete newOverrides[key];
+                      });
+
+                      await updateProjectionMutation.mutateAsync({
+                        id: existing.id,
+                        updates: {
+                          amount: amount,
+                          recurring: recurringStr,
+                          date: `${monthKey}-01`,
+                          overrides: newOverrides
+                        }
+                      });
+                    } else {
+                      await addProjectionMutation.mutateAsync({
+                        category: cat,
+                        stream,
+                        amount: amount,
+                        date: `${monthKey}-01`,
+                        recurring: recurringStr,
+                        planned: true,
+                        source: stream,
+                        scenario_id: activeScenarioId || null,
+                        description: `Scheduled expense for ${stream}`
+                      });
+                    }
+                  }
+                }}
+                onPushToBudget={handlePushToBudget}
               />
             </div>
           </div>
@@ -1488,6 +1691,19 @@ const Projection = () => {
         onOpenChange={setShowCreateScenario}
         onSuccess={(id) => setActiveScenarioId(id)}
       />
+
+      {activeScenarioId && (
+        <ScenarioMergeDialog
+          isOpen={showScenarioMerge}
+          onOpenChange={setShowScenarioMerge}
+          scenarioName={scenarios.find(s => s.id === activeScenarioId)?.name || 'Scenario'}
+          scenarioProjections={allProjections.filter(p => p.scenario_id === activeScenarioId)}
+          baselineProjections={masterProjectionsRaw}
+          onApply={handleMergeScenario}
+          isApplying={isMergingScenario}
+        />
+      )}
+
       <SlushFundAddDialog
         open={slushDialogOpen}
         onOpenChange={(open) => { setSlushDialogOpen(open); if (!open) setSlushEditingTx(null); }}
