@@ -11,6 +11,7 @@ import {
     CommandSeparator
 } from "@/components/ui/command";
 import { useGroupedCategories, usePopularCategories } from "@/hooks/useBudgetCategories";
+import { useSettings } from "@/hooks/useSettings";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +47,7 @@ export const CategorySelectContent = ({
     transactionAmount
 }: CategorySelectContentProps) => {
     const { income, feeders, expenses, slush, isLoading } = useGroupedCategories();
+    const { settings } = useSettings();
     const { data: popular = [] } = usePopularCategories(suggestionLimit);
 
     if (isLoading) {
@@ -203,7 +205,7 @@ export const CategorySelectContent = ({
                     {transactionAmount !== undefined && transactionAmount > 0 && renderGroup('Income', income, true)}
 
                     {/* Show Feeder Budgets */}
-                    {feeders.map((f, idx) => {
+                    {settings.enableFeederBudgets && feeders.map((f, idx) => {
                         return renderGroup(`Feeder: ${f.name}`, f.categories, true);
                     })}
 

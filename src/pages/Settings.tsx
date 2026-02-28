@@ -71,58 +71,46 @@ const Settings = () => {
           <UnifiedCategoryManager />
 
           {/* Budget Balancing Card */}
-          <Card className="border-slate-200 shadow-sm bg-white opacity-60">
-            <CardHeader className="pb-4 border-b bg-slate-50/50 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                  Budget Balancing
-                  <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-600 border-amber-200 font-bold uppercase">Pending</Badge>
-                </CardTitle>
-                <CardDescription>Automatically overflow unspent budget to any category or sub-category you want.</CardDescription>
-              </div>
-              <Switch
-                checked={false}
-                disabled={true}
-                onCheckedChange={() => { }}
-              />
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="space-y-4">
-                <Alert className="bg-amber-50 border-amber-100 py-3">
-                  <AlertTriangle className="w-4 h-4 text-amber-600" />
-                  <AlertTitle className="text-amber-800 text-xs font-bold uppercase">Work in Progress</AlertTitle>
-                  <AlertDescription className="text-[11px] text-amber-700 leading-normal">
-                    The Budget Balancing feature is currently disabled while the logic is being refactored.
-                    Surplus/Deficit management is not functional at this time.
-                  </AlertDescription>
-                </Alert>
-
-                <div className="opacity-40 pointer-events-none grayscale">
-                  <p className="text-sm text-slate-600 mb-4">
-                    When enabled, any monthly budget surplus (or deficit) will be automatically applied to this category.
-                  </p>
-                  <div className="flex flex-col md:flex-row gap-4 items-end">
-                    <div className="flex-1 space-y-2">
-                      <Label className="text-xs uppercase font-bold text-slate-500">Target Category</Label>
-                      <Select disabled={true}>
-                        <SelectTrigger className="h-10 bg-white">
-                          <SelectValue placeholder="Disabled..." />
-                        </SelectTrigger>
-                      </Select>
-                    </div>
-                    <div className="flex-1 space-y-2">
-                      <Label className="text-xs uppercase font-bold text-slate-500">Target Sub-category</Label>
-                      <Select disabled={true}>
-                        <SelectTrigger className="h-10 bg-white">
-                          <SelectValue placeholder="Disabled..." />
-                        </SelectTrigger>
-                      </Select>
+          {settings.enableBudgetBalancing && (
+            <Card className="border-slate-200 shadow-sm bg-white">
+              <CardHeader className="pb-4 border-b bg-slate-50/50 flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                    Budget Balancing
+                    <Badge variant="outline" className="text-[10px] bg-indigo-50 text-indigo-600 border-indigo-200 font-bold uppercase">Beta</Badge>
+                  </CardTitle>
+                  <CardDescription>Automatically overflow unspent budget to any category or sub-category you want.</CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <div className="space-y-4">
+                  <div className="opacity-40 pointer-events-none grayscale">
+                    <p className="text-sm text-slate-600 mb-4">
+                      When enabled, any monthly budget surplus (or deficit) will be automatically applied to this category.
+                    </p>
+                    <div className="flex flex-col md:flex-row gap-4 items-end">
+                      <div className="flex-1 space-y-2">
+                        <Label className="text-xs uppercase font-bold text-slate-500">Target Category</Label>
+                        <Select disabled={true}>
+                          <SelectTrigger className="h-10 bg-white">
+                            <SelectValue placeholder="Disabled..." />
+                          </SelectTrigger>
+                        </Select>
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <Label className="text-xs uppercase font-bold text-slate-500">Target Sub-category</Label>
+                        <Select disabled={true}>
+                          <SelectTrigger className="h-10 bg-white">
+                            <SelectValue placeholder="Disabled..." />
+                          </SelectTrigger>
+                        </Select>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="users" className="space-y-6">

@@ -9,16 +9,7 @@ export const PeriodSelector = () => {
     const { selectedPeriod, setSelectedPeriod, customDateRange, setCustomDateRange } = usePeriod();
 
     const specialOptions = React.useMemo(() => {
-        const now = new Date();
-        const month = getMonth(now); // 0-indexed
-        const quarter = getQuarter(now);
-
         const options: { label: string, value: string }[] = [];
-
-        // This Year (only if in second half: month >= 6)
-        if (month >= 6) {
-            options.push({ label: 'This Year', value: 'This Year' });
-        }
 
         // Year to Date
         options.push({ label: 'Year to Date', value: 'Year to Date' });
@@ -88,6 +79,7 @@ export const PeriodSelector = () => {
                     <DatePickerWithRange
                         date={customDateRange}
                         setDate={setCustomDateRange}
+                        maxDate={new Date()}
                     />
                 </div>
             )}

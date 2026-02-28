@@ -54,9 +54,11 @@ interface FilterableHeaderProps {
   options?: string[];
   resolutionFilter?: string;
   statusOptions?: string[];
+  subCategoryMap?: Record<string, string[]>;
+  categoryFilter?: string[];
 }
 
-const FilterableHeader = ({ field, onFilter, onClearFilter, currentFilter, options = [], resolutionFilter, statusOptions = [] }: FilterableHeaderProps) => {
+const FilterableHeader = ({ field, onFilter, onClearFilter, currentFilter, options = [], resolutionFilter, statusOptions = [], categoryFilter, subCategoryMap }: FilterableHeaderProps) => {
   // Helper for multi-select toggle
   const toggleOption = (option: string) => {
     const current = Array.isArray(currentFilter) ? currentFilter : [];
@@ -201,8 +203,71 @@ const FilterableHeader = ({ field, onFilter, onClearFilter, currentFilter, optio
                     selectedValues={Array.isArray(currentFilter) ? currentFilter : []}
                     hideSuggestions={true}
                   />
+                ) : field === 'sub_category' && categoryFilter && subCategoryMap ? (
+                  <>
+                    {(() => {
+                      const associated = categoryFilter.flatMap(cat => subCategoryMap[cat] || []);
+                      const associatedSet = new Set(associated);
+                      const onTop = options.filter(s => associatedSet.has(s));
+                      const rest = options.filter(s => !associatedSet.has(s));
+
+                      return (
+                        <>
+                          {onTop.length > 0 && (
+                            <CommandGroup heading={`Sub-categories for ${categoryFilter.join(', ')}`}>
+                              {onTop.map((option) => (
+                                <CommandItem
+                                  key={option}
+                                  value={option}
+                                  onSelect={() => toggleOption(option)}
+                                  className="text-xs"
+                                >
+                                  <div
+                                    className={cn(
+                                      "mr-2 flex h-3 w-3 items-center justify-center rounded-sm border border-primary",
+                                      isSelected(option)
+                                        ? "bg-primary text-primary-foreground"
+                                        : "opacity-50 [&_svg]:invisible"
+                                    )}
+                                  >
+                                    <Check className={cn("h-3 w-3")} />
+                                  </div>
+                                  <span className="font-medium text-blue-700">{option || '(Empty)'}</span>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          )}
+                          {onTop.length > 0 && rest.length > 0 && <CommandSeparator />}
+                          {rest.length > 0 && (
+                            <CommandGroup heading={onTop.length > 0 ? "Other Sub-categories" : "All Sub-categories"}>
+                              {rest.map((option) => (
+                                <CommandItem
+                                  key={option}
+                                  value={option}
+                                  onSelect={() => toggleOption(option)}
+                                  className="text-xs"
+                                >
+                                  <div
+                                    className={cn(
+                                      "mr-2 flex h-3 w-3 items-center justify-center rounded-sm border border-primary",
+                                      isSelected(option)
+                                        ? "bg-primary text-primary-foreground"
+                                        : "opacity-50 [&_svg]:invisible"
+                                    )}
+                                  >
+                                    <Check className={cn("h-3 w-3")} />
+                                  </div>
+                                  <span>{option || '(Empty)'}</span>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </>
                 ) : (
-                  <CommandGroup>
+                  <CommandGroup heading={field === 'sub_category' ? "All Sub-categories" : undefined}>
                     {options.map((option) => (
                       <CommandItem
                         key={option}
@@ -327,6 +392,7 @@ interface TransactionsTableHeaderProps {
   filterOptions: {
     categories: string[];
     subCategories: string[];
+    subCategoryMap?: Record<string, string[]>;
     statuses: string[];
     recurring: string[];
     sources: string[];
@@ -397,7 +463,15 @@ export const TransactionsTableHeader = ({
         <SortableHeader field="sub_category" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort}>
           <div className="flex items-center space-x-1">
             <span>Sub-category</span>
-            <FilterableHeader field="sub_category" onFilter={onFilter} onClearFilter={onClearFilter} currentFilter={filters.sub_category} options={filterOptions.subCategories} />
+            <FilterableHeader
+              field="sub_category"
+              onFilter={onFilter}
+              onClearFilter={onClearFilter}
+              currentFilter={filters.sub_category}
+              options={filterOptions.subCategories}
+              subCategoryMap={filterOptions.subCategoryMap}
+              categoryFilter={filters.category}
+            />
           </div>
         </SortableHeader>
 

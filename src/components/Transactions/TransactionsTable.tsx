@@ -76,18 +76,38 @@ export const TransactionsTable = () => {
   const { income, feeders, slush, expenses, isLoading: isCategoriesLoading } = useGroupedCategories();
 
   const filterOptions = useMemo(() => {
-    const allSubCategories = Object.values(settings.subCategories).flat();
-    const uniqueSubCategories = Array.from(new Set(allSubCategories));
+    // Collect all sub-categories from categories retrieved via hook
+    const subCatMap: Record<string, string[]> = {};
+    const allHookSubCats: string[] = [];
+
+    [...income, ...slush, ...expenses].forEach(cat => {
+      const subs = (cat.sub_categories || []).map((s: any) => s.name);
+      subCatMap[cat.name] = subs;
+      allHookSubCats.push(...subs);
+    });
+
+    feeders.forEach(f => {
+      f.categories.forEach(cat => {
+        const subs = (cat.sub_categories || []).map((s: any) => s.name);
+        subCatMap[cat.name] = subs;
+        allHookSubCats.push(...subs);
+      });
+    });
+
+    // Also include sub-categories from settings for safety/completeness
+    const settingsSubCats = Object.values(settings.subCategories).flat();
+    const allUniqueSubCategories = Array.from(new Set([...allHookSubCats, ...settingsSubCats]));
+
     const uniqueRecurring = Array.from(new Set(transactions.map(t => t.recurring).filter(Boolean)));
 
-    // Construct the custom sorted list: Income -> Feeders -> Slush -> Expenses
-    // We use the names from the hook's result
+    // Construct the custom sorted list for categories: Income -> Feeders -> Slush -> Expenses
     let sortedCategories: string[] = [];
 
     if (!isCategoriesLoading && (income.length > 0 || expenses.length > 0)) {
       const incomeNames = income.map(c => c.name);
-      // Flatten all feeder categories
-      const feederNames = feeders.flatMap(f => f.categories.map(c => c.name));
+      const feederNames = settings.enableFeederBudgets
+        ? feeders.flatMap(f => f.categories.map(c => c.name))
+        : [];
       const slushNames = slush.map(c => c.name);
       const expenseNames = expenses.map(c => c.name);
 
@@ -98,26 +118,38 @@ export const TransactionsTable = () => {
         ...slushNames
       ];
 
-      // Safety check: if for some reason the database list is empty, fall back to settings
       if (sortedCategories.length === 0) {
         sortedCategories = settings.categories;
       }
     } else {
-      // Fallback to settings if loading or no data
       sortedCategories = settings.categories;
     }
 
-    // Filter out duplicates just in case
     sortedCategories = Array.from(new Set(sortedCategories));
+
+    // Intelligence for sub-category filter priorities
+    let finalSubCategories = [...allUniqueSubCategories].sort((a, b) => a.localeCompare(b));
+    const activeCats = filters.category;
+
+    if (activeCats && Array.isArray(activeCats) && activeCats.length > 0) {
+      const associated = activeCats.flatMap(cat => subCatMap[cat] || settings.subCategories[cat] || []);
+      const associatedSet = new Set(associated);
+
+      const onTop = allUniqueSubCategories.filter(s => associatedSet.has(s)).sort((a, b) => a.localeCompare(b));
+      const rest = allUniqueSubCategories.filter(s => !associatedSet.has(s)).sort((a, b) => a.localeCompare(b));
+
+      finalSubCategories = [...onTop, ...rest];
+    }
 
     return {
       categories: sortedCategories,
-      subCategories: uniqueSubCategories,
+      subCategories: finalSubCategories,
+      subCategoryMap: { ...settings.subCategories, ...subCatMap },
       statuses: APP_STATUSES,
       recurring: uniqueRecurring,
       sources: Array.from(knownSources)
     };
-  }, [settings, transactions, income, feeders, slush, expenses, isCategoriesLoading, knownSources]);
+  }, [settings, transactions, income, feeders, slush, expenses, isCategoriesLoading, knownSources, filters.category]);
 
   const [addTransactionsOpen, setAddTransactionsOpen] = useState(false);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
@@ -278,19 +310,18 @@ export const TransactionsTable = () => {
             variant="outline"
             size="sm"
             onClick={() => {
-              if (Array.isArray(filters.status) && filters.status.includes('Pending Triage')) {
-                const next = filters.status.filter((s: string) => s !== 'Pending Triage');
-                if (next.length) handleFilter('status', next); else clearFilter('status');
+              if (Array.isArray(filters.status) && filters.status.length === 1 && filters.status[0] === 'Pending Triage') {
+                clearFilter('status');
               } else {
-                handleFilter('status', [...(Array.isArray(filters.status) ? filters.status : []), 'Pending Triage']);
+                handleFilter('status', ['Pending Triage']);
               }
             }}
             className={cn(
               "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5",
-              Array.isArray(filters.status) && filters.status.includes('Pending Triage') ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100" : "bg-white text-slate-500 hover:bg-slate-50"
+              Array.isArray(filters.status) && filters.status.length === 1 && filters.status[0] === 'Pending Triage' ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100" : "bg-white text-slate-500 hover:bg-slate-50"
             )}
           >
-            <Zap className={cn("w-3 h-3", Array.isArray(filters.status) && filters.status.includes('Pending Triage') ? "fill-amber-500 text-amber-500" : "")} />
+            <Zap className={cn("w-3 h-3", Array.isArray(filters.status) && filters.status.length === 1 && filters.status[0] === 'Pending Triage' ? "fill-amber-500 text-amber-500" : "")} />
             PENDING TRIAGE
           </Button>
 
@@ -298,19 +329,18 @@ export const TransactionsTable = () => {
             variant="outline"
             size="sm"
             onClick={() => {
-              if (Array.isArray(filters.status) && filters.status.includes('Pending Reconciliation')) {
-                const next = filters.status.filter((s: string) => s !== 'Pending Reconciliation');
-                if (next.length) handleFilter('status', next); else clearFilter('status');
+              if (Array.isArray(filters.status) && filters.status.length === 1 && filters.status[0] === 'Pending Reconciliation') {
+                clearFilter('status');
               } else {
-                handleFilter('status', [...(Array.isArray(filters.status) ? filters.status : []), 'Pending Reconciliation']);
+                handleFilter('status', ['Pending Reconciliation']);
               }
             }}
             className={cn(
               "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5",
-              Array.isArray(filters.status) && filters.status.includes('Pending Reconciliation') ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" : "bg-white text-slate-500 hover:bg-slate-50"
+              Array.isArray(filters.status) && filters.status.length === 1 && filters.status[0] === 'Pending Reconciliation' ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" : "bg-white text-slate-500 hover:bg-slate-50"
             )}
           >
-            <Clock className={cn("w-3 h-3", Array.isArray(filters.status) && filters.status.includes('Pending Reconciliation') ? "text-blue-500" : "")} />
+            <Clock className={cn("w-3 h-3", Array.isArray(filters.status) && filters.status.length === 1 && filters.status[0] === 'Pending Reconciliation' ? "text-blue-500" : "")} />
             PENDING RECON
           </Button>
 
@@ -360,18 +390,23 @@ export const TransactionsTable = () => {
             variant="outline"
             size="sm"
             onClick={() => {
-              if (Array.isArray(filters.category) && filters.category.some(c => slush.map(s => s.name).includes(c))) {
+              const slushNames = slush.map(s => s.name);
+              const hasAllSlush = Array.isArray(filters.category) &&
+                filters.category.length === slushNames.length &&
+                filters.category.every(c => slushNames.includes(c));
+
+              if (hasAllSlush) {
                 clearFilter('category');
               } else {
-                handleFilter('category', slush.map(s => s.name));
+                handleFilter('category', slushNames);
               }
             }}
             className={cn(
               "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5",
-              Array.isArray(filters.category) && filters.category.some(c => slush.map(s => s.name).includes(c)) ? "bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100" : "bg-white text-slate-500 hover:bg-slate-50"
+              Array.isArray(filters.category) && filters.category.length === slush.length && filters.category.every(c => slush.map(s => s.name).includes(c)) ? "bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100" : "bg-white text-slate-500 hover:bg-slate-50"
             )}
           >
-            <Calculator className={cn("w-3 h-3", Array.isArray(filters.category) && filters.category.some(c => slush.map(s => s.name).includes(c)) ? "text-rose-500" : "")} />
+            <Calculator className={cn("w-3 h-3", Array.isArray(filters.category) && filters.category.length === slush.length && filters.category.every(c => slush.map(s => s.name).includes(c)) ? "text-rose-500" : "")} />
             SLUSH FUND
           </Button>
 

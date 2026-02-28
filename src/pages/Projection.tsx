@@ -10,11 +10,12 @@ import ProjectedIncomeTable from '@/components/Projection/ProjectedIncomeTable';
 import PasteDataDialog from '@/components/Projection/PasteDataDialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Sparkles, ChevronDown, ChevronUp, Clock, History, TrendingUp, TrendingDown, Scale, ArrowUpRight, ArrowDownRight, Wallet, PieChart, Plus, Trash2, BarChart3, UploadCloud } from 'lucide-react';
 import CreateScenarioDialog from '@/components/Projection/CreateScenarioDialog';
 import ScenarioMergeDialog from '@/components/Projection/ScenarioMergeDialog';
 import SuggestProjectionsWizard from '@/components/Projection/SuggestProjectionsWizard';
+import SummaryPane from '@/components/Projection/SummaryPane';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { PiggyBank, Sparkles, ChevronDown, ChevronUp, Clock, History, TrendingUp, TrendingDown, Scale, ArrowUpRight, ArrowDownRight, Wallet, PieChart, Plus, Trash2, BarChart3, UploadCloud } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
@@ -1298,12 +1299,32 @@ const Projection = () => {
       </div>
 
 
-
-      {/* Summary Tiles Hidden for now
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
-        ... tiles content ...
+        <SummaryPane
+          title="Total Income"
+          value={projectionData[0]?.income + projectionData[0]?.feeder || 0}
+          data={projectionData.map(d => (d.income || 0) + (d.feeder || 0))}
+          color="green"
+          icon={TrendingUp}
+          currency={settings.currency}
+        />
+        <SummaryPane
+          title="Total Expenses"
+          value={projectionData[0]?.expense + projectionData[0]?.slush || 0}
+          data={projectionData.map(d => (d.expense || 0) + (d.slush || 0))}
+          color="red"
+          icon={TrendingDown}
+          currency={settings.currency}
+        />
+        <SummaryPane
+          title="Net Savings"
+          value={projectionData[0]?.value || 0}
+          data={projectionData.map(d => d.value || 0)}
+          color="yellow"
+          icon={PiggyBank}
+          currency={settings.currency}
+        />
       </div>
-      */}
 
       <ProjectionChart
         data={projectionData}
@@ -1610,7 +1631,7 @@ const Projection = () => {
         )}
 
         {/* Feeder Budgets */}
-        {klintemarkenDataEnhanced.length > 0 && (
+        {settings.enableFeederBudgets && klintemarkenDataEnhanced.length > 0 && (
           <div key="klintemarken" className="bg-white/70 backdrop-blur-xl rounded-[2rem] border border-slate-200/60 p-6 shadow-sm animate-in fade-in duration-500 delay-100">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-black text-blue-900 tracking-tight flex items-center gap-2">

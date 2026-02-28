@@ -59,8 +59,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Dev Bypass Logic
     const bypass = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
-    if (bypass) {
-      console.warn('⚠️ Bypassing Supabase login (dev mode)');
+    const screenshotBypass = import.meta.env.VITE_E2E_SCREENSHOTS === 'true';
+
+    if (bypass || screenshotBypass) {
+      console.warn('⚠️ Bypassing Supabase login (dev/screenshot mode)');
       const mockUser = {
         id: 'dev-user',
         email: 'dev@example.com',

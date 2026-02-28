@@ -19,39 +19,47 @@ export const getPeriodInterval = (period: Period, customRange?: DateRange): { st
 
     if (/^\d{4}$/.test(period)) {
         const year = parseInt(period);
-        return { start: new Date(year, 0, 1), end: new Date(year, 11, 31, 23, 59, 59) };
+        const start = new Date(year, 0, 1);
+        const end = new Date(year, 11, 31, 23, 59, 59);
+        return { start, end: end > now ? now : end }; // Cap year to current day if it's the current or future year
     }
 
     switch (period) {
         case 'All':
-            return { start: new Date(2000, 0, 1), end: new Date(2030, 11, 31, 23, 59, 59) };
+            return { start: new Date(2000, 0, 1), end: now };
         case 'Custom':
             if (customRange?.from) {
-                return { start: customRange.from, end: customRange.to || customRange.from };
+                const to = customRange.to || customRange.from;
+                return {
+                    start: customRange.from,
+                    end: to > now ? now : to
+                };
             }
-            return { start: startOfYear(now), end: endOfYear(now) }; // Fallback
+            return { start: startOfYear(now), end: now }; // Fallback
         case 'This month':
-            return { start: startOfMonth(now), end: endOfMonth(now) };
+            return { start: startOfMonth(now), end: now };
         case 'Last Month':
             const lastMonth = subMonths(now, 1);
             return { start: startOfMonth(lastMonth), end: endOfMonth(lastMonth) };
         case 'This Quarter':
-            return { start: startOfQuarter(now), end: endOfQuarter(now) };
+            return { start: startOfQuarter(now), end: now };
         case 'Last Quarter':
             const lastQuarter = subQuarters(now, 1);
             return { start: startOfQuarter(lastQuarter), end: endOfQuarter(lastQuarter) };
         case 'This Year':
-            return { start: startOfYear(now), end: endOfYear(now) };
+        case 'Year to Date':
+            return { start: startOfYear(now), end: now };
         case 'Last Year':
             const lastYear = subYears(now, 1);
             return { start: startOfYear(lastYear), end: endOfYear(lastYear) };
-        case 'Year to Date':
-            return { start: startOfYear(now), end: now };
         case 'Last 6M':
             const sixMonthsAgo = subMonths(now, 5);
-            return { start: startOfMonth(sixMonthsAgo), end: endOfMonth(now) };
+            return { start: startOfMonth(sixMonthsAgo), end: now };
         default:
-            return { start: startOfYear(now), end: endOfYear(now) };
+            // This block handles cases where 'period' might be a year string,
+            // but the initial check already covers it.
+            // This default fallback ensures a valid interval is always returned.
+            return { start: startOfYear(now), end: now };
     }
 };
 

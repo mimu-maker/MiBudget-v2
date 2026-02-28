@@ -6,6 +6,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CategorySelectContent } from '@/components/Budget/CategorySelectContent';
+import { SubCategorySelector } from '@/components/Budget/SubCategorySelector';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Transaction, useTransactionTable } from './hooks/useTransactionTable';
@@ -214,22 +215,15 @@ export const EditableCell = ({
               </SelectContent>
             </Select>
           ) : (
-            <SmartSelector
-              value={displayValue}
-              onValueChange={(newValue) => {
-                if (newValue === 'add-new') {
-                  handleSubCategoryChange(newValue);
-                } else {
-                  onEdit(transaction.id, field, newValue);
-                }
+            <SubCategorySelector
+              value={field === 'sub_category' ? transaction.sub_category : null}
+              currentCategory={field === 'sub_category' ? transaction.category : null}
+              displaySubCategories={displaySubCategories || {}}
+              onValueChange={(cat, sub) => {
+                onBulkEdit(transaction.id, { category: cat, sub_category: sub });
               }}
               onOpenChange={(open) => !open && onStopEdit()}
-              disabled={field === 'sub_category' && !transaction.category}
-              options={[
-                ...options[field].map(o => ({ label: o, value: o })),
-                ...(field === 'sub_category' ? [{ label: '+ Add New Sub-category', value: 'add-new' }] : [])
-              ]}
-              placeholder={field === 'sub_category' && !transaction.category ? "Select a category first" : "Select..."}
+              onAddSubCategory={() => handleSubCategoryChange('add-new')}
               className="h-8 min-w-[140px]"
             />
           )}

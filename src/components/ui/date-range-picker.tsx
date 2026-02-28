@@ -18,12 +18,14 @@ interface DatePickerWithRangeProps {
     className?: string
     date: DateRange | undefined
     setDate: (date: DateRange | undefined) => void
+    maxDate?: Date
 }
 
 export function DatePickerWithRange({
     className,
     date,
     setDate,
+    maxDate,
 }: DatePickerWithRangeProps) {
     const [tempDate, setTempDate] = React.useState<DateRange | undefined>(date);
     const [isOpen, setIsOpen] = React.useState(false);
@@ -91,6 +93,7 @@ export function DatePickerWithRange({
                         selected={tempDate}
                         onSelect={setTempDate}
                         numberOfMonths={2}
+                        disabled={maxDate ? { after: maxDate } : undefined}
                     />
                 </PopoverContent>
             </Popover>

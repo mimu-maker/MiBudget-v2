@@ -263,8 +263,8 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
         </td>
 
         <td className="py-3 px-1 w-[1%] whitespace-nowrap">
-          <Badge variant={transaction.status === 'Completed' || transaction.status === 'Reconciled' ? 'outline' : 'secondary'} className="text-[10px] uppercase font-bold text-slate-500">
-            {transaction.status}
+          <Badge variant={transaction.status === 'Completed' || transaction.status === 'Reconciled' || (isReconItem && transaction.status === 'Complete') ? 'outline' : 'secondary'} className="text-[10px] uppercase font-bold text-slate-500">
+            {isReconItem && (transaction.status === 'Complete' || transaction.status === 'Completed') ? 'Reconciled' : transaction.status}
           </Badge>
         </td>
         <td className="py-3 px-2">
@@ -304,7 +304,7 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onCellEdit(transaction.id, 'status', 'Complete')}
+              onClick={() => onCellEdit(transaction.id, 'status', isReconItem ? 'Reconciled' : 'Complete')}
               className="text-muted-foreground hover:text-emerald-600 transition-colors h-8 w-8 p-0"
               title="Confirm / Mark Complete"
             >

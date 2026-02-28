@@ -7,6 +7,7 @@ import { useOverviewData } from '@/components/Overview/hooks/useOverviewData';
 import { formatCurrency } from '@/lib/formatUtils';
 import { cn } from '@/lib/utils';
 import BudgetSankey from '@/components/Budget/BudgetSankey';
+import SummaryPane from '@/components/Projection/SummaryPane';
 
 export const MainOverview = () => {
   const [localIncludeCore, setLocalIncludeCore] = useState(true);
@@ -178,68 +179,32 @@ export const MainOverview = () => {
     <div className="space-y-6">
       <div className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 group hover:shadow-emerald-500/10 transition-all duration-300">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <LucideIcons.TrendingUp className="w-16 h-16 text-emerald-500" />
-            </div>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-black text-emerald-600/70 uppercase tracking-[0.2em]">Total Income</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-black text-emerald-500 tracking-tight">
-                {formatCurrency(summary.income, settings.currency, amountFormat)}
-              </div>
-              <div className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-emerald-600/60 uppercase">
-                <LucideIcons.ArrowUpRight className="w-3 h-3" />
-                Verified Sources
-              </div>
-            </CardContent>
-          </Card>
+          <SummaryPane
+            title="Total Income"
+            value={summary.income}
+            data={balanceTrend.map(d => d.income || 0)}
+            color="green"
+            icon={LucideIcons.TrendingUp}
+            currency={settings.currency}
+          />
 
-          <Card className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br from-rose-500/10 to-rose-500/5 group hover:shadow-rose-500/10 transition-all duration-300">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <LucideIcons.TrendingDown className="w-16 h-16 text-rose-500" />
-            </div>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-black text-rose-600/70 uppercase tracking-[0.2em]">Total Expenses</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col">
-                <div className="text-3xl font-black text-rose-500 tracking-tight">
-                  {formatCurrency(summary.expense, settings.currency, amountFormat)}
-                </div>
-                {radarData.length > 0 && (
-                  <div className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-rose-600/60 uppercase">
-                    <LucideIcons.Target className="w-3 h-3" />
-                    OF {formatCurrency(radarData.reduce((sum, d) => sum + d.budgeted, 0), settings.currency, amountFormat)} BUDGET
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <SummaryPane
+            title="Total Expenses"
+            value={summary.expense}
+            data={balanceTrend.map(d => d.expense || 0)}
+            color="red"
+            icon={LucideIcons.TrendingDown}
+            currency={settings.currency}
+          />
 
-          <Card className={cn(
-            "relative overflow-hidden border-none shadow-lg group transition-all duration-300",
-            netIncome >= 0
-              ? "bg-gradient-to-br from-blue-500/10 to-blue-500/5 hover:shadow-blue-500/10"
-              : "bg-gradient-to-br from-amber-500/10 to-amber-500/5 hover:shadow-amber-500/10"
-          )}>
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <LucideIcons.PiggyBank className={cn("w-16 h-16", netIncome >= 0 ? "text-blue-500" : "text-amber-500")} />
-            </div>
-            <CardHeader className="pb-2">
-              <CardTitle className={cn("text-xs font-black uppercase tracking-[0.2em]", netIncome >= 0 ? "text-blue-600/70" : "text-amber-600/70")}>Net Savings</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className={cn("text-3xl font-black tracking-tight", netIncome >= 0 ? "text-blue-500" : "text-amber-500")}>
-                {formatCurrency(netIncome, settings.currency, amountFormat)}
-              </div>
-              <div className={cn("mt-2 flex items-center gap-1.5 text-[10px] font-bold uppercase", netIncome >= 0 ? "text-blue-600/60" : "text-amber-600/60")}>
-                <LucideIcons.Scale className="w-3 h-3" />
-                {netIncome >= 0 ? "Surplus" : "Deficit"} this period
-              </div>
-            </CardContent>
-          </Card>
+          <SummaryPane
+            title="Net Savings"
+            value={netIncome}
+            data={balanceTrend.map(d => (d.income || 0) - (d.expense || 0))}
+            color="yellow"
+            icon={LucideIcons.PiggyBank}
+            currency={settings.currency}
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-6">
@@ -279,20 +244,22 @@ export const MainOverview = () => {
                   <LucideIcons.ShieldCheck className={cn("w-3 h-3", localIncludeCore ? "fill-emerald-500/50" : "")} />
                   CORE
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => toggleFilter('klintemarken')}
-                  className={cn(
-                    "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
-                    localIncludeKlintemarken
-                      ? "bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20"
-                      : "bg-background border-border text-muted-foreground hover:bg-accent"
-                  )}
-                >
-                  <LucideIcons.Wallet className={cn("w-3 h-3", localIncludeKlintemarken ? "fill-blue-500/50" : "")} />
-                  FEEDER
-                </Button>
+                {settings.enableFeederBudgets && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => toggleFilter('klintemarken')}
+                    className={cn(
+                      "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
+                      localIncludeKlintemarken
+                        ? "bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20"
+                        : "bg-background border-border text-muted-foreground hover:bg-accent"
+                    )}
+                  >
+                    <LucideIcons.Wallet className={cn("w-3 h-3", localIncludeKlintemarken ? "fill-blue-500/50" : "")} />
+                    FEEDER
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

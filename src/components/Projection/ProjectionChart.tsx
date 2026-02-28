@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { ComposedChart, Bar, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from 'recharts';
 import { ProjectionData } from '@/types/projection';
+import { useSettings } from '@/hooks/useSettings';
 
 interface ProjectionChartProps {
   data: ProjectionData[];
@@ -22,6 +23,7 @@ const ProjectionChart = ({
   comparisonLabel = "Baseline",
   unlabeledCategories = []
 }: ProjectionChartProps) => {
+  const { settings } = useSettings();
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
   // Extract all unique sub-category names
@@ -37,8 +39,10 @@ const ProjectionChart = ({
 
         // Handle Feeder Budget dynamically by sign in combinedData mapping, 
         // but add to sets here for Bar generation
-        income.add('Feeder Budget');
-        expense.add('Feeder Budget');
+        if (settings.enableFeederBudgets) {
+          income.add('Feeder Budget');
+          expense.add('Feeder Budget');
+        }
       }
     });
 
@@ -61,7 +65,7 @@ const ProjectionChart = ({
         return a.localeCompare(b);
       })
     };
-  }, [data]);
+  }, [data, settings.enableFeederBudgets]);
 
   // Merge data for the chart
   const combinedData = useMemo(() => {
@@ -80,7 +84,7 @@ const ProjectionChart = ({
 
       // Essential Monthly Net = Income + Feeder - (FC + VE)
       const income = compSource.income || 0;
-      const feeder = compSource.feeder || 0;
+      const feeder = settings.enableFeederBudgets ? (compSource.feeder || 0) : 0;
 
       essentialSum += (income + feeder - fcVeTotal);
       tightSum += (income + feeder - (fcVeTotal * 0.9));
@@ -114,7 +118,7 @@ const ProjectionChart = ({
 
       return row;
     });
-  }, [data, comparisonData]);
+  }, [data, comparisonData, settings.enableFeederBudgets]);
 
   const getIncomeColor = (name: string, index: number) => {
     if (name === 'Feeder Budget') return '#34d399';

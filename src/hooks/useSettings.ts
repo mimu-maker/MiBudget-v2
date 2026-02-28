@@ -18,6 +18,8 @@ export interface AppSettings {
     currency: string;
     darkMode: boolean;
     noiseFilters: string[];
+    enableFeederBudgets: boolean;
+    enableBudgetBalancing: boolean;
     updatedAt: string;
 }
 
@@ -50,6 +52,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     currency: 'DKK',
     darkMode: false,
     noiseFilters: ['MC/VISA', 'VISA/DANKORT', 'DANKORT', 'NETBANK', 'VISA', 'MASTERCARD', 'OVERFØRSEL', 'DEPOT', 'DK', 'K', 'CARD', 'KØB', 'AUT.', 'ONLINE', 'WWW.', 'DK-NOTA', 'SUMUP *', 'IZ *', 'SQUARE *', 'NETS', 'DANKORT-NOTA', 'BETALING', ' Dankort', 'Forretning:', 'FORRETNING:'],
+    enableFeederBudgets: false,
+    enableBudgetBalancing: false,
     updatedAt: new Date().toISOString()
 };
 

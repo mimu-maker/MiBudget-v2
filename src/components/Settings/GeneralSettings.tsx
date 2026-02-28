@@ -9,9 +9,11 @@ import { Loader2, DownloadCloud } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { generateBackupData, downloadBackupFile } from '@/lib/driveExport';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSettings } from '@/hooks/useSettings';
 
 export const GeneralSettings = () => {
     const { userProfile, updateUserProfile, loading } = useProfile();
+    const { settings, saveSettings } = useSettings();
     const { user } = useAuth();
     const { toast } = useToast();
     const [saving, setSaving] = useState(false);
@@ -213,6 +215,49 @@ export const GeneralSettings = () => {
                             {backingUp ? <Loader2 className="h-4 w-4 animate-spin" /> : <DownloadCloud className="h-4 w-4" />}
                             {backingUp ? "Generating Backup..." : "Download Full Data Backup (.json)"}
                         </Button>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card className="border-indigo-200 shadow-sm bg-white overflow-hidden relative">
+                <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+                    <Loader2 className="w-24 h-24 text-indigo-900" />
+                </div>
+                <CardHeader className="pb-4 border-b bg-indigo-50/50">
+                    <CardTitle className="text-lg font-semibold text-indigo-900">Beta Features</CardTitle>
+                    <CardDescription className="text-indigo-700/70">
+                        Experimental features that are not yet fully supported. Use at your own risk.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                            <Label htmlFor="feeder-budgets" className="text-base text-indigo-900 font-bold">Feeder Budgets</Label>
+                            <p className="text-[0.85rem] text-indigo-700/70 max-w-sm">
+                                Enable tracking for feeder budgets (property companies, holdings) separated from your main spending.
+                            </p>
+                        </div>
+                        <Switch
+                            id="feeder-budgets"
+                            checked={settings.enableFeederBudgets}
+                            onCheckedChange={(val) => saveSettings({ enableFeederBudgets: val })}
+                            className="data-[state=checked]:bg-indigo-500"
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between pt-6 border-t border-indigo-100/50 mt-6">
+                        <div className="space-y-0.5">
+                            <Label htmlFor="budget-balancing" className="text-base text-indigo-900 font-bold">Budget Balancing</Label>
+                            <p className="text-[0.85rem] text-indigo-700/70 max-w-sm">
+                                Automatically overflow unspent budget to any category or sub-category you want. Currently experimental.
+                            </p>
+                        </div>
+                        <Switch
+                            id="budget-balancing"
+                            checked={settings.enableBudgetBalancing}
+                            onCheckedChange={(val) => saveSettings({ enableBudgetBalancing: val })}
+                            className="data-[state=checked]:bg-indigo-500"
+                        />
                     </div>
                 </CardContent>
             </Card>

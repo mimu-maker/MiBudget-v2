@@ -26,11 +26,16 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
     const displayLocale = language === 'da-DK' ? da : undefined;
 
     const effectiveInterval = useMemo(() => {
+        const now = new Date();
         if (selectedPeriod === 'All') {
             if (transactions.length > 0) {
                 const dates = transactions.map(t => new Date(t.budget_month || t.date).getTime());
                 const minDate = new Date(Math.min(...dates));
-                const maxDate = new Date(Math.max(...dates));
+                let maxDate = new Date(Math.max(...dates));
+
+                // Cap to now
+                if (maxDate > now) maxDate = now;
+
                 return {
                     start: startOfMonth(minDate),
                     end: endOfMonth(maxDate)
@@ -77,13 +82,17 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
         if (!includeSpecial) {
             filtered = filtered.filter(t => t.budget !== 'Special' && getGroup(t.category) !== 'special');
         }
-        if (!includeKlintemarken) {
+
+        // Respect both the local filter and the global beta feature toggle
+        const effectivelyIncludeKlintemarken = includeKlintemarken && settings.enableFeederBudgets;
+
+        if (!effectivelyIncludeKlintemarken) {
             filtered = filtered.filter(t => t.budget !== 'Klintemarken' && getGroup(t.category) !== 'klintemarken');
         }
         if (!includeCore) {
             filtered = filtered.filter(t => {
                 const isSpecial = t.budget === 'Special' || getGroup(t.category) === 'special';
-                const isKlintemarken = t.budget === 'Klintemarken' || getGroup(t.category) === 'klintemarken';
+                const isKlintemarken = effectivelyIncludeKlintemarken && (t.budget === 'Klintemarken' || getGroup(t.category) === 'klintemarken');
                 // Keep only if it is one of the non-core types
                 return isSpecial || isKlintemarken;
             });
@@ -190,7 +199,7 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
         const expenseCategories = budgetData?.categories.filter(cat => {
             if (cat.category_group === 'expenditure') return includeCore;
             if (cat.category_group === 'special') return includeSpecial;
-            if (cat.category_group === 'klintemarken') return includeKlintemarken;
+            if (cat.category_group === 'klintemarken') return includeKlintemarken && settings.enableFeederBudgets;
             return false;
         }) || [];
         const expenseCategoryNames = new Set(expenseCategories.map(c => c.name));

@@ -8,9 +8,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as LucideIcons from 'lucide-react';
-import { Plus, Trash2, ArrowUp, ArrowDown, CheckCircle2, Circle, ArrowRightLeft, Target, Pencil, ChevronRight, ChevronDown, Sparkles, Activity, TrendingUp, TrendingDown, Layers } from 'lucide-react';
+import { Plus, Trash2, ArrowUp, ArrowDown, CheckCircle2, Circle, ArrowRightLeft, Target, Pencil, ChevronRight, ChevronDown, Sparkles, Activity, TrendingUp, TrendingDown, Layers, List } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMultiYearBudgets, useBudgetGroups, BudgetGroupRecord } from '@/hooks/useBudgetCategories';
+import { SubcategoryTransactionsDialog } from './SubcategoryTransactionsDialog';
 import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
 import { useSettings } from '@/hooks/useSettings';
 import { useToast } from '@/hooks/use-toast';
@@ -148,6 +149,7 @@ export const UnifiedCategoryManager = () => {
     const [isActionPending, setIsActionPending] = useState(false);
     const [feederSectionExpanded, setFeederSectionExpanded] = useState(false);
     const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+    const [viewTxsFor, setViewTxsFor] = useState<{ category: string, sub: string } | null>(null);
 
     const isDbMode = !!userProfile;
     const hasSupabaseCategories = isDbMode && !!dbCategories;
@@ -258,7 +260,7 @@ export const UnifiedCategoryManager = () => {
     const hasTransactions = (subCategoryName: string, year: number) => {
         return transactions.some(t =>
             (t.sub_category?.toLowerCase() === subCategoryName.toLowerCase() ||
-                t.subCategory?.toLowerCase() === subCategoryName.toLowerCase()) &&
+                (t as any).subCategory?.toLowerCase() === subCategoryName.toLowerCase()) &&
             new Date(t.date).getFullYear() === year
         );
     };
@@ -777,6 +779,21 @@ export const UnifiedCategoryManager = () => {
                                                     })}
                                                     <td className="py-2 px-6 text-right">
                                                         <div className="flex justify-end gap-1 items-center opacity-0 group-hover/sub:opacity-100 transition-opacity">
+                                                            <TooltipProvider>
+                                                                <Tooltip>
+                                                                    <TooltipTrigger asChild>
+                                                                        <button
+                                                                            onClick={() => setViewTxsFor({ category: cat, sub: sub })}
+                                                                            className="transition-all duration-200 p-2 rounded-full hover:bg-slate-100/80 active:scale-95"
+                                                                        >
+                                                                            <List className="w-4 h-4 text-slate-400 hover:text-blue-500" />
+                                                                        </button>
+                                                                    </TooltipTrigger>
+                                                                    <TooltipContent side="top" className="bg-slate-900 text-[11px] border-none shadow-xl">
+                                                                        View Transactions
+                                                                    </TooltipContent>
+                                                                </Tooltip>
+                                                            </TooltipProvider>
                                                             {title !== 'Income' && (
                                                                 <Select onValueChange={(val) => { if (hasSupabaseCategories && subRecord) moveSubCategory.mutate({ subCategoryId: subRecord.id, targetCategoryId: categoryMap[val].id }); }}>
                                                                     <SelectTrigger className="h-8 w-8 p-0 border-none bg-transparent hover:bg-blue-50 text-slate-400 hover:text-blue-600 shadow-none [&>svg:last-child]:hidden flex items-center justify-center"><ArrowRightLeft className="w-3.5 h-3.5" /></SelectTrigger>
@@ -874,54 +891,56 @@ export const UnifiedCategoryManager = () => {
                 </div>
 
                 {/* Feeder Budgets Section - Integrated */}
-                <div className="bg-slate-50/30 border-t border-slate-100">
-                    <div
-                        className="p-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between cursor-pointer hover:bg-slate-100/50 transition-colors"
-                        onClick={() => setFeederSectionExpanded(!feederSectionExpanded)}
-                    >
-                        <div className="flex-1">
-                            <h3 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                                <Layers className="w-5 h-5 text-purple-500" />
-                                Feeder Budgets
-                            </h3>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <Badge variant="outline" className="bg-white text-slate-500 border-slate-200 font-medium">
-                                {feederGroups.length} Sources
-                            </Badge>
-                            <div className="flex flex-wrap gap-1 mt-2">
-                                {/* Removed preset badges per user request */}
+                {settings.enableFeederBudgets && (
+                    <div className="bg-slate-50/30 border-t border-slate-100">
+                        <div
+                            className="p-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between cursor-pointer hover:bg-slate-100/50 transition-colors"
+                            onClick={() => setFeederSectionExpanded(!feederSectionExpanded)}
+                        >
+                            <div className="flex-1">
+                                <h3 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                                    <Layers className="w-5 h-5 text-purple-500" />
+                                    Feeder Budgets
+                                </h3>
                             </div>
-                            <Button variant="ghost" size="sm" className="h-8 px-3 text-slate-500">
-                                {feederSectionExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                            </Button>
+                            <div className="flex items-center gap-3">
+                                <Badge variant="outline" className="bg-white text-slate-500 border-slate-200 font-medium">
+                                    {feederGroups.length} Sources
+                                </Badge>
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                    {/* Removed preset badges per user request */}
+                                </div>
+                                <Button variant="ghost" size="sm" className="h-8 px-3 text-slate-500">
+                                    {feederSectionExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                </Button>
+                            </div>
                         </div>
+
+                        {feederSectionExpanded && (
+                            <div className="px-6 pb-6 space-y-4 animate-in slide-in-from-top-2 duration-200">
+                                {feederGroups.map(renderFeederGroup)}
+
+                                {/* Add New Feeder Budget UI */}
+                                <div className="border border-dashed border-slate-200 rounded-lg p-2 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors">
+                                    <div className="flex items-center gap-3 pl-2">
+                                        <Plus className="w-4 h-4 text-slate-400" />
+                                        <span className="text-sm font-medium text-slate-600">Add Feeder Budget</span>
+                                    </div>
+                                    <div className="flex gap-2 items-center">
+                                        <Input
+                                            value={newFeederName}
+                                            onChange={(e) => setNewFeederName(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleAddFeederBudget()}
+                                            placeholder="Name..."
+                                            className="h-8 w-40 text-sm"
+                                        />
+                                        <Button size="sm" onClick={handleAddFeederBudget} disabled={!newFeederName.trim()} className="h-8">Create</Button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
-
-                    {feederSectionExpanded && (
-                        <div className="px-6 pb-6 space-y-4 animate-in slide-in-from-top-2 duration-200">
-                            {feederGroups.map(renderFeederGroup)}
-
-                            {/* Add New Feeder Budget UI */}
-                            <div className="border border-dashed border-slate-200 rounded-lg p-2 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors">
-                                <div className="flex items-center gap-3 pl-2">
-                                    <Plus className="w-4 h-4 text-slate-400" />
-                                    <span className="text-sm font-medium text-slate-600">Add Feeder Budget</span>
-                                </div>
-                                <div className="flex gap-2 items-center">
-                                    <Input
-                                        value={newFeederName}
-                                        onChange={(e) => setNewFeederName(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleAddFeederBudget()}
-                                        placeholder="Name..."
-                                        className="h-8 w-40 text-sm"
-                                    />
-                                    <Button size="sm" onClick={handleAddFeederBudget} disabled={!newFeederName.trim()} className="h-8">Create</Button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
+                )}
             </div>
 
             {/* Funds Out (Expenses + Unplanned) */}
@@ -1033,6 +1052,13 @@ export const UnifiedCategoryManager = () => {
                     <DialogFooter><Button onClick={handleSaveSubCategoryEdit}>Save</Button></DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <SubcategoryTransactionsDialog
+                open={!!viewTxsFor}
+                onOpenChange={(open) => !open && setViewTxsFor(null)}
+                categoryName={viewTxsFor?.category || ''}
+                subCategoryName={viewTxsFor?.sub || ''}
+            />
         </div>
     );
 };
