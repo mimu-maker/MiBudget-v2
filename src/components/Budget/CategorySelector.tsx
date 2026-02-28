@@ -28,6 +28,9 @@ interface CategorySelectorProps {
     disabled?: boolean;
     showAlwaysAsk?: boolean;
     hideSuggestions?: boolean;
+    primaryCategory?: string | null;
+    secondaryCategories?: string[];
+    transactionAmount?: number;
 }
 
 export const CategorySelector = ({
@@ -40,7 +43,10 @@ export const CategorySelector = ({
     suggestionLimit = 3,
     disabled = false,
     showAlwaysAsk = false,
-    hideSuggestions = false
+    hideSuggestions = false,
+    primaryCategory,
+    secondaryCategories,
+    transactionAmount
 }: CategorySelectorProps) => {
     const [open, setOpen] = React.useState(false);
 
@@ -82,6 +88,9 @@ export const CategorySelector = ({
                             suggestionLimit={suggestionLimit}
                             showAlwaysAsk={showAlwaysAsk}
                             hideSuggestions={hideSuggestions}
+                            primaryCategory={primaryCategory}
+                            secondaryCategories={secondaryCategories}
+                            transactionAmount={transactionAmount}
                         />
                     </CommandList>
                 </Command>

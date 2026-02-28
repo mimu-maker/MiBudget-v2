@@ -1,31 +1,36 @@
 import { useMemo, useState } from 'react';
 // Page dealing with pending transactions and offsetting matches
 import { useTransactionTable, Transaction } from '@/components/Transactions/hooks/useTransactionTable';
-import { EditableCell } from '@/components/Transactions/EditableCell';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Check, ArrowRightLeft, X, Sparkles, Split, History, User, Building, Briefcase, AlertCircle, RefreshCw, Pencil } from 'lucide-react';
-import { ReconciliationPivot } from '@/components/Reconciliation/ReconciliationPivot';
-import { formatCurrency } from '@/lib/formatUtils';
+import { Check, ArrowRightLeft, X, Sparkles, History, User, Building, Briefcase, Pencil, Plus, ArrowLeft, HelpCircle } from 'lucide-react';
+import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
 import { cn } from '@/lib/utils';
-import { Toaster, toast } from 'sonner';
+import { toast } from 'sonner';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TransactionDetailDialog } from '@/components/Transactions/TransactionDetailDialog';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { useProfile } from '@/contexts/ProfileContext';
 
-const MatchCard = ({ item1, item2, onMatch, onIgnore, currency }: {
+const MatchCard = ({ item1, item2, onMatch, onIgnore, currency, dateFormat }: {
     item1: Transaction,
     item2: Transaction,
     onMatch: () => void,
     onIgnore: () => void,
-    currency: string
+    currency: string,
+    dateFormat: string
 }) => {
     return (
         <Card className="mb-4 border-dashed border-2 hover:border-solid hover:border-primary/50 transition-all bg-card/50 group">
             <CardContent className="p-4 flex flex-col md:flex-row items-center gap-4">
                 <div className="flex-1 space-y-2 w-full">
                     <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold text-muted-foreground">{item1.date}</span>
+                        <span className="text-xs font-bold text-muted-foreground">{formatDate(item1.date, false, dateFormat)}</span>
                         <div className="flex gap-1">
                             {item1.entity && <Badge variant="secondary" className="bg-amber-100 text-amber-700 hover:bg-amber-200 border-amber-200 text-[10px] uppercase font-black">{item1.entity}</Badge>}
                             <Badge variant="outline" className="text-[10px]">{item1.category}</Badge>
@@ -43,7 +48,7 @@ const MatchCard = ({ item1, item2, onMatch, onIgnore, currency }: {
 
                 <div className="flex-1 space-y-2 w-full text-right md:text-left">
                     <div className="flex justify-between md:flex-row-reverse items-center">
-                        <span className="text-xs font-bold text-muted-foreground">{item2.date}</span>
+                        <span className="text-xs font-bold text-muted-foreground">{formatDate(item2.date, false, dateFormat)}</span>
                         <div className="flex gap-1">
                             {item2.entity && <Badge variant="secondary" className="bg-amber-100 text-amber-700 hover:bg-amber-200 border-amber-200 text-[10px] uppercase font-black">{item2.entity}</Badge>}
                             <Badge variant="outline" className="text-[10px]">{item2.category}</Badge>
@@ -70,190 +75,27 @@ const MatchCard = ({ item1, item2, onMatch, onIgnore, currency }: {
     );
 };
 
-const EntityRow = ({
-    item,
-    isSelected,
-    onToggle,
-    onSplit,
-    onRevert,
-    currency,
-    isEditing,
-    editingField,
-    onEdit,
-    onStartEdit,
-    onStopEdit,
-    onBulkEdit
-}: {
-    item: Transaction,
-    isSelected: boolean,
-    onToggle: () => void,
-    onSplit: (id: string) => void,
-    onRevert: (id: string) => void,
-    currency: string,
-    isEditing: boolean,
-    editingField: keyof Transaction | null,
-    onEdit: (id: string, field: keyof Transaction, value: any) => void,
-    onStartEdit: (id: string, field: keyof Transaction) => void,
-    onStopEdit: () => void,
-    onBulkEdit: (id: string, updates: Partial<Transaction>) => void
-}) => {
-    return (
-        <div
-            className={cn(
-                "group flex items-center gap-4 p-3 bg-card hover:bg-accent/30 border rounded-xl transition-all cursor-pointer",
-                isSelected ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-border/40"
-            )}
-            onClick={onToggle}
-        >
-            <div className="flex items-center justify-center">
-                <div className={cn(
-                    "w-5 h-5 rounded border flex items-center justify-center transition-colors",
-                    isSelected ? "bg-primary border-primary text-white" : "border-muted-foreground/30"
-                )}>
-                    {isSelected && <Check className="w-3 h-3" />}
-                </div>
-            </div>
-
-            <div className="w-[100px]" onClick={(e) => e.stopPropagation()}>
-                <EditableCell
-                    transaction={item}
-                    field="date"
-                    isEditing={isEditing && editingField === 'date'}
-                    onEdit={onEdit}
-                    onStartEdit={onStartEdit}
-                    onStopEdit={onStopEdit}
-                    onBulkEdit={() => { }} // Not needed here
-                />
-            </div>
-
-            <div className="flex-1 flex flex-col min-w-0" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center gap-2">
-                    <EditableCell
-                        transaction={item}
-                        field="source"
-                        isEditing={isEditing && editingField === 'source'}
-                        onEdit={onEdit}
-                        onStartEdit={onStartEdit}
-                        onStopEdit={onStopEdit}
-                        onBulkEdit={() => { }}
-                        customDisplay={
-                            <div className="font-bold text-foreground/90 truncate">{item.source}</div>
-                        }
-                    />
-                    {item.parent_id && (
-                        <Badge variant="outline" className="text-[9px] uppercase tracking-tighter bg-amber-50 text-amber-600 border-amber-200 py-0 px-1.5 h-4 font-black flex items-center gap-1">
-                            SPLIT {item.notes?.replace('Split item from ', '') && <span className="opacity-70 font-semibold truncate max-w-[120px] uppercase tracking-normal text-[9px]">FROM {item.notes.replace('Split item from ', '')}</span>}
-                        </Badge>
-                    )}
-                </div>
-                <div className="text-[10px] text-muted-foreground flex items-center gap-2 mt-1">
-                    <span className="truncate max-w-[150px]">{item.category || 'No Category'}</span>
-                    {item.sub_category && (
-                        <>
-                            <span>•</span>
-                            <span className="truncate max-w-[150px]">{item.sub_category}</span>
-                        </>
-                    )}
-                </div>
-            </div>
-
-            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                <div className={cn("transition-all flex items-center gap-1", (isEditing && editingField === 'status') ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
-                    <EditableCell
-                        transaction={item}
-                        field="status"
-                        isEditing={isEditing && editingField === 'status'}
-                        onEdit={onEdit}
-                        onStartEdit={onStartEdit}
-                        onStopEdit={onStopEdit}
-                        onBulkEdit={onBulkEdit}
-                        customDisplay={
-                            <div
-                                className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent text-muted-foreground hover:text-blue-500 transition-colors"
-                                title="Change Entity / Status"
-                            >
-                                <Building className="w-4 h-4" />
-                            </div>
-                        }
-                    />
-                    {!(isEditing && editingField === 'status') && (
-                        <>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500 transition-all"
-                                onClick={() => onRevert(item.id)}
-                                title="Revert to Triage"
-                            >
-                                <History className="w-4 h-4" />
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 text-muted-foreground hover:text-primary transition-all"
-                                onClick={() => onSplit(item.id)}
-                                title="Partial Refund (Split)"
-                            >
-                                <Split className="w-4 h-4" />
-                            </Button>
-                        </>
-                    )}
-                </div>
-            </div>
-
-            <div className="w-[120px] text-right" onClick={(e) => e.stopPropagation()}>
-                <EditableCell
-                    transaction={item}
-                    field="amount"
-                    isEditing={isEditing && editingField === 'amount'}
-                    onEdit={onEdit}
-                    onStartEdit={onStartEdit}
-                    onStopEdit={onStopEdit}
-                    onBulkEdit={() => { }}
-                />
-            </div>
-        </div>
-    );
-};
-
 const Reconciliation = () => {
-    const { transactions, handleBulkCellEdit, splitTransaction, bulkUpdate, handleCellEdit } = useTransactionTable({ mode: 'all' });
+    const { transactions, bulkUpdate } = useTransactionTable({ mode: 'all' });
     const { settings } = useSettings();
+    const { userProfile } = useProfile();
+    const dateFormat = userProfile?.date_format || 'YY/MM/DD';
     const [ignoredMatches, setIgnoredMatches] = useState<Set<string>>(new Set());
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    const [editingId, setEditingId] = useState<string | null>(null);
-    const [editingField, setEditingField] = useState<keyof Transaction | null>(null);
+
+    // UI states
     const [showHistory, setShowHistory] = useState(false);
     const [renamingEntity, setRenamingEntity] = useState<string | null>(null);
     const [newEntityName, setNewEntityName] = useState("");
 
-    const handleStartEdit = (id: string, field: keyof Transaction) => {
-        setEditingId(id);
-        setEditingField(field);
-    };
+    // Detail Dialog State
+    const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
-    const handleStopEdit = () => {
-        setEditingId(null);
-        setEditingField(null);
-    };
+    // Entity creation
+    const [customEntities, setCustomEntities] = useState<string[]>([]);
 
-    const handleLocalEdit = (id: string, field: keyof Transaction, value: any) => {
-        handleCellEdit(id, field, value);
-        // Don't stop edit immediately for status to allow secondary dropdown
-        if (field !== 'status') {
-            // handleStopEdit(); // Let EditableCell decide when to stop via onStopEdit
-        }
-    };
-
-    const handleRevertToTriage = (id: string) => {
-        bulkUpdate({
-            ids: [id],
-            updates: { status: 'Pending Triage', entity: null as any }
-        });
-        toast.success("Transaction Reverted", {
-            description: "Moved to Pending Triage."
-        });
-    };
+    // Unknown Transactions Note Prompt
+    const [promptingNoteTx, setPromptingNoteTx] = useState<Transaction | null>(null);
+    const [triageNote, setTriageNote] = useState("");
 
     // Filter for Pending Reconciliation items
     const pendingItems = useMemo(() => {
@@ -269,23 +111,53 @@ const Reconciliation = () => {
 
     // Filter for Reconciled items
     const reconciledItems = useMemo(() => {
-        return transactions.filter(t => t.status === 'Reconciled' && (!!t.entity || t.status.startsWith('Pending: ')));
+        return transactions.filter(t => t.status === 'Reconciled');
     }, [transactions]);
 
-    // Group reconciled items by entity
-    const groupedHistory = useMemo(() => {
-        const groups: Record<string, Transaction[]> = {};
-        reconciledItems.forEach(item => {
-            const entity = item.entity || (item.status?.startsWith('Pending: ') ? item.status.replace('Pending: ', '') : 'Reconciled');
-            if (!groups[entity]) groups[entity] = [];
-            groups[entity].push(item);
+    // Get all unique entities from the system
+    const existingEntities = useMemo(() => {
+        const entities = new Set<string>(customEntities);
+        transactions.forEach(t => {
+            if (t.entity) entities.add(t.entity);
         });
-        return groups;
+        return Array.from(entities).sort();
+    }, [transactions, customEntities]);
+
+    // Group reconciled items by entity and session (updated_at mapping)
+    const groupedHistory = useMemo(() => {
+        const groups: Record<string, Record<string, Transaction[]>> = {};
+
+        reconciledItems.forEach(item => {
+            const entity = item.entity || 'Reconciled';
+            // Use updated_at as a session identifier. Quantize it to seconds to catch items from the same bulk update.
+            const session = item.updated_at ? Math.floor(new Date(item.updated_at).getTime() / 1000).toString() : 'legacy';
+
+            if (!groups[entity]) groups[entity] = {};
+            if (!groups[entity][session]) groups[entity][session] = [];
+            groups[entity][session].push(item);
+        });
+
+        // Sort sessions by date (descending) within each entity
+        const sortedGroups: Record<string, Transaction[][]> = {};
+        Object.keys(groups).forEach(entity => {
+            sortedGroups[entity] = Object.values(groups[entity]).sort((a, b) => {
+                const dateA = new Date(a[0].updated_at || 0).getTime();
+                const dateB = new Date(b[0].updated_at || 0).getTime();
+                return dateB - dateA;
+            });
+        });
+
+        return sortedGroups;
     }, [reconciledItems]);
 
     // Group items by entity
     const groupedByEntity = useMemo(() => {
         const groups: Record<string, Transaction[]> = {};
+
+        customEntities.forEach(ce => {
+            if (!groups[ce]) groups[ce] = [];
+        });
+
         pendingItems.forEach(item => {
             let entity = 'Unassigned';
             if (item.entity) {
@@ -297,25 +169,37 @@ const Reconciliation = () => {
                 entity = item.status.replace('Pending ', '');
             }
 
-            if (!groups[entity]) groups[entity] = [];
-            groups[entity].push(item);
+            if (entity !== 'Unassigned') {
+                if (!groups[entity]) groups[entity] = [];
+                groups[entity].push(item);
+            }
         });
         return groups;
+    }, [pendingItems, customEntities]);
+
+    // Unknown transactions
+    const unknownItems = useMemo(() => {
+        return pendingItems.filter(item => {
+            let entity = 'Unassigned';
+            if (item.entity) {
+                entity = item.entity;
+            } else if (item.status && item.status.startsWith('Pending: ')) {
+                entity = item.status.replace('Pending: ', '');
+            } else if (item.status && item.status.startsWith('Pending ') &&
+                !['Pending Triage', 'Pending Categorisation', 'Pending Mapping', 'Pending Validation', 'Pending Reconciliation'].includes(item.status)) {
+                entity = item.status.replace('Pending ', '');
+            }
+            return entity === 'Unassigned';
+        });
     }, [pendingItems]);
 
-    // Find suggested matches (auto-pair same amount)
+    // Find suggested matches 
     const suggestedMatches = useMemo(() => {
         const matches: { item1: Transaction, item2: Transaction }[] = [];
         const processedIds = new Set<string>();
 
         pendingItems.forEach(item => {
             if (processedIds.has(item.id) || ignoredMatches.has(item.id)) return;
-
-            // Search for inverse amount
-            // Constraint: Ideally same entity, but can be cross-entity if amount is exact?
-            // User requested grouping by entity, so let's stick to same entity for auto-pairing to be safe/clear
-
-            let entity = item.entity || (item.status?.startsWith('Pending: ') ? item.status.replace('Pending: ', '') : '');
 
             const match = pendingItems.find(t =>
                 t.id !== item.id &&
@@ -356,71 +240,14 @@ const Reconciliation = () => {
         });
     };
 
-    const toggleSelection = (id: string) => {
-        setSelectedIds(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-        });
-    };
-
-    const handleReconcileSelected = (entity: string, itemIds: string[]) => {
-        if (itemIds.length === 0) return;
-
-        const sum = itemIds.reduce((acc, id) => {
-            const tx = transactions.find(t => t.id === id);
-            return acc + (tx?.amount || 0);
-        }, 0);
-
-        if (Math.abs(sum) > 0.01) {
-            toast.error("Imbalanced Selection", {
-                description: `Selection must sum to 0. Current sum: ${formatCurrency(sum, settings.currency)}`
-            });
-            return;
-        }
-
+    const handleUnreconcile = (id: string, originalEntity?: string) => {
         bulkUpdate({
-            ids: itemIds,
-            updates: { status: 'Reconciled' }
+            ids: [id],
+            updates: { status: 'Pending Reconciliation', entity: originalEntity || undefined }
         });
-
-        setSelectedIds(prev => {
-            const next = new Set(prev);
-            itemIds.forEach(id => next.delete(id));
-            return next;
-        });
-        toast.success("Batch Reconciled", {
-            description: `Successfully reconciled ${itemIds.length} items for ${entity}`
-        });
-    };
-
-    const handleUnreconcile = (id: string) => {
-        handleCellEdit(id, 'status', 'Pending Reconciliation');
         toast.success("Transaction Restored", {
             description: "Moving back to outstanding items."
         });
-    };
-
-    const handleSplit = async (id: string) => {
-        const tx = transactions.find(t => t.id === id);
-        if (!tx) return;
-
-        const input = prompt(`Enter amount for first split part (original: ${tx.amount}):`);
-        if (input === null) return;
-
-        const amount1 = parseFloat(input.replace(',', '.'));
-        if (isNaN(amount1)) {
-            toast.error("Invalid amount");
-            return;
-        }
-
-        try {
-            await splitTransaction(id, amount1);
-            toast.success("Transaction Split Successfully");
-        } catch (e) {
-            toast.error("Split failed");
-        }
     };
 
     const getEntityIcon = (entityName: string) => {
@@ -431,29 +258,82 @@ const Reconciliation = () => {
     };
 
     const handleSaveRename = (oldName: string) => {
+        setRenamingEntity(null);
         if (!newEntityName || newEntityName === oldName) {
-            setRenamingEntity(null);
             return;
         }
 
-        const items = groupedByEntity[oldName];
-        if (!items) return;
+        const items = groupedByEntity[oldName] || [];
 
-        const ids = items.map(i => i.id);
-        bulkUpdate({
-            ids,
-            updates: { entity: newEntityName }
+        // Update names in custom list
+        setCustomEntities(prev => {
+            const next = prev.filter(c => c !== oldName && c !== newEntityName);
+            next.push(newEntityName);
+            return next;
         });
 
-        toast.success("Entity Renamed", {
-            description: `Renamed ${oldName} to ${newEntityName}`
-        });
-        setRenamingEntity(null);
+        if (items.length > 0) {
+            const ids = items.map(i => i.id);
+            bulkUpdate({
+                ids,
+                updates: { entity: newEntityName }
+            });
+            toast.success("Entity Renamed", {
+                description: `Renamed ${oldName} to ${newEntityName}`
+            });
+        }
+    };
+
+    const createNewEntity = () => {
+        const name = prompt("Enter new Entity / Event name:");
+        if (name && name.trim().length > 0) {
+            setCustomEntities(prev => Array.from(new Set([...prev, name.trim()])));
+        }
+    };
+
+    const handleSetPendingTriage = (item: Transaction) => {
+        if (item.notes && item.notes.trim().length > 0) {
+            bulkUpdate({
+                ids: [item.id],
+                updates: { status: 'Pending Triage', entity: null }
+            });
+            toast.success("Moved to Pending Triage");
+        } else {
+            setPromptingNoteTx(item);
+            setTriageNote("");
+        }
+    };
+
+    const submitTriageNote = () => {
+        if (promptingNoteTx && triageNote.trim().length > 0) {
+            bulkUpdate({
+                ids: [promptingNoteTx.id],
+                updates: {
+                    status: 'Pending Triage',
+                    entity: null,
+                    notes: promptingNoteTx.notes ? `${promptingNoteTx.notes}\n${triageNote}` : triageNote
+                }
+            });
+            toast.success("Moved to Pending Triage");
+            setPromptingNoteTx(null);
+            setTriageNote("");
+        }
     };
 
     return (
         <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-12 animate-in fade-in duration-500 pb-32">
-            <ReconciliationPivot transactions={transactions} />
+            <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                    <h2 className="text-2xl font-black text-[#1a1c2e] tracking-tight">Reconciliation Overview</h2>
+                    <p className="text-slate-500 text-sm font-medium">Track items pending valid classification or reimbursement.</p>
+                </div>
+                <div className="px-6 py-3 bg-white rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex items-center gap-4">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Net Outstanding</span>
+                    <span className={cn("text-xl font-black", pendingItems.reduce((acc, t) => acc + t.amount, 0) >= 0 ? "text-emerald-500" : "text-rose-500")}>
+                        {formatCurrency(pendingItems.reduce((acc, t) => acc + t.amount, 0), settings.currency)}
+                    </span>
+                </div>
+            </div>
 
             {suggestedMatches.length > 0 && (
                 <div className="space-y-4">
@@ -471,6 +351,7 @@ const Reconciliation = () => {
                                 item1={item1}
                                 item2={item2}
                                 currency={settings.currency}
+                                dateFormat={dateFormat}
                                 onMatch={() => handleApproveMatch(item1, item2)}
                                 onIgnore={() => handleIgnoreMatch(item1.id, item2.id)}
                             />
@@ -479,29 +360,118 @@ const Reconciliation = () => {
                 </div>
             )}
 
-            <div className="space-y-8">
-                <div className="flex items-center gap-2 mb-2">
-                    <div className="p-1.5 bg-blue-100 rounded-lg">
-                        <History className="w-5 h-5 text-blue-600" />
+            {unknownItems.length > 0 && (
+                <div className="space-y-4 bg-orange-50/50 pb-6 rounded-3xl p-4 md:p-6 ring-1 ring-orange-100/50 shadow-sm border border-orange-200/50 mb-12">
+                    <div className="flex items-center gap-2 mb-4 px-2">
+                        <div className="p-1.5 bg-orange-100 rounded-lg">
+                            <HelpCircle className="w-5 h-5 text-orange-600" />
+                        </div>
+                        <h2 className="text-xl font-black text-foreground tracking-tight text-orange-950">Unknown Transactions</h2>
+                        <Badge variant="secondary" className="ml-2 bg-orange-100/50 text-orange-700 border-orange-200">{unknownItems.length}</Badge>
                     </div>
-                    <h2 className="text-xl font-black text-foreground tracking-tight">Outstanding Items by Entity</h2>
+
+                    <div className="flex flex-col divide-y divide-orange-200/50 bg-white rounded-2xl border border-orange-100 shadow-sm overflow-hidden">
+                        {unknownItems.map(item => (
+                            <div
+                                key={item.id}
+                                onClick={() => setSelectedTransaction(item)}
+                                className="flex items-center justify-between p-3.5 px-6 hover:bg-orange-50/50 transition-colors cursor-pointer group/row"
+                            >
+                                <div className="flex items-center gap-4">
+                                    <span className="text-xs font-bold text-slate-400 w-24 tabular-nums">{formatDate(item.date, false, dateFormat)}</span>
+                                    <div className="flex flex-col">
+                                        <span className="font-bold text-sm text-slate-700">{item.clean_source || item.source}</span>
+                                        {item.notes && (
+                                            <span className="text-[10px] text-slate-400 font-medium italic line-clamp-1">
+                                                Note: {item.notes}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-6">
+                                    <span className={cn(
+                                        "font-black text-sm",
+                                        item.amount >= 0 ? "text-emerald-600" : "text-rose-600"
+                                    )}>
+                                        {formatCurrency(item.amount, settings.currency)}
+                                    </span>
+
+                                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                        <Select
+                                            onValueChange={(val) => {
+                                                if (val === 'new') {
+                                                    createNewEntity();
+                                                } else {
+                                                    bulkUpdate({
+                                                        ids: [item.id],
+                                                        updates: { status: 'Pending Reconciliation', entity: val }
+                                                    });
+                                                    toast.success(`Assigned to ${val}`);
+                                                }
+                                            }}
+                                        >
+                                            <SelectTrigger className="h-8 w-[140px] text-[10px] font-black uppercase tracking-wider bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 transition-colors">
+                                                <SelectValue placeholder="SET ENTITY" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {existingEntities.map(entity => (
+                                                    <SelectItem key={entity} value={entity} className="text-[10px] uppercase font-black tracking-tight">{entity}</SelectItem>
+                                                ))}
+                                                <SelectItem value="new" className="text-blue-600 font-bold border-t mt-1">+ New Entity</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleSetPendingTriage(item);
+                                            }}
+                                            title="Return to Triage"
+                                        >
+                                            <ArrowLeft className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            <div className="space-y-4 bg-white/50 backdrop-blur pb-8 rounded-3xl p-4 md:p-6 ring-1 ring-slate-100/50 shadow-sm border border-slate-200/50">
+                <div className="flex items-center justify-between mb-4 px-2">
+                    <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-blue-100 rounded-lg">
+                            <History className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <h2 className="text-xl font-black text-foreground tracking-tight">Outstanding Items by Entity</h2>
+                    </div>
+                    <Button
+                        onClick={createNewEntity}
+                        variant="secondary"
+                        size="sm"
+                        className="h-8 shadow-sm font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-700"
+                    >
+                        <Plus className="w-4 h-4 mr-1.5" />
+                        Add Entity
+                    </Button>
                 </div>
 
-                {Object.entries(groupedByEntity).map(([entity, items]) => {
-                    const selectedForEntity = items.filter(i => selectedIds.has(i.id));
-                    const selectedSum = selectedForEntity.reduce((acc, i) => acc + i.amount, 0);
-                    const isBalanced = selectedForEntity.length > 0 && Math.abs(selectedSum) < 0.01;
-                    const entityBalance = items.reduce((acc, i) => acc + i.amount, 0);
+                <Accordion type="multiple" className="w-full space-y-4">
+                    {Object.entries(groupedByEntity).map(([entity, items]) => {
+                        const entityBalance = items.reduce((acc, i) => acc + i.amount, 0);
 
-                    return (
-                        <Card key={entity} className="border-none shadow-xl bg-card/60 overflow-hidden ring-1 ring-border/50">
-                            <CardHeader className="bg-muted/30 border-b border-border/40 py-4 px-6">
-                                <div className="flex items-center justify-between">
+                        return (
+                            <AccordionItem value={entity} key={entity} className="border-none shadow-sm bg-card overflow-hidden ring-1 ring-border/50 rounded-2xl">
+                                <AccordionTrigger className="hover:no-underline hover:bg-slate-50 bg-white border-b border-border/40 py-4 px-6 data-[state=open]:border-b group relative">
                                     <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-white rounded-xl shadow-sm border border-border/50">
+                                        <div className="p-2 bg-slate-50 rounded-xl shadow-sm border border-border/50">
                                             {getEntityIcon(entity)}
                                         </div>
-                                        <div>
+                                        <div className="text-left flex flex-col">
                                             {renamingEntity === entity ? (
                                                 <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                                                     <Input
@@ -523,7 +493,7 @@ const Reconciliation = () => {
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center gap-2 group/title">
-                                                    <CardTitle className="text-xl font-black tracking-tight">{entity}</CardTitle>
+                                                    <span className="text-lg font-black tracking-tight">{entity}</span>
                                                     <Button
                                                         size="icon"
                                                         variant="ghost"
@@ -538,60 +508,70 @@ const Reconciliation = () => {
                                                     </Button>
                                                 </div>
                                             )}
-                                            <CardDescription className="text-xs font-bold uppercase tracking-wider">
-                                                {items.length} ACTIVE ITEMS • NET:
-                                                <span className={cn("ml-1", entityBalance >= 0 ? "text-emerald-600" : "text-rose-600")}>
-                                                    {formatCurrency(entityBalance, settings.currency)}
-                                                </span>
-                                            </CardDescription>
+                                            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                                                {items.length} ACTIVE ITEMS
+                                            </span>
                                         </div>
                                     </div>
-
-                                    {selectedForEntity.length > 0 && (
-                                        <div className="flex items-center gap-4 animate-in fade-in slide-in-from-right-2">
-                                            <div className="flex flex-col items-end">
-                                                <span className="text-[10px] font-black uppercase text-muted-foreground mr-1">Selection Sum</span>
-                                                <span className={cn("font-black text-xl tracking-tighter", isBalanced ? "text-emerald-500" : "text-amber-500")}>
-                                                    {formatCurrency(selectedSum, settings.currency)}
-                                                </span>
-                                            </div>
-                                            <Button
-                                                onClick={() => handleReconcileSelected(entity, selectedForEntity.map(i => i.id))}
-                                                disabled={!isBalanced}
-                                                className={cn(
-                                                    "h-12 px-6 font-black transition-all shadow-lg hover:shadow-xl",
-                                                    isBalanced ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-muted text-muted-foreground"
-                                                )}
-                                            >
-                                                <Check className="w-5 h-5 mr-2" />
-                                                RECONCILE
-                                            </Button>
+                                    <div className="flex items-center pr-4">
+                                        <span className={cn("font-black text-lg", entityBalance >= 0 ? "text-emerald-600" : "text-rose-600")}>
+                                            {formatCurrency(entityBalance, settings.currency)}
+                                        </span>
+                                    </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="p-0 bg-slate-50/30">
+                                    {items.length === 0 ? (
+                                        <div className="p-6 text-center text-sm text-slate-400 font-medium italic">
+                                            No transactions assigned to this entity.
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col divide-y divide-border/30">
+                                            {items.map(item => (
+                                                <div
+                                                    key={item.id}
+                                                    onClick={() => setSelectedTransaction(item)}
+                                                    className="flex items-center justify-between p-3.5 px-6 hover:bg-white transition-colors cursor-pointer group/row"
+                                                >
+                                                    <div className="flex items-center gap-4">
+                                                        <span className="text-xs font-bold text-slate-400 w-24 tabular-nums">{formatDate(item.date, false, dateFormat)}</span>
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-sm text-slate-700">{item.clean_source || item.source}</span>
+                                                            {(item.category || item.sub_category) && (
+                                                                <span className="text-[10px] text-slate-400 font-medium">
+                                                                    {item.category}{item.sub_category ? ` • ${item.sub_category}` : ''}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={cn(
+                                                            "font-black text-sm",
+                                                            item.amount >= 0 ? "text-emerald-600" : "text-rose-600"
+                                                        )}>
+                                                            {formatCurrency(item.amount, settings.currency)}
+                                                        </span>
+                                                        <div className="text-[10px] font-bold uppercase tracking-widest text-blue-500 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                            EDIT
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
-                                </div>
-                            </CardHeader>
-                            <CardContent className="p-4 space-y-2">
-                                {items.map(item => (
-                                    <EntityRow
-                                        key={item.id}
-                                        item={item}
-                                        isSelected={selectedIds.has(item.id)}
-                                        onToggle={() => toggleSelection(item.id)}
-                                        onSplit={handleSplit}
-                                        onRevert={handleRevertToTriage}
-                                        currency={settings.currency}
-                                        isEditing={editingId === item.id}
-                                        editingField={editingField}
-                                        onEdit={handleLocalEdit}
-                                        onStartEdit={handleStartEdit}
-                                        onStopEdit={handleStopEdit}
-                                        onBulkEdit={(id, updates) => bulkUpdate({ ids: [id], updates })}
-                                    />
-                                ))}
-                            </CardContent>
-                        </Card>
-                    );
-                })}
+                                </AccordionContent>
+                            </AccordionItem>
+                        );
+                    })}
+                </Accordion>
+
+                {Object.keys(groupedByEntity).length > 3 && (
+                    <div className="pt-2 flex justify-center">
+                        <Button onClick={createNewEntity} variant="ghost" size="sm" className="font-bold text-slate-400 hover:text-slate-800">
+                            <Plus className="w-4 h-4 mr-1.5" />
+                            Add Another Entity
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {/* Reconciliation History Section */}
@@ -617,31 +597,41 @@ const Reconciliation = () => {
 
                     {showHistory && (
                         <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
-                            {Object.entries(groupedHistory).map(([entity, items]) => (
-                                <div key={`history-${entity}`} className="space-y-2">
-                                    <div className="flex items-center gap-2 px-2">
+                            {Object.entries(groupedHistory).map(([entity, sessions]) => (
+                                <div key={`history-${entity}`} className="space-y-4">
+                                    <div className="flex items-center gap-2 px-2 pb-1 border-b border-slate-100">
                                         <User className="w-3 h-3 text-muted-foreground" />
                                         <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{entity}</span>
                                     </div>
-                                    <div className="space-y-1">
-                                        {items.map(item => (
-                                            <div
-                                                key={item.id}
-                                                className="flex items-center gap-4 p-2 bg-muted/20 border border-transparent rounded-lg hover:border-border/50 transition-all text-xs group"
-                                            >
-                                                <div className="w-[80px] text-muted-foreground font-medium">{item.date}</div>
-                                                <div className="flex-1 font-bold truncate text-muted-foreground">{item.source}</div>
-                                                <div className={cn("w-[100px] text-right font-black", item.amount >= 0 ? "text-emerald-600/60" : "text-rose-600/60")}>
-                                                    {formatCurrency(item.amount, settings.currency)}
+                                    <div className="space-y-6">
+                                        {sessions.map((items, sessionIdx) => (
+                                            <div key={`${entity}-session-${sessionIdx}`} className="space-y-2 bg-slate-50/50 p-4 rounded-2xl border border-slate-100/50">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Reconciled Batch • {formatDate(items[0].updated_at || items[0].date, false, dateFormat)}</span>
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{items.length} ITEM{items.length > 1 ? 'S' : ''}</span>
                                                 </div>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleUnreconcile(item.id)}
-                                                    className="opacity-0 group-hover:opacity-100 h-6 px-2 text-[10px] font-black uppercase text-blue-600 hover:text-blue-700 hover:bg-blue-50 transition-all"
-                                                >
-                                                    Restore
-                                                </Button>
+                                                <div className="space-y-1">
+                                                    {items.map(item => (
+                                                        <div
+                                                            key={item.id}
+                                                            className="flex items-center gap-4 py-2 px-1 border-b border-slate-100/30 last:border-0 text-xs group"
+                                                        >
+                                                            <div className="w-[80px] text-slate-400 font-medium">{formatDate(item.date, false, dateFormat)}</div>
+                                                            <div className="flex-1 font-bold truncate text-slate-600">{item.source}</div>
+                                                            <div className={cn("w-[100px] text-right font-black", item.amount >= 0 ? "text-emerald-600/60" : "text-rose-600/60")}>
+                                                                {formatCurrency(item.amount, settings.currency)}
+                                                            </div>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => handleUnreconcile(item.id, entity)}
+                                                                className="opacity-0 group-hover:opacity-100 h-6 px-2 text-[10px] font-black uppercase text-blue-600 hover:text-blue-700 hover:bg-blue-50 transition-all"
+                                                            >
+                                                                Restore
+                                                            </Button>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -651,6 +641,70 @@ const Reconciliation = () => {
                     )}
                 </div>
             )}
+
+            <TransactionDetailDialog
+                transaction={selectedTransaction}
+                open={!!selectedTransaction}
+                onOpenChange={(open) => !open && setSelectedTransaction(null)}
+                onSave={async (updates) => {
+                    if (selectedTransaction) {
+                        await bulkUpdate({ ids: [selectedTransaction.id], updates });
+                    }
+                }}
+            />
+
+            <Dialog open={!!promptingNoteTx} onOpenChange={(open) => !open && setPromptingNoteTx(null)}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                            <ArrowLeft className="w-5 h-5 text-indigo-500" />
+                            Return to Triage
+                        </DialogTitle>
+                        <DialogDescription className="text-slate-500 font-medium pb-2 border-b">
+                            Please provide a brief note explaining why this transaction is being sent back to triage.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="py-6 space-y-4">
+                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest leading-none truncate max-w-[200px]">{promptingNoteTx?.clean_source || promptingNoteTx?.source}</span>
+                                <span className="font-mono font-black text-slate-900 leading-none">{formatCurrency(promptingNoteTx?.amount || 0, settings.currency)}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-bold uppercase">{promptingNoteTx?.date && formatDate(promptingNoteTx.date, false, dateFormat)}</div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Triage Note</Label>
+                            <Input
+                                autoFocus
+                                placeholder="e.g. Needs to be split, unknown source..."
+                                value={triageNote}
+                                onChange={(e) => setTriageNote(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && submitTriageNote()}
+                                className="bg-white border-slate-200"
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter className="gap-3">
+                        <Button
+                            variant="ghost"
+                            onClick={() => setPromptingNoteTx(null)}
+                            className="text-slate-400 hover:text-slate-600 font-bold uppercase text-[10px] tracking-widest"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase text-[10px] tracking-widest px-6 shadow-lg shadow-indigo-200/50"
+                            onClick={submitTriageNote}
+                            disabled={triageNote.trim().length === 0}
+                        >
+                            Submit & Move
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };

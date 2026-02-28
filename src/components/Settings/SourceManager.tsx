@@ -173,6 +173,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 auto_recurring: rule.auto_recurring,
                 auto_planned: rule.auto_planned,
                 match_mode: rule.match_mode || 'fuzzy',
+                secondary_categories: rule.secondary_categories || [],
                 auto_budget: rule.auto_exclude ? 'Exclude' : 'Budgeted'
             };
 
@@ -191,6 +192,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                     auto_recurring: rule.auto_recurring,
                     auto_planned: rule.auto_planned,
                     match_mode: rule.match_mode || 'fuzzy',
+                    secondary_categories: rule.secondary_categories || [],
                     auto_budget: rule.auto_exclude ? 'Exclude' : 'Budgeted'
                 };
 
@@ -262,6 +264,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 auto_planned: rule.auto_planned,
                 auto_budget: rule.auto_budget,
                 skip_triage: rule.skip_triage,
+                secondary_categories: rule.secondary_categories || [],
                 match_mode: rule.match_mode || 'fuzzy'
             };
 
@@ -1631,6 +1634,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                 name: editingRule.clean_source_name,
                                 category: editingRule.auto_category || '',
                                 sub_category: editingRule.auto_sub_category || '',
+                                secondary_categories: editingRule.secondary_categories || [],
                                 auto_planned: editingRule.auto_planned ?? true,
                                 auto_exclude: editingRule.auto_budget === 'Exclude',
                                 match_mode: editingRule.match_mode || 'fuzzy'

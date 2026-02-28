@@ -3,7 +3,6 @@ import { usePeriod } from '@/contexts/PeriodContext';
 import { MainOverview } from './MainOverview';
 
 import { SpecialOverview } from './SpecialOverview';
-import { KlintemarkenOverview } from './KlintemarkenOverview';
 import { CategoryOverview } from './CategoryOverview';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LayoutDashboard, PiggyBank, Wallet, PieChart } from 'lucide-react';
@@ -38,14 +37,6 @@ export const OverviewTabs = ({ defaultTab = "main" }: { defaultTab?: string }) =
                 <PiggyBank className="w-4 h-4" />
                 <span className="font-bold tracking-tight">Slush Fund</span>
               </TabsTrigger>
-              <TabsTrigger
-                value="klintemarken"
-                className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all gap-2"
-              >
-                <Wallet className="w-4 h-4" />
-                <span className="font-bold tracking-tight">Feeder Budgets</span>
-              </TabsTrigger>
-
             </TabsList>
           </div>
 
@@ -63,10 +54,6 @@ export const OverviewTabs = ({ defaultTab = "main" }: { defaultTab?: string }) =
         <TabsContent value="special" className="outline-none animate-in fade-in-50 duration-500">
           <SpecialOverview />
         </TabsContent>
-        <TabsContent value="klintemarken" className="outline-none animate-in fade-in-50 duration-500">
-          <KlintemarkenOverview />
-        </TabsContent>
-
       </Tabs>
     </div>
   );

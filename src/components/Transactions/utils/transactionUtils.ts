@@ -6,7 +6,6 @@ export const filterTransactions = (transactions: Transaction[], filters: Record<
   const hasStatusFilter = filters.status && filters.status.length > 0 && filters.status !== 'all';
 
   return transactions.filter(transaction => {
-    if (!hasStatusFilter && transaction.status === 'Excluded') return false;
 
     return Object.entries(filters).every(([field, filterValue]) => {
       if (filterValue === undefined || filterValue === null || filterValue === '') return true;

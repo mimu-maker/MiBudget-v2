@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Store, Calendar, CreditCard, Tag, FileText, Info, Pencil, Save, X, RefreshCw, EyeOff, Link2Off, AlertTriangle, Check, Search } from 'lucide-react';
+import { Store, Calendar, CreditCard, Tag, FileText, Info, Pencil, Save, X, RefreshCw, EyeOff, Link2Off, AlertTriangle, Check, Search, Split } from 'lucide-react';
 import { Transaction } from './hooks/useTransactionTable';
 import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
@@ -23,9 +23,10 @@ interface TransactionDetailDialogProps {
     onOpenChange: (open: boolean) => void;
     onSave?: (updates: Partial<Transaction>) => Promise<void>;
     initialEditMode?: boolean;
+    onSplit?: (id: string) => void;
 }
 
-export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSave, initialEditMode = false }: TransactionDetailDialogProps) => {
+export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSave, initialEditMode = false, onSplit }: TransactionDetailDialogProps) => {
     const { settings } = useSettings();
     const { userProfile } = useProfile();
     const { subCategories } = useCategorySource();
@@ -81,6 +82,8 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
     const updateField = (field: keyof Transaction, value: any) => {
         setEditedTx(prev => ({ ...prev, [field]: value }));
     };
+
+    const isReconItem = transaction.status === 'Pending Reconciliation' || transaction.status === 'Reconciled' || !!transaction.entity;
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -157,6 +160,19 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
                                         {isEditing ? <X className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
                                         {isEditing ? "Cancel" : "Edit"}
                                     </Button>
+                                    {!isEditing && onSplit && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                                onOpenChange(false);
+                                                onSplit(transaction.id);
+                                            }}
+                                            className="h-9 px-3 text-[10px] font-black uppercase tracking-wider gap-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"
+                                        >
+                                            <Split className="w-3.5 h-3.5" /> Split
+                                        </Button>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -236,75 +252,91 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
                     </div>
 
                     {/* CORE FLOW 2: Categorization */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 mb-1">
-                            <div className="w-1 h-4 bg-indigo-500 rounded-full" />
-                            <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step 2: Financial Categorization</Label>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-2xl border border-slate-200/60 shadow-sm relative group/cat overflow-hidden">
-                            <div className="absolute -bottom-4 -right-4 p-6 opacity-[0.02] group-hover/cat:opacity-[0.05] transition-opacity pointer-events-none rotate-6">
-                                <Tag className="w-24 h-24 text-slate-900" />
+                    {isReconItem ? (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 mb-1">
+                                <div className="w-1 h-4 bg-indigo-500 rounded-full" />
+                                <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step 2: Financial Categorization</Label>
                             </div>
-
-                            <div className="space-y-2 relative">
-                                <Label className="text-[9px] font-bold text-slate-400 uppercase">Budget Category</Label>
-                                {isEditing ? (
-                                    <CategorySelector
-                                        value={editedTx.category || ''}
-                                        onValueChange={(v) => {
-                                            if (v.includes(':')) {
-                                                const [cat, sub] = v.split(':');
-                                                setEditedTx(prev => ({ ...prev, category: cat, sub_category: sub }));
-                                            } else {
-                                                setEditedTx(prev => ({ ...prev, category: v, sub_category: '' }));
-                                            }
-                                        }}
-                                        hideSuggestions={true}
-                                        className="h-10 shadow-sm border-slate-200 rounded-xl bg-slate-50"
-                                    />
-                                ) : (
-                                    <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-100 min-h-[40px]">
-                                        <div className="p-1.5 bg-white rounded-lg border shadow-xs">
-                                            <Tag className="w-3.5 h-3.5 text-indigo-500" />
-                                        </div>
-                                        <span className="text-xs font-black text-slate-700">{transaction.category || 'Uncategorized'}</span>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="space-y-2 relative">
-                                <Label className="text-[9px] font-bold text-slate-400 uppercase">Sub-category</Label>
-                                {isEditing ? (
-                                    <Select
-                                        value={editedTx.sub_category || 'none'}
-                                        onValueChange={(v) => updateField('sub_category', v === 'none' ? null : v)}
-                                    >
-                                        <SelectTrigger className="h-10 bg-slate-50 border-slate-200 shadow-sm text-xs rounded-xl font-bold">
-                                            <SelectValue placeholder="Always Ask" />
-                                        </SelectTrigger>
-                                        <SelectContent className="rounded-xl">
-                                            <SelectItem value="none" className="text-slate-400 italic font-bold">Always Ask</SelectItem>
-                                            {(subCategories[editedTx.category || ''] || []).map(s => (
-                                                <SelectItem key={s} value={s}>{s}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                ) : (
-                                    <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-100 min-h-[40px]">
-                                        <div className="p-1.5 bg-white rounded-lg border shadow-xs">
-                                            <Tag className="w-3.5 h-3.5 text-indigo-300" />
-                                        </div>
-                                        <span className={cn(
-                                            "text-xs font-bold",
-                                            transaction.sub_category ? "text-slate-700" : "text-slate-400 italic"
-                                        )}>
-                                            {transaction.sub_category || 'Always Ask'}
-                                        </span>
-                                    </div>
-                                )}
+                            <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-200/60 flex flex-col items-center justify-center text-center space-y-2">
+                                <Tag className="w-8 h-8 text-slate-300 mb-1" />
+                                <div className="space-y-1">
+                                    <p className="text-xs font-bold text-slate-500">Categorization Hidden</p>
+                                    <p className="text-[10px] text-slate-400 max-w-[250px] mx-auto">Items fully mapped or in reconciliation rely on their target matching rules. Change status to 'Pending Triage' or 'Complete' to manually edit categories here.</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 mb-1">
+                                <div className="w-1 h-4 bg-indigo-500 rounded-full" />
+                                <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step 2: Financial Categorization</Label>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-2xl border border-slate-200/60 shadow-sm relative group/cat overflow-hidden">
+                                <div className="absolute -bottom-4 -right-4 p-6 opacity-[0.02] group-hover/cat:opacity-[0.05] transition-opacity pointer-events-none rotate-6">
+                                    <Tag className="w-24 h-24 text-slate-900" />
+                                </div>
+
+                                <div className="space-y-2 relative">
+                                    <Label className="text-[9px] font-bold text-slate-400 uppercase">Budget Category</Label>
+                                    {isEditing ? (
+                                        <CategorySelector
+                                            value={editedTx.category || ''}
+                                            onValueChange={(v) => {
+                                                if (v.includes(':')) {
+                                                    const [cat, sub] = v.split(':');
+                                                    setEditedTx(prev => ({ ...prev, category: cat, sub_category: sub }));
+                                                } else {
+                                                    setEditedTx(prev => ({ ...prev, category: v, sub_category: '' }));
+                                                }
+                                            }}
+                                            hideSuggestions={true}
+                                            className="h-10 shadow-sm border-slate-200 rounded-xl bg-slate-50"
+                                        />
+                                    ) : (
+                                        <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-100 min-h-[40px]">
+                                            <div className="p-1.5 bg-white rounded-lg border shadow-xs">
+                                                <Tag className="w-3.5 h-3.5 text-indigo-500" />
+                                            </div>
+                                            <span className="text-xs font-black text-slate-700">{transaction.category || 'Uncategorized'}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="space-y-2 relative">
+                                    <Label className="text-[9px] font-bold text-slate-400 uppercase">Sub-category</Label>
+                                    {isEditing ? (
+                                        <Select
+                                            value={editedTx.sub_category || 'none'}
+                                            onValueChange={(v) => updateField('sub_category', v === 'none' ? null : v)}
+                                        >
+                                            <SelectTrigger className="h-10 bg-slate-50 border-slate-200 shadow-sm text-xs rounded-xl font-bold">
+                                                <SelectValue placeholder="Always Ask" />
+                                            </SelectTrigger>
+                                            <SelectContent className="rounded-xl">
+                                                <SelectItem value="none" className="text-slate-400 italic font-bold">Always Ask</SelectItem>
+                                                {(subCategories[editedTx.category || ''] || []).map(s => (
+                                                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    ) : (
+                                        <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-100 min-h-[40px]">
+                                            <div className="p-1.5 bg-white rounded-lg border shadow-xs">
+                                                <Tag className="w-3.5 h-3.5 text-indigo-300" />
+                                            </div>
+                                            <span className={cn(
+                                                "text-xs font-bold",
+                                                transaction.sub_category ? "text-slate-700" : "text-slate-400 italic"
+                                            )}>
+                                                {transaction.sub_category || 'Always Ask'}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* CORE FLOW 3: Settings & Metadata */}
                     <div className="space-y-4">
@@ -354,9 +386,15 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent className="rounded-lg">
-                                            {['Pending Triage', 'Complete', 'Reconciled', 'Pending Reconciliation', 'Review Needed'].map(s => (
-                                                <SelectItem key={s} value={s}>{s}</SelectItem>
-                                            ))}
+                                            {(() => {
+                                                const isPendingRecon = transaction.status === 'Pending Reconciliation' || !!transaction.entity;
+                                                const options = isPendingRecon
+                                                    ? ['Pending Triage', 'Reconciled']
+                                                    : ['Pending Triage', 'Complete', 'Reconciled', 'Pending Reconciliation', 'Review Needed'];
+                                                return options.map(s => (
+                                                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                                                ));
+                                            })()}
                                         </SelectContent>
                                     </Select>
                                 ) : (

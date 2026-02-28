@@ -10,6 +10,7 @@ export type Period =
     | 'This Year'
     | 'Last Year'
     | 'Year to Date'
+    | 'Last 6M'
     | 'Custom'
     | string;
 

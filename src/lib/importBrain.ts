@@ -43,6 +43,7 @@ export interface ProcessedTransaction {
     clean_source: string;
     category: string;
     sub_category: string | null;
+    secondary_categories: string[];
     status: 'Pending Triage' | 'Pending Person/Event' | 'Reconciled' | 'Complete';
     budget_month: string;
     budget_year: number;
@@ -104,6 +105,7 @@ export const processTransaction = (
     if (match) {
         const category = match.auto_category || "";
         const sub_category = match.auto_sub_category || null;
+        const secondary_categories = match.secondary_categories || [];
         const excluded = match.auto_budget === 'Exclude';
 
         // Use source-level skip_triage (auto-complete) if available, otherwise fallback to rule
@@ -118,6 +120,7 @@ export const processTransaction = (
             clean_source: cleanName,
             category: category,
             sub_category: sub_category,
+            secondary_categories: secondary_categories,
             status: status as any,
             budget_month: budgetMonth,
             budget_year: budgetYear,
@@ -132,6 +135,7 @@ export const processTransaction = (
         clean_source: cleanName,
         category: "",
         sub_category: null,
+        secondary_categories: [],
         status: 'Pending Triage',
         budget_month: budgetMonth,
         budget_year: budgetYear,

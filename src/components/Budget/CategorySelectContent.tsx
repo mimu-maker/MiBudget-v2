@@ -25,6 +25,9 @@ interface CategorySelectContentProps {
     onSelect?: (value: string) => void;
     showAlwaysAsk?: boolean;
     hideSuggestions?: boolean;
+    primaryCategory?: string | null;
+    secondaryCategories?: string[];
+    transactionAmount?: number;
 }
 
 export const CategorySelectContent = ({
@@ -37,7 +40,10 @@ export const CategorySelectContent = ({
     selectedValues,
     onSelect,
     showAlwaysAsk = false,
-    hideSuggestions = false
+    hideSuggestions = false,
+    primaryCategory,
+    secondaryCategories = [],
+    transactionAmount
 }: CategorySelectContentProps) => {
     const { income, feeders, expenses, slush, isLoading } = useGroupedCategories();
     const { data: popular = [] } = usePopularCategories(suggestionLimit);
@@ -177,22 +183,38 @@ export const CategorySelectContent = ({
             )}
             {!hideSuggestions && popular.length > 0 && renderSuggestedGroup('Suggested Categories', popularObjects, false)}
 
+            {/* Extract relevant category objects for Primary/Secondary */}
+            {(() => {
+                const allCatObjects = [...income, ...expenses, ...slush, ...feeders.flatMap(f => f.categories)];
+                const pCat = primaryCategory && primaryCategory !== 'always-ask' ? allCatObjects.find(c => c.name === primaryCategory) : null;
+                const sCats = secondaryCategories?.length ? allCatObjects.filter(c => secondaryCategories.includes(c.name)) : [];
+
+                return (
+                    <>
+                        {pCat && renderGroup('Primary Category', [pCat], !hideSuggestions && popular.length > 0)}
+                        {sCats.length > 0 && renderGroup('Secondary Categories', sCats, (!hideSuggestions && popular.length > 0) || !!pCat)}
+                    </>
+                );
+            })()}
+
             {!suggestedOnly && (
                 <>
-                    {/* Always show Income first */}
-                    {renderGroup('Income', income, !hideSuggestions && popular.length > 0)}
+                    {/* If positive amount, Income goes before Expenses/Feeders */}
+                    {transactionAmount !== undefined && transactionAmount > 0 && renderGroup('Income', income, true)}
 
                     {/* Show Feeder Budgets */}
                     {feeders.map((f, idx) => {
-                        const showSep = (idx === 0) ? (!hideSuggestions && popular.length > 0) || income.length > 0 : true;
-                        return renderGroup(`Feeder: ${f.name}`, f.categories, showSep);
+                        return renderGroup(`Feeder: ${f.name}`, f.categories, true);
                     })}
 
                     {/* Show standard Expenses */}
-                    {renderGroup('Expenses', expenses, (!hideSuggestions && popular.length > 0) || income.length > 0 || feeders.length > 0)}
+                    {renderGroup('Expenses', expenses, true)}
 
                     {/* Show Slush Fund */}
-                    {renderGroup('Slush Fund 🍧', slush, (!hideSuggestions && popular.length > 0) || income.length > 0 || feeders.length > 0 || expenses.length > 0)}
+                    {renderGroup('Slush Fund 🍧', slush, true)}
+
+                    {/* If not strictly positive amount, Income goes at the bottom (or if transactionAmount is undefined, put it here) */}
+                    {(transactionAmount === undefined || transactionAmount <= 0) && renderGroup('Income', income, true)}
                 </>
             )}
 

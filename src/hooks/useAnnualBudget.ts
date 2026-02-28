@@ -233,7 +233,7 @@ export const useAnnualBudget = (year?: number) => {
         };
       }).filter((t: any) => {
         const isMatch = t.budget_month && t.budget_month.startsWith(`${targetYear}-`);
-        return isMatch;
+        return isMatch && !t.excluded && t.status !== 'Excluded';
       });
 
       if (targetYear === 2025) {

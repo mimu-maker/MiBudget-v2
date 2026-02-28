@@ -31,15 +31,8 @@ export const PeriodSelector = () => {
 
     // Set default value if not set or if it was a saved value that's no longer preferred
     React.useEffect(() => {
-        const now = new Date();
-        const quarter = getQuarter(now);
-
         if (!localStorage.getItem('mibudget_selected_period_v2')) {
-            if (quarter === 1) {
-                setSelectedPeriod('This Quarter');
-            } else {
-                setSelectedPeriod('Year to Date');
-            }
+            setSelectedPeriod('Last 6M');
         }
     }, [setSelectedPeriod]);
 
@@ -58,10 +51,16 @@ export const PeriodSelector = () => {
                         All
                     </TabsTrigger>
                     <TabsTrigger
-                        value="Last Year"
+                        value={(new Date().getFullYear() - 1).toString()}
                         className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all font-bold tracking-tight"
                     >
-                        Last Year
+                        {new Date().getFullYear() - 1}
+                    </TabsTrigger>
+                    <TabsTrigger
+                        value="Last 6M"
+                        className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all font-bold tracking-tight"
+                    >
+                        Last 6M
                     </TabsTrigger>
 
                     {specialOptions.map((opt) => (

@@ -251,7 +251,7 @@ export const ValidationDashboard = () => {
         return groups;
     }, [pendingValidation]);
 
-    useMemo(() => {
+    useEffect(() => {
         if (!expandedValidationSource && validationGroups.length > 0 && currentBucket === 'pending-validation') {
             setExpandedValidationSource(validationGroups[0].sourceName);
         }
@@ -311,7 +311,7 @@ export const ValidationDashboard = () => {
     }, [duplicateGroups.length, pendingSourceMapping.length, pendingCategorisation.length, pendingValidation.length]);
 
     // Initialize currentBucket when defaultOpen changes and currentBucket is not set
-    useMemo(() => {
+    useEffect(() => {
         if (currentBucket === undefined && defaultOpen) {
             setCurrentBucket(defaultOpen);
         }

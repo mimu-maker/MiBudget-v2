@@ -100,6 +100,7 @@ export type Database = {
           user_id: string | null
           created_at: string
           updated_at: string
+          secondary_categories: string[] | null
         }
         Insert: {
           id?: string
@@ -113,6 +114,7 @@ export type Database = {
           user_id?: string | null
           created_at?: string
           updated_at?: string
+          secondary_categories?: string[] | null
         }
         Update: {
           id?: string
@@ -126,6 +128,7 @@ export type Database = {
           user_id?: string | null
           created_at?: string
           updated_at?: string
+          secondary_categories?: string[] | null
         }
         Relationships: []
       }

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { usePersistentState } from '@/hooks/usePersistentState';
 import { supabase } from '@/integrations/supabase/client';
 import { APP_STATUSES } from '@/hooks/useSettings';
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -178,6 +179,7 @@ export const useAllTransactions = (options?: { enabled?: boolean }) => {
     retry: 1,
     staleTime: 60000, // Keep longer for analytics
     enabled: options?.enabled !== false,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -295,6 +297,7 @@ const useInfiniteTransactions = (sortBy: keyof Transaction, sortOrder: 'asc' | '
     },
     staleTime: 30000,
     enabled: options?.enabled !== false,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -405,6 +408,7 @@ const useTransactionCounts = (filters: Record<string, any>) => {
       };
     },
     staleTime: 30000,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -465,9 +469,9 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
     new Set(sourceRules.map((r: any) => r.clean_source_name).filter(Boolean)),
     [sourceRules]);
 
-  const [sortBy, setSortBy] = useState<keyof Transaction>('date');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [filters, setFilters] = useState<Record<string, any>>({});
+  const [sortBy, setSortBy] = usePersistentState<keyof Transaction>('mimu_tx_sortBy', 'date');
+  const [sortOrder, setSortOrder] = usePersistentState<'asc' | 'desc'>('mimu_tx_sortOrder', 'desc');
+  const [filters, setFilters] = usePersistentState<Record<string, any>>('mimu_tx_filters', {});
 
   // Infinite Query (Default)
   const {
@@ -924,17 +928,17 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
     },
   });
 
-  const toggleSelection = (id: string) => {
+  const toggleSelection = useCallback((id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
 
-  const selectAll = (ids: string[]) => setSelectedIds(new Set(ids));
-  const clearSelection = () => setSelectedIds(new Set());
+  const selectAll = useCallback((ids: string[]) => setSelectedIds(new Set(ids)), []);
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
   const emergencyClearAll = async () => {
     await clearLocalTransactions();

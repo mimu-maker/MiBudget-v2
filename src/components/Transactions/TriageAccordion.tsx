@@ -1310,7 +1310,7 @@ export const TriageAccordion = ({
                                                                                                                 tx.needs_date_verification ? "text-amber-600 flex items-center gap-1" : "text-slate-400"
                                                                                                             )}>
                                                                                                                 {tx.needs_date_verification && <AlertTriangle className="w-3 h-3" />}
-                                                                                                                {formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}
+                                                                                                                {formatDate(tx.date, false, userProfile?.date_format)}
                                                                                                             </span>
                                                                                                             {editingRowId === tx.id ? (
                                                                                                                 <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
@@ -1535,7 +1535,7 @@ export const TriageAccordion = ({
                                         tx.needs_date_verification ? "text-amber-600 flex items-center gap-1" : "text-slate-400"
                                     )}>
                                         {tx.needs_date_verification && <AlertTriangle className="w-2.5 h-2.5" />}
-                                        {formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}
+                                        {formatDate(tx.date, false, userProfile?.date_format)}
                                     </div>
                                 </div>
 
@@ -1648,7 +1648,7 @@ export const TriageAccordion = ({
                                                 tx.needs_date_verification ? "text-amber-600 flex items-center gap-1" : "text-slate-400"
                                             )}>
                                                 {tx.needs_date_verification && <AlertTriangle className="w-3 h-3" />}
-                                                {formatDate(tx.date, userProfile?.show_time, userProfile?.date_format)}
+                                                {formatDate(tx.date, false, userProfile?.date_format)}
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <div className="text-[12px] text-slate-600 truncate font-semibold leading-tight">{tx.source}</div>

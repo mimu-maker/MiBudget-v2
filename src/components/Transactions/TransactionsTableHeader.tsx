@@ -400,12 +400,7 @@ export const TransactionsTableHeader = ({
             <FilterableHeader field="sub_category" onFilter={onFilter} onClearFilter={onClearFilter} currentFilter={filters.sub_category} options={filterOptions.subCategories} />
           </div>
         </SortableHeader>
-        <SortableHeader field="planned" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} className="text-center">
-          <div className="flex items-center space-x-1">
-            <span>Unplanned</span>
-            <FilterableHeader field="planned" onFilter={onFilter} onClearFilter={onClearFilter} currentFilter={filters.planned} />
-          </div>
-        </SortableHeader>
+
         <SortableHeader field="excluded" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} className="text-center">
           <div className="flex items-center space-x-1">
             <span>Exclude</span>

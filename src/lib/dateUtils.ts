@@ -10,6 +10,7 @@ export type Period =
     | 'This Year'
     | 'Last Year'
     | 'Year to Date'
+    | 'Last 6M'
     | 'Custom'
     | string;
 
@@ -46,6 +47,9 @@ export const getPeriodInterval = (period: Period, customRange?: DateRange): { st
             return { start: startOfYear(lastYear), end: endOfYear(lastYear) };
         case 'Year to Date':
             return { start: startOfYear(now), end: now };
+        case 'Last 6M':
+            const sixMonthsAgo = subMonths(now, 5);
+            return { start: startOfMonth(sixMonthsAgo), end: endOfMonth(now) };
         default:
             return { start: startOfYear(now), end: endOfYear(now) };
     }

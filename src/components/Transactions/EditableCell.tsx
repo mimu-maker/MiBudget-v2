@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { Trash2, Store, Sparkles } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
@@ -52,6 +54,20 @@ export const EditableCell = ({
   const [isEnteringEntity, setIsEnteringEntity] = useState(false);
   const [pendingStatusSelection, setPendingStatusSelection] = useState<string | null>(null);
 
+  const { data: sourceRule } = useQuery({
+    queryKey: ['source_rule', transaction.clean_source],
+    queryFn: async () => {
+      if (!transaction.clean_source) return null;
+      const { data } = await supabase
+        .from('source_rules')
+        .select('*')
+        .eq('clean_source_name', transaction.clean_source)
+        .maybeSingle();
+      return data;
+    },
+    enabled: isEditing && field === 'category' && !!transaction.clean_source
+  });
+
   // Sync local value when external value changes
   useEffect(() => {
     setLocalValue(String(value || ''));
@@ -81,9 +97,9 @@ export const EditableCell = ({
         setPendingStatusSelection(newStatus);
 
         if (newStatus === 'Pending Reconciliation') {
-          // If simply selecting the base status, we don't change it immediately
-          // The UI will show the secondary dropdown because the select value matches 'Pending Reconciliation'
+          // Immediately apply Pending Recon without prompting for entity
           onEdit(transaction.id, field, 'Pending Reconciliation');
+          onStopEdit();
         } else {
           onEdit(transaction.id, field, newStatus);
         }
@@ -138,7 +154,7 @@ export const EditableCell = ({
       // Ensure that 'Pending: John' matches 'Pending Reconciliation' in the main Select value
       // Use pendingStatusSelection if available to prevent flickering or premature closing
       const currentValueStr = pendingStatusSelection || String(value);
-      const isPending = currentValueStr.startsWith('Pending: ') || currentValueStr === 'Pending Reconciliation' || !!transaction.entity;
+      const isPending = currentValueStr.startsWith('Pending: ') || !!transaction.entity;
 
       const displayValue = field === 'status' && isPending
         ? 'Pending Reconciliation'
@@ -161,6 +177,9 @@ export const EditableCell = ({
             onAddCategory={() => { }}
             suggestionLimit={3}
             hideSuggestions={true}
+            primaryCategory={(sourceRule as any)?.auto_category}
+            secondaryCategories={(sourceRule as any)?.secondary_categories || []}
+            transactionAmount={transaction.amount}
             className="min-w-[180px]"
           />
         );
@@ -216,7 +235,7 @@ export const EditableCell = ({
           )}
 
 
-          {/* Secondary Dropdown for Entity Assignment */}
+          {/* Secondary Dropdown for Entity Assignment (Legacy handling for existing Pending: X or item.entity) */}
           {field === 'status' && isPending && (
             isEnteringEntity ? (
               <Input
@@ -417,7 +436,7 @@ export const EditableCell = ({
         </span>
       ) : field === 'date' ? (
         <span className="dynamic-text">
-          {formatDate(String(value), userProfile?.show_time, userProfile?.date_format)}
+          {formatDate(String(value), false, userProfile?.date_format)}
         </span>
 
       ) : field === 'status' ? (

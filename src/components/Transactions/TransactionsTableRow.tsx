@@ -68,6 +68,8 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
 
   const parentSourceName = transaction.parent_id ? (allTransactions?.find(t => t.id === transaction.parent_id)?.clean_source || allTransactions?.find(t => t.id === transaction.parent_id)?.source || transaction.notes?.replace('Split item from ', '')) : null;
 
+  const isReconItem = transaction.status === 'Pending Reconciliation' || transaction.status === 'Reconciled' || !!transaction.entity;
+
   return (
     <>
       <SourceResolveDialog
@@ -95,8 +97,9 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
       <tr
         ref={ref}
         {...props}
-        className={`border-b border-border/50 hover:bg-accent/30 transition-colors row-pazazz ${transaction.excluded ? 'opacity-40 bg-muted/20' : ''
-          } ${isSelected ? 'bg-primary/10' : ''} ${isResolved ? 'cursor-pointer' : 'cursor-default'} ${transaction.parent_id ? 'bg-amber-50/20' : ''} ${transaction.is_split ? 'bg-blue-50/10 font-medium' : ''}`}
+        className={`border-b border-border/50 hover:bg-accent/30 transition-colors row-pazazz cursor-pointer ${transaction.excluded ? 'opacity-40 bg-muted/20' : ''
+          } ${isSelected ? 'bg-primary/10' : ''} ${transaction.parent_id ? 'bg-amber-50/20' : ''} ${transaction.is_split ? 'bg-blue-50/10 font-medium' : ''}`}
+        onClick={() => onRowClick(transaction)}
       >
         <td className="py-3 px-2" onClick={(e) => e.stopPropagation()}>
           <input
@@ -106,23 +109,14 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
             className="rounded border-input bg-background text-primary focus:ring-ring"
           />
         </td>
-        <td className="py-3 px-2">
-          <EditableCell
-            transaction={transaction}
-            field="date"
-            isEditing={isEditing('date')}
-            onEdit={onCellEdit}
-            onBulkEdit={onBulkEdit}
-            onStartEdit={onStartEdit}
-            onStopEdit={onStopEdit}
-            isSaving={isSaving}
-          />
+        <td className="py-3 px-2 whitespace-nowrap text-sm">
+          {format(parseISO(transaction.date), 'MMM dd, yyyy')}
         </td>
         <td className="py-3 px-2">
           <div className="flex flex-col">
-            <div className="flex items-center gap-1 group/source" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1 group/source cursor-pointer" onClick={(e) => { e.stopPropagation(); onRowClick(transaction); }}>
               {isEditing('source') ? (
-                <div className="w-full min-w-[200px]">
+                <div className="w-full min-w-[200px]" onClick={(e) => e.stopPropagation()}>
                   <SourceNameSelector
                     value={transaction.clean_source || transaction.source}
                     hideAddNew={false}
@@ -262,149 +256,39 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
             )}
           </div>
         </td>
-        <td className="py-3 px-2 text-right">
-          <EditableCell
-            transaction={transaction}
-            field="amount"
-            isEditing={isEditing('amount')}
-            onEdit={onCellEdit}
-            onBulkEdit={onBulkEdit}
-            onStartEdit={onStartEdit}
-            onStopEdit={onStopEdit}
-            isSaving={isSaving}
-          />
+        <td className="py-3 px-2 text-right whitespace-nowrap font-medium">
+          <span className={transaction.amount > 0 ? 'text-emerald-600' : ''}>
+            {new Intl.NumberFormat('da-DK', { style: 'currency', currency: 'DKK' }).format(transaction.amount)}
+          </span>
         </td>
 
         <td className="py-3 px-1 w-[1%] whitespace-nowrap">
-          <EditableCell
-            transaction={transaction}
-            field="status"
-            isEditing={isEditing('status')}
-            onEdit={onCellEdit}
-            onBulkEdit={onBulkEdit}
-            onStartEdit={onStartEdit}
-            onStopEdit={onStopEdit}
-            isSaving={isSaving}
-          />
+          <Badge variant={transaction.status === 'Completed' || transaction.status === 'Reconciled' ? 'outline' : 'secondary'} className="text-[10px] uppercase font-bold text-slate-500">
+            {transaction.status}
+          </Badge>
         </td>
         <td className="py-3 px-2">
-          <EditableCell
-            transaction={transaction}
-            field="category"
-            isEditing={isEditing('category')}
-            onEdit={onCellEdit}
-            onBulkEdit={onBulkEdit}
-            onStartEdit={onStartEdit}
-            onStopEdit={onStopEdit}
-            isSaving={isSaving}
-          />
+          {isReconItem ? (
+            <span className="text-muted-foreground/30 text-xs italic">-</span>
+          ) : (
+            <span className="text-sm">{transaction.category}</span>
+          )}
         </td>
         <td className="py-3 px-2">
-          <EditableCell
-            transaction={transaction}
-            field="sub_category"
-            isEditing={isEditing('sub_category')}
-            onEdit={onCellEdit}
-            onBulkEdit={onBulkEdit}
-            onStartEdit={onStartEdit}
-            onStopEdit={onStopEdit}
-            isSaving={isSaving}
-          />
+          {isReconItem ? (
+            <span className="text-muted-foreground/30 text-xs italic">-</span>
+          ) : (
+            <span className="text-sm text-muted-foreground">{transaction.sub_category}</span>
+          )}
         </td>
+
         <td className="py-3 px-2 text-center">
           <div className="flex items-center justify-center gap-1">
-            <EditableCell
-              transaction={transaction}
-              field="planned"
-              isEditing={isEditing('planned')}
-              onEdit={onCellEdit}
-              onBulkEdit={onBulkEdit}
-              onStartEdit={onStartEdit}
-              onStopEdit={onStopEdit}
-              isSaving={isSaving}
-            />
-          </div>
-        </td>
-        <td className="py-3 px-2 text-center">
-          <div className="flex items-center justify-center gap-1">
-            <EditableCell
-              transaction={transaction}
-              field="excluded"
-              isEditing={isEditing('excluded')}
-              onEdit={onCellEdit}
-              onBulkEdit={onBulkEdit}
-              onStartEdit={onStartEdit}
-              onStopEdit={onStopEdit}
-              isSaving={isSaving}
-            />
+            {transaction.excluded ? <Check className="w-4 h-4 text-muted-foreground" /> : <span className="w-4 h-4" />}
           </div>
         </td>
         <td className="py-3 px-2 text-center" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-center gap-1">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={`${transaction.budget_month ? 'text-amber-600' : 'text-muted-foreground'} hover:text-amber-700 transition-colors h-8 w-8 p-0`}
-                  title={`Set Budget Period (${transaction.budget_month ? formatBudgetMonth(transaction.budget_month) : 'Not Set'})`}
-                >
-                  <Calendar className="w-4 h-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-3 shadow-xl border-amber-100 bg-white" align="end">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-semibold text-sm text-slate-800 flex items-center gap-2">
-                      <Calendar className="w-3.5 h-3.5" />
-                      Budget Period
-                    </h4>
-                    {transaction.budget_month && (
-                      <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
-                        {formatBudgetMonth(transaction.budget_month)}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase text-slate-400">Select Month</label>
-                    <Select
-                      value={transaction.budget_month || ''}
-                      onValueChange={(val) => {
-                        const date = parseISO(val);
-                        onBulkEdit(transaction.id, {
-                          budget_month: val,
-                          budget_year: date.getFullYear()
-                        });
-                      }}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="Chose month..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Array.from({ length: 36 }, (_, i) => {
-                          const date = addMonths(startOfMonth(new Date()), i - 12);
-                          return (
-                            <SelectItem key={i} value={format(date, 'yyyy-MM-01')}>
-                              {format(date, 'MMM yy')}
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full h-7 text-[10px] text-slate-400 hover:text-rose-500"
-                    onClick={() => {
-                      onBulkEdit(transaction.id, { budget_month: null, budget_year: null });
-                    }}
-                  >
-                    Clear Budget Period
-                  </Button>
-                </div>
-              </PopoverContent>
-            </Popover>
 
             {!transaction.parent_id && (
               <Button
@@ -431,4 +315,27 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
       </tr >
     </>
   );
-}));
+}), (prevProps, nextProps) => {
+  if (
+    prevProps.transaction !== nextProps.transaction ||
+    prevProps.isSelected !== nextProps.isSelected ||
+    prevProps.isSaving !== nextProps.isSaving ||
+    prevProps.projections !== nextProps.projections ||
+    prevProps.knownSources !== nextProps.knownSources
+  ) {
+    return false;
+  }
+
+  const wasEditing = prevProps.editingCell?.id === prevProps.transaction.id;
+  const isEditing = nextProps.editingCell?.id === nextProps.transaction.id;
+
+  if (wasEditing !== isEditing) {
+    return false;
+  }
+
+  if (wasEditing && isEditing && prevProps.editingCell?.field !== nextProps.editingCell?.field) {
+    return false;
+  }
+
+  return true;
+});

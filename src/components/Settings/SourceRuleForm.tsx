@@ -20,6 +20,7 @@ export interface SourceRuleState {
     name: string;
     category: string;
     sub_category: string;
+    secondary_categories: string[];
     auto_planned: boolean;
     auto_exclude: boolean;
     match_mode: 'exact' | 'fuzzy';
@@ -102,6 +103,7 @@ export const SourceRuleForm = ({
             ...rule,
             category: '',
             sub_category: '',
+            secondary_categories: [],
             auto_planned: true,
             auto_exclude: false
         };
@@ -277,6 +279,45 @@ export const SourceRuleForm = ({
                                     )}
                                 </SelectContent>
                             </Select>
+                        </div>
+
+                        {/* Secondary Categories Selection array */}
+                        <div className="space-y-1.5 pt-2 border-t mt-2">
+                            <Label className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Secondary Categories (Optional)</Label>
+                            <Select
+                                value=""
+                                onValueChange={(v) => {
+                                    if (v && !rule.secondary_categories.includes(v)) {
+                                        setRule({ ...rule, secondary_categories: [...rule.secondary_categories, v] });
+                                    }
+                                }}
+                            >
+                                <SelectTrigger className="h-8 bg-white border-slate-200 text-xs font-medium">
+                                    <SelectValue placeholder="Add Category..." />
+                                </SelectTrigger>
+                                <SelectContent className="max-h-[250px] overflow-y-auto">
+                                    {(displayCategories || []).filter(c => c !== rule.category && !rule.secondary_categories.includes(c)).map(cat => (
+                                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+
+                            {/* Selected Secondary Badges */}
+                            {rule.secondary_categories.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                    {rule.secondary_categories.map(cat => (
+                                        <Badge key={cat} variant="secondary" className="bg-slate-100 text-xs text-slate-700 py-0.5 px-2 font-medium border border-slate-200">
+                                            {cat}
+                                            <button
+                                                onClick={() => setRule({ ...rule, secondary_categories: rule.secondary_categories.filter(c => c !== cat) })}
+                                                className="ml-1.5 text-slate-400 hover:text-rose-500 font-bold"
+                                            >
+                                                ×
+                                            </button>
+                                        </Badge>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
 

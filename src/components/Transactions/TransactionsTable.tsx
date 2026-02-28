@@ -1,9 +1,12 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { usePersistentState } from '@/hooks/usePersistentState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Plus, Search, ChevronDown, Clock, Zap, History, Calculator, FilterX } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { UnifiedAddTransactionsDialog } from './UnifiedAddTransactionsDialog';
 import { TransactionSplitModal } from './TransactionSplitModal';
+import { TransactionEditDrawer } from './TransactionEditDrawer';
 
 import { TransactionsTableHeader } from './TransactionsTableHeader';
 import { TransactionsTableRow } from './TransactionsTableRow';
@@ -118,11 +121,10 @@ export const TransactionsTable = () => {
 
   const [addTransactionsOpen, setAddTransactionsOpen] = useState(false);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
-  const [isFeederOnly, setIsFeederOnly] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [splitModalOpen, setSplitModalOpen] = useState(false);
   const [transactionToSplit, setTransactionToSplit] = useState<Transaction | null>(null);
-
+  const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
 
   const feederCategoryNames = useMemo(() =>
@@ -131,19 +133,30 @@ export const TransactionsTable = () => {
   );
 
   const filteredAndSortedTransactions = useMemo(() => {
-    let list = transactions;
-    if (isFeederOnly) {
-      list = list.filter(t =>
-        t.budget === 'Klintemarken' ||
-        (t.category && feederCategoryNames.includes(t.category.toLowerCase()))
-      );
-    }
-    return list;
-  }, [transactions, isFeederOnly, feederCategoryNames]);
+    return transactions;
+  }, [transactions]);
 
-  const handleStartEdit = (id: string, field: keyof Transaction) => {
+  const handleStartEdit = useCallback((id: string, field: keyof Transaction) => {
     setEditingCell({ id, field });
-  };
+  }, [setEditingCell]);
+
+  const handleStopEdit = useCallback(() => {
+    setEditingCell(null);
+  }, [setEditingCell]);
+
+  const handleDelete = useCallback((id: string) => {
+    setTransactionToDelete(id);
+    setDeleteConfirmOpen(true);
+  }, []);
+
+  const handleSplit = useCallback((t: Transaction) => {
+    setTransactionToSplit(t);
+    setSplitModalOpen(true);
+  }, []);
+
+  const handleRowClick = useCallback((t: Transaction) => {
+    setTransactionToEdit(t);
+  }, []);
 
   const handleSingleDelete = () => {
     if (transactionToDelete) {
@@ -151,6 +164,12 @@ export const TransactionsTable = () => {
       setTransactionToDelete(null);
     }
   };
+
+  useEffect(() => {
+    const handleOpenAddTransaction = () => setAddTransactionsOpen(true);
+    window.addEventListener('open-add-transaction', handleOpenAddTransaction);
+    return () => window.removeEventListener('open-add-transaction', handleOpenAddTransaction);
+  }, []);
 
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -197,44 +216,180 @@ export const TransactionsTable = () => {
         </div>
       )}
 
-      <Card className="flex flex-col flex-1 min-h-0">
-        <CardHeader className="py-6 px-6 shrink-0 flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-2xl font-bold text-foreground">
-            All Transactions ({hasActiveFilters ? `${filteredCount} of ${totalCount}` : totalCount})
+      <Card className="flex flex-col flex-1 min-h-0 border-slate-200 shadow-sm bg-white overflow-hidden">
+        <CardHeader className="py-6 px-6 shrink-0 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-slate-50 border-b space-y-0">
+          <CardTitle className="text-xl font-bold text-slate-800">
+            Transactions ({hasActiveFilters ? `${filteredCount} of ${totalCount}` : totalCount})
             {hasActiveFilters && (
-              <span className="ml-2 text-muted-foreground font-medium text-lg">
+              <span className="ml-2 text-slate-500 font-medium text-base">
                 → {formatCurrency(filteredSum, settings.currency)}
               </span>
             )}
           </CardTitle>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded-full border border-border">
-              <span className={cn("text-xs font-bold transition-colors", isFeederOnly ? "text-amber-600" : "text-muted-foreground")}>Feeder Only</span>
-              <button
-                onClick={() => setIsFeederOnly(!isFeederOnly)}
-                className={cn(
-                  "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-600 focus:ring-offset-2",
-                  isFeederOnly ? "bg-amber-500" : "bg-zinc-200 dark:bg-zinc-700"
-                )}
-              >
-                <span
+          <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
+            <div className="flex bg-white border border-slate-200 p-0.5 rounded-lg">
+              {[
+                { id: 'date', label: 'DATE', defaultOrder: 'desc' },
+                { id: 'amount', label: 'AMOUNT', defaultOrder: 'desc' },
+                { id: 'source', label: 'A-Z', defaultOrder: 'asc' }
+              ].map((btn) => (
+                <Button
+                  key={btn.id}
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (sortBy !== btn.id) {
+                      handleSort(btn.id as any);
+                    } else {
+                      handleSort(btn.id as any);
+                    }
+                  }}
                   className={cn(
-                    "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-                    isFeederOnly ? "translate-x-4" : "translate-x-0"
+                    "h-8 text-[10px] font-bold px-3 transition-all gap-1.5",
+                    sortBy === btn.id ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:text-slate-600"
                   )}
-                />
-              </button>
+                >
+                  {btn.label}
+                  {sortBy === btn.id && (
+                    sortOrder === 'asc' ? <ChevronDown className="w-3 h-3 rotate-180" /> : <ChevronDown className="w-3 h-3" />
+                  )}
+                </Button>
+              ))}
             </div>
-            <Button
-              size="lg"
-              onClick={() => setAddTransactionsOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all active:scale-95"
-            >
-              <Plus className="w-5 h-5 mr-2" />
-              Add Transactions
-            </Button>
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                placeholder="Search matching..."
+                className="pl-9 bg-white h-9"
+                value={filters.source || ''}
+                onChange={(e) => {
+                  if (e.target.value) handleFilter('source', e.target.value);
+                  else clearFilter('source');
+                }}
+              />
+            </div>
           </div>
         </CardHeader>
+
+        <div className="px-6 py-3 bg-white border-b flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-2">Quick Filters:</span>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (Array.isArray(filters.status) && filters.status.includes('Pending Triage')) {
+                const next = filters.status.filter((s: string) => s !== 'Pending Triage');
+                if (next.length) handleFilter('status', next); else clearFilter('status');
+              } else {
+                handleFilter('status', [...(Array.isArray(filters.status) ? filters.status : []), 'Pending Triage']);
+              }
+            }}
+            className={cn(
+              "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5",
+              Array.isArray(filters.status) && filters.status.includes('Pending Triage') ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100" : "bg-white text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <Zap className={cn("w-3 h-3", Array.isArray(filters.status) && filters.status.includes('Pending Triage') ? "fill-amber-500 text-amber-500" : "")} />
+            PENDING TRIAGE
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (Array.isArray(filters.status) && filters.status.includes('Pending Reconciliation')) {
+                const next = filters.status.filter((s: string) => s !== 'Pending Reconciliation');
+                if (next.length) handleFilter('status', next); else clearFilter('status');
+              } else {
+                handleFilter('status', [...(Array.isArray(filters.status) ? filters.status : []), 'Pending Reconciliation']);
+              }
+            }}
+            className={cn(
+              "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5",
+              Array.isArray(filters.status) && filters.status.includes('Pending Reconciliation') ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" : "bg-white text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <Clock className={cn("w-3 h-3", Array.isArray(filters.status) && filters.status.includes('Pending Reconciliation') ? "text-blue-500" : "")} />
+            PENDING RECON
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (filters.date?.type === 'range' && filters.date?.label === 'last30') {
+                clearFilter('date');
+              } else {
+                const date = new Date();
+                date.setDate(date.getDate() - 30);
+                handleFilter('date', { type: 'range', value: { from: date, to: new Date() }, label: 'last30' });
+              }
+            }}
+            className={cn(
+              "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5",
+              filters.date?.type === 'range' && filters.date?.label === 'last30' ? "bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100" : "bg-white text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <History className={cn("w-3 h-3", filters.date?.type === 'range' && filters.date?.label === 'last30' ? "text-indigo-500" : "")} />
+            LAST 30D
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (filters.date?.type === 'range' && filters.date?.label === 'last90') {
+                clearFilter('date');
+              } else {
+                const date = new Date();
+                date.setDate(date.getDate() - 90);
+                handleFilter('date', { type: 'range', value: { from: date, to: new Date() }, label: 'last90' });
+              }
+            }}
+            className={cn(
+              "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5",
+              filters.date?.type === 'range' && filters.date?.label === 'last90' ? "bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100" : "bg-white text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <History className={cn("w-3 h-3", filters.date?.type === 'range' && filters.date?.label === 'last90' ? "text-indigo-500" : "")} />
+            LAST 90D
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (Array.isArray(filters.category) && filters.category.some(c => slush.map(s => s.name).includes(c))) {
+                clearFilter('category');
+              } else {
+                handleFilter('category', slush.map(s => s.name));
+              }
+            }}
+            className={cn(
+              "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5",
+              Array.isArray(filters.category) && filters.category.some(c => slush.map(s => s.name).includes(c)) ? "bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100" : "bg-white text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <Calculator className={cn("w-3 h-3", Array.isArray(filters.category) && filters.category.some(c => slush.map(s => s.name).includes(c)) ? "text-rose-500" : "")} />
+            SLUSH FUND
+          </Button>
+
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                emergencyClearAll();
+              }}
+              className="h-7 px-2 text-[10px] text-slate-400 hover:text-slate-600 font-bold ml-auto gap-1"
+            >
+              <FilterX className="w-3 h-3" />
+              Clear All
+            </Button>
+          )}
+        </div>
+
         <CardContent className="flex-1 overflow-hidden p-0 relative">
           <div
             ref={parentRef}
@@ -282,16 +437,10 @@ export const TransactionsTable = () => {
                       onCellEdit={handleCellEdit}
                       onBulkEdit={handleBulkCellEdit}
                       onStartEdit={handleStartEdit}
-                      onStopEdit={() => setEditingCell(null)}
-                      onDelete={(id) => {
-                        setTransactionToDelete(id);
-                        setDeleteConfirmOpen(true);
-                      }}
-                      onSplit={(t) => {
-                        setTransactionToSplit(t);
-                        setSplitModalOpen(true);
-                      }}
-                      onRowClick={() => { }}
+                      onStopEdit={handleStopEdit}
+                      onDelete={handleDelete}
+                      onSplit={handleSplit}
+                      onRowClick={handleRowClick}
                       projections={projections}
                       knownSources={knownSources}
                       allTransactions={transactions}
@@ -395,8 +544,13 @@ export const TransactionsTable = () => {
             window.location.reload();
           }}
         />
-      )
-      }
+      )}
+
+      <TransactionEditDrawer
+        transaction={transactionToEdit}
+        onClose={() => setTransactionToEdit(null)}
+        onSave={(id, updates) => bulkUpdate({ ids: [id], updates })}
+      />
     </div >
   );
 };
