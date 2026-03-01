@@ -177,7 +177,8 @@ export const useAllTransactions = (options?: { enabled?: boolean }) => {
       }
     },
     retry: 1,
-    staleTime: 60000, // Keep longer for analytics
+    staleTime: 1000 * 60 * 60 * 24, // Keep 24h
+    gcTime: 1000 * 60 * 60 * 24, // Keep 24h
     enabled: options?.enabled !== false,
     refetchOnWindowFocus: false,
   });
@@ -295,7 +296,8 @@ const useInfiniteTransactions = (sortBy: keyof Transaction, sortOrder: 'asc' | '
     getNextPageParam: (lastPage, allPages) => {
       return lastPage.length === 50 ? allPages.length : undefined;
     },
-    staleTime: 30000,
+    staleTime: 1000 * 60 * 60 * 24,
+    gcTime: 1000 * 60 * 60 * 24,
     enabled: options?.enabled !== false,
     refetchOnWindowFocus: false,
   });
@@ -407,7 +409,8 @@ const useTransactionCounts = (filters: Record<string, any>) => {
         filteredSum
       };
     },
-    staleTime: 30000,
+    staleTime: 1000 * 60 * 60 * 24,
+    gcTime: 1000 * 60 * 60 * 24,
     refetchOnWindowFocus: false,
   });
 };
@@ -429,7 +432,9 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
         return [];
       }
       return data || [];
-    }
+    },
+    staleTime: 1000 * 60 * 60 * 24, // Keep 24h
+    gcTime: 1000 * 60 * 60 * 24 // Keep 24h
   });
 
   const { data: sourceRules = [] } = useQuery({
@@ -462,7 +467,9 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       }
 
       return Array.from(rules.values());
-    }
+    },
+    staleTime: 1000 * 60 * 60 * 24, // Keep 24h
+    gcTime: 1000 * 60 * 60 * 24 // Keep 24h
   });
 
   const knownSources = useMemo(() =>
