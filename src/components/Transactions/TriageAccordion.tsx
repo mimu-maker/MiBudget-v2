@@ -386,10 +386,10 @@ export const TriageAccordion = ({
             raw_name: txs[0]?.source || sourceName,
             clean_name: txs[0]?.clean_source || '',
             match_mode: 'fuzzy',
-            category: txs[0]?.category || '',
-            sub_category: txs[0]?.sub_category || '',
-            auto_recurring: txs[0]?.recurring || 'Monthly',
-            auto_planned: txs[0]?.planned !== undefined ? txs[0]?.planned : true,
+            category: '',
+            sub_category: '',
+            auto_recurring: 'N/A',
+            auto_planned: true,
             auto_exclude: txs[0]?.excluded || false,
             transactionIds: txs.map(t => t.id)
         });

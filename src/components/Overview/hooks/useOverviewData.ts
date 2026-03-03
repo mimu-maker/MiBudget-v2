@@ -3,7 +3,7 @@ import { useAllTransactions } from '@/components/Transactions/hooks/useTransacti
 import { useSettings } from '@/hooks/useSettings';
 import { usePeriod } from '@/contexts/PeriodContext';
 import { getPeriodInterval } from '@/lib/dateUtils';
-import { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval, isWithinInterval } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval, isWithinInterval, eachWeekOfInterval, startOfWeek } from 'date-fns';
 import { da } from 'date-fns/locale';
 import { useAnnualBudget } from '@/hooks/useAnnualBudget';
 import { useProfile } from '@/contexts/ProfileContext';
@@ -68,12 +68,13 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
 
     // Base filtered transactions based on date interval
     const dateFilteredTransactions = useMemo(() => {
+        const is90d = selectedPeriod === '90d';
         return transactions.filter(t => {
-            const dateStr = t.budget_month || t.date;
+            const dateStr = is90d ? t.date : (t.budget_month || t.date);
             const d = parseISO(dateStr);
             return isWithinInterval(d, effectiveInterval);
         });
-    }, [transactions, effectiveInterval]);
+    }, [transactions, effectiveInterval, selectedPeriod]);
 
     // "Flow" filtered transactions - responsive to the toggle props
     const flowFiltered = useMemo(() => {
@@ -117,18 +118,31 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
     // Monthly Data for charts (using flowFiltered)
     const monthlyData = useMemo(() => {
         const interval = effectiveInterval;
-        const months = eachMonthOfInterval(interval);
+        const is90d = selectedPeriod === '90d';
 
-        return months.map(monthDate => {
-            const monthLabel = format(monthDate, 'MM/yy', { locale: displayLocale });
-            const fullMonthName = format(monthDate, 'MM/yyyy', { locale: displayLocale });
-            const monthStart = startOfMonth(monthDate);
-            const nextMonthStart = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1);
+        const periods = is90d
+            ? eachWeekOfInterval(interval, { weekStartsOn: 1 })
+            : eachMonthOfInterval(interval);
+
+        return periods.map(periodDate => {
+            const monthLabel = is90d
+                ? `W${format(periodDate, 'I')}/${format(periodDate, 'RR').slice(2)}`
+                : format(periodDate, 'MM/yy', { locale: displayLocale });
+            const fullMonthName = is90d
+                ? `Week ${format(periodDate, 'I, yyyy')}`
+                : format(periodDate, 'MM/yyyy', { locale: displayLocale });
+
+            const periodStart = is90d
+                ? startOfWeek(periodDate, { weekStartsOn: 1 })
+                : startOfMonth(periodDate);
+            const nextPeriodStart = is90d
+                ? new Date(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate() + 7)
+                : new Date(periodStart.getFullYear(), periodStart.getMonth() + 1, 1);
 
             const monthTransactions = flowFiltered.filter(t => {
-                const dateStr = t.budget_month || t.date;
+                const dateStr = is90d ? t.date : (t.budget_month || t.date);
                 const d = parseISO(dateStr);
-                return d >= monthStart && d < nextMonthStart;
+                return d >= periodStart && d < nextPeriodStart;
             });
 
             const income = monthTransactions.reduce((sum, t) => sum + (t.amount > 0 ? t.amount : 0), 0);

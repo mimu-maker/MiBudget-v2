@@ -2,8 +2,10 @@ import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { usePersistentState } from '@/hooks/usePersistentState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Search, ChevronDown, Clock, Zap, History, Calculator, FilterX } from 'lucide-react';
+import { Plus, Search, ChevronDown, Clock, Zap, History, Calculator, FilterX, Download } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { exportTransactions, ExportFormat } from '@/utils/exportUtils';
 import { UnifiedAddTransactionsDialog } from './UnifiedAddTransactionsDialog';
 import { TransactionSplitModal } from './TransactionSplitModal';
 import { TransactionEditDrawer } from './TransactionEditDrawer';
@@ -300,6 +302,25 @@ export const TransactionsTable = () => {
                 }}
               />
             </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 gap-2">
+                  <Download className="w-4 h-4" />
+                  <span>Export</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onClick={() => exportTransactions(filteredAndSortedTransactions, 'csv')}>
+                  <span className="font-medium">Export as CSV</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportTransactions(filteredAndSortedTransactions, 'excel')}>
+                  <span className="font-medium">Export as Excel</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportTransactions(filteredAndSortedTransactions, 'pdf')}>
+                  <span className="font-medium">Export as PDF</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </CardHeader>
 

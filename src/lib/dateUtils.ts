@@ -1,4 +1,4 @@
-import { startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, subQuarters, startOfYear, endOfYear, subYears, isWithinInterval, parseISO } from 'date-fns';
+import { startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, subQuarters, startOfYear, endOfYear, subYears, isWithinInterval, parseISO, subDays } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 
 export type Period =
@@ -9,8 +9,9 @@ export type Period =
     | 'Last Quarter'
     | 'This Year'
     | 'Last Year'
-    | 'Year to Date'
-    | 'Last 6M'
+    | 'YTD'
+    | '6m'
+    | '90d'
     | 'Custom'
     | string;
 
@@ -46,12 +47,16 @@ export const getPeriodInterval = (period: Period, customRange?: DateRange): { st
         case 'Last Quarter':
             const lastQuarter = subQuarters(now, 1);
             return { start: startOfQuarter(lastQuarter), end: endOfQuarter(lastQuarter) };
+        case '90d':
+            return { start: subDays(now, 90), end: now };
         case 'This Year':
         case 'Year to Date':
+        case 'YTD':
             return { start: startOfYear(now), end: now };
         case 'Last Year':
             const lastYear = subYears(now, 1);
             return { start: startOfYear(lastYear), end: endOfYear(lastYear) };
+        case '6m':
         case 'Last 6M':
             const sixMonthsAgo = subMonths(now, 5);
             return { start: startOfMonth(sixMonthsAgo), end: now };
@@ -68,7 +73,8 @@ export const filterByBudgetDate = <T extends { date: string, budget_month?: stri
     return items.filter(item => {
         try {
             // Use budget_month if available (YYYY-MM-01 format), otherwise fallback to date
-            const dateStr = item.budget_month || item.date;
+            const is90d = period === '90d';
+            const dateStr = is90d ? item.date : (item.budget_month || item.date);
             const date = parseISO(dateStr);
             return isWithinInterval(date, interval);
         } catch (e) {

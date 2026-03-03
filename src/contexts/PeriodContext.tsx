@@ -9,8 +9,9 @@ export type Period =
     | 'Last Quarter'
     | 'This Year'
     | 'Last Year'
-    | 'Year to Date'
-    | 'Last 6M'
+    | 'YTD'
+    | '6m'
+    | '90d'
     | 'Custom'
     | string;
 

@@ -404,9 +404,9 @@ export const ValidationDashboard = () => {
             name: txs[0]?.clean_source || cleanSource(txs[0]?.source) || sourceName, // Editable mapping string
             raw_name: txs[0]?.source || sourceName, // Raw name from DB
             clean_name: txs[0]?.clean_source || '', // Existing clean name if any
-            category: txs[0]?.category || '',
-            sub_category: txs[0]?.sub_category || '',
-            auto_recurring: txs[0]?.recurring || 'Monthly',
+            category: '',
+            sub_category: '',
+            auto_recurring: 'N/A', // Changed from txs[0]?.recurring || 'Monthly'
             auto_planned: true, // Default to Planned
             auto_exclude: txs[0]?.excluded || false,
             skip_triage: txs[0]?.status === 'Complete',
@@ -461,18 +461,17 @@ export const ValidationDashboard = () => {
             }
         }
 
-        // 2. Apply to current transactions
+        // 2. Apply to current transactions - Only save the rule mapping, do not apply categories
         const updates: any = {
-            category: ruleToUse.category,
-            sub_category: ruleToUse.sub_category,
-            recurring: ruleToUse.auto_recurring,
-            planned: ruleToUse.auto_planned,
-            excluded: ruleToUse.auto_exclude,
             clean_source: ruleToUse.clean_name,
-            // Status is Complete if either excluded or fully categorized, unless overridden
-            status: overrideStatus || ((ruleToUse.auto_exclude || (ruleToUse.category && ruleToUse.sub_category)) ? 'Complete' : 'Pending Triage'),
-            confidence: 1
+            confidence: 1,
+            status: overrideStatus || 'Pending Triage',
         };
+
+        if (ruleToUse.auto_exclude) {
+            updates.excluded = true;
+            updates.status = overrideStatus || 'Excluded';
+        }
 
         // Use bulkUpdate mutation for proper invalidation and state management
         bulkUpdate({
@@ -751,16 +750,10 @@ export const ValidationDashboard = () => {
         budget: any,
         isInline?: boolean
     }) => {
-        const [showErrors, setShowErrors] = useState(false);
         if (!rule) return null;
 
         const validateAndSave = (status?: string) => {
-            if (!rule.auto_exclude) {
-                if (!rule.category || !rule.sub_category) {
-                    setShowErrors(true);
-                    return;
-                }
-            }
+            // No strict validation required for category/sub_category since "Always Ask" is a valid state
             onSave(status);
         };
 
@@ -811,56 +804,54 @@ export const ValidationDashboard = () => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                    <div className="md:col-span-3 space-y-1.5">
-                        <Label className={cn("text-[10px] uppercase font-black tracking-widest", showErrors && !rule.category && !rule.auto_exclude ? "text-red-500" : "text-slate-400")}>Category</Label>
-                        <CategorySelector
-                            value={rule.category}
-                            onValueChange={(v) => {
-                                if (v.includes(':')) {
-                                    const [cat, sub] = v.split(':');
-                                    setRule((p: any) => p ? { ...p, category: cat, sub_category: sub } : null);
-                                } else {
-                                    setRule((p: any) => p ? { ...p, category: v, sub_category: '' } : null);
-                                }
-                            }}
-                            hideSuggestions={true}
-                            className="h-10 shadow-sm border-slate-200 rounded-xl bg-white"
-                            disabled={rule.auto_exclude}
-                            type="all"
-                            suggestionLimit={3}
-                            placeholder={rule.auto_exclude ? "N/A" : "Select category"}
-                        />
-                    </div>
-                    <div className="md:col-span-3 space-y-1.5">
-                        <Label className={cn("text-[10px] uppercase font-black tracking-widest", showErrors && !rule.sub_category && !rule.auto_exclude ? "text-red-500" : "text-slate-400")}>Sub-category</Label>
-                        <Select
-                            value={rule.sub_category}
-                            onValueChange={(v) => setRule((p: any) => p ? { ...p, sub_category: v } : null)}
-                            disabled={!rule.category || rule.auto_exclude}
-                        >
-                            <SelectTrigger className={cn("bg-white h-10 text-xs shadow-sm", showErrors && !rule.sub_category && !rule.auto_exclude && "border-red-500 ring-1 ring-red-500")}>
-                                <SelectValue placeholder={rule.auto_exclude ? "N/A" : "Select Sub"} />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {subCats.length > 0 ? (
-                                    subCats.map(sub => <SelectItem key={sub} value={sub}>{sub}</SelectItem>)
-                                ) : (
-                                    <p className="p-2 text-xs text-slate-400 italic">No budgeted sub-categories</p>
-                                )}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="md:col-span-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-2">
                         <div className="space-y-1.5">
-                            <Label className="text-[10px] uppercase font-black tracking-widest text-slate-400">Frequency</Label>
+                            <Label className={cn("text-[10px] uppercase font-black tracking-widest", !rule.category && !rule.auto_exclude ? "text-slate-400" : "text-slate-400")}>Category</Label>
+                            <CategorySelector
+                                value={rule.category || 'always-ask'}
+                                onValueChange={(v) => {
+                                    if (v.includes(':')) {
+                                        const [cat, sub] = v.split(':');
+                                        setRule((p: any) => p ? { ...p, category: cat, sub_category: sub } : null);
+                                    } else {
+                                        setRule((p: any) => p ? { ...p, category: v, sub_category: '' } : null);
+                                    }
+                                }}
+                                hideSuggestions={true}
+                                showAlwaysAsk={true}
+                                className="h-10 shadow-sm border-slate-200 rounded-xl bg-white w-full"
+                                disabled={rule.auto_exclude}
+                                type="all"
+                                suggestionLimit={3}
+                                placeholder={rule.auto_exclude ? "N/A" : "Always Ask"}
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className={cn("text-[10px] uppercase font-black tracking-widest", !rule.sub_category && !rule.auto_exclude ? "text-slate-400" : "text-slate-400")}>Sub-category</Label>
                             <Select
-                                value={rule.auto_recurring}
+                                value={rule.sub_category || 'always-ask'}
+                                onValueChange={(v) => setRule((p: any) => p ? { ...p, sub_category: v === 'always-ask' ? '' : v } : null)}
+                                disabled={!rule.category || rule.auto_exclude}
+                            >
+                                <SelectTrigger className={cn("bg-white h-10 text-xs shadow-sm rounded-xl w-full", !rule.sub_category && !rule.auto_exclude && "")}>
+                                    <SelectValue placeholder={rule.auto_exclude ? "N/A" : "Always Ask"} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="always-ask" className="text-slate-500 font-bold italic">Always Ask</SelectItem>
+                                    {subCats.length > 0 && subCats.map(sub => <SelectItem key={sub} value={sub}>{sub}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label className="text-[10px] uppercase font-black tracking-widest text-slate-400">Recurrence Frequency</Label>
+                            <Select
+                                value={rule.auto_recurring || 'N/A'}
                                 onValueChange={(v) => setRule((p: any) => p ? { ...p, auto_recurring: v } : null)}
                                 disabled={rule.auto_exclude}
                             >
-                                <SelectTrigger className="bg-white h-10 text-xs shadow-sm"><SelectValue /></SelectTrigger>
+                                <SelectTrigger className="bg-white h-10 text-xs shadow-sm rounded-xl w-full"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="N/A">N/A</SelectItem>
                                     <SelectItem value="Monthly">Monthly</SelectItem>
@@ -872,38 +863,42 @@ export const ValidationDashboard = () => {
                                 </SelectContent>
                             </Select>
                         </div>
+                    </div>
 
-                        <div className="space-y-1.5">
-                            <Label className="text-[10px] uppercase font-black tracking-widest text-slate-400">Settings</Label>
-                            <div className="flex items-center gap-2 h-10 px-3 bg-white rounded-xl border border-slate-100 shadow-sm">
-                                <span className="text-[9px] font-bold text-slate-400 uppercase">Auto-Comp</span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className={cn("p-4 rounded-xl border transition-all", rule.skip_triage ? "bg-blue-50/50 border-blue-200" : "bg-white border-slate-200", rule.auto_exclude ? "opacity-50 pointer-events-none" : "")}>
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="space-y-1.5 pr-2">
+                                    <Label className="text-sm font-black text-slate-700 block">Auto-Complete Transactions</Label>
+                                    <p className="text-[10px] leading-relaxed text-slate-500 font-medium">
+                                        Transactions skip the triage queue and are immediately marked as Complete. <strong className="text-slate-700">Requires both Category and Sub-category to be mapped.</strong>
+                                    </p>
+                                </div>
                                 <Switch
                                     checked={rule.skip_triage}
-                                    onCheckedChange={(v) => setRule((p: any) => p ? { ...p, skip_triage: v } : null)}
+                                    onCheckedChange={(v) => {
+                                        if (v && (!rule.category || !rule.sub_category)) {
+                                            alert("Please select a specific Category and Sub-category before enabling Auto-Complete.");
+                                            return;
+                                        }
+                                        setRule((p: any) => p ? { ...p, skip_triage: v } : null)
+                                    }}
                                     disabled={rule.auto_exclude}
                                 />
                             </div>
                         </div>
 
-                        <div className="space-y-1.5">
-                            <Label className="text-[10px] uppercase font-black tracking-widest text-slate-400">&nbsp;</Label>
-                            <div className="flex items-center gap-2 h-10 px-3 bg-amber-50 rounded-xl border border-amber-100 shadow-sm">
-                                <span className="text-[9px] font-bold text-amber-600 uppercase">Auto-Excl</span>
+                        <div className={cn("p-4 rounded-xl border transition-all", rule.auto_exclude ? "bg-amber-50/50 border-amber-200" : "bg-white border-slate-200")}>
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="space-y-1.5 pr-2">
+                                    <Label className="text-sm font-black text-slate-700 block">Auto-Exclude Source</Label>
+                                    <p className="text-[10px] leading-relaxed text-slate-500 font-medium">
+                                        Automatically mark this source as Excluded on import. Transactions from this source will be ignored and hidden from your budget.
+                                    </p>
+                                </div>
                                 <Switch
                                     checked={rule.auto_exclude}
                                     onCheckedChange={(v) => setRule((p: any) => p ? { ...p, auto_exclude: v } : null)}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <Label className="text-[10px] uppercase font-black tracking-widest text-slate-400">&nbsp;</Label>
-                            <div className="flex items-center gap-2 h-10 px-3 bg-slate-50 rounded-xl border border-slate-100 shadow-sm">
-                                <span className="text-[9px] font-bold text-slate-400 uppercase">Unplanned</span>
-                                <Switch
-                                    checked={!rule.auto_planned}
-                                    onCheckedChange={(v) => setRule((p: any) => p ? { ...p, auto_planned: !v } : null)}
-                                    disabled={rule.auto_exclude}
                                 />
                             </div>
                         </div>
@@ -912,40 +907,7 @@ export const ValidationDashboard = () => {
 
 
 
-                {rule.auto_recurring !== 'N/A' && (
-                    <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-center justify-between gap-4 animate-in fade-in slide-in-from-left-2">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-amber-100 rounded-lg">
-                                <RefreshCw className="w-4 h-4 text-amber-600" />
-                            </div>
-                            <div className="space-y-0.5">
-                                <p className="text-xs font-bold text-amber-900">Recurring Pattern Detected</p>
-                                <p className="text-[10px] text-amber-700/80 font-medium">Found other similar transactions for {rule.clean_name || rule.name}.</p>
-                            </div>
-                        </div>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            className="bg-white border-amber-200 text-amber-700 hover:bg-amber-100 h-8 text-[10px] font-black uppercase tracking-tight"
-                            onClick={() => {
-                                // Find all transactions with same source/clean_source
-                                const sameSourceTxs = transactions.filter(t =>
-                                    (t.source === rule.name || t.clean_source === rule.clean_name) &&
-                                    !rule.transactionIds.includes(t.id) &&
-                                    t.status !== 'Complete'
-                                );
-                                if (sameSourceTxs.length > 0) {
-                                    setRule(p => ({
-                                        ...p,
-                                        transactionIds: [...p.transactionIds, ...sameSourceTxs.map(t => t.id)]
-                                    }));
-                                }
-                            }}
-                        >
-                            Include all matching
-                        </Button>
-                    </div>
-                )}
+                {/* Include matches section temporarily removed per requirements */}
 
                 {(isInline || !rule.auto_exclude) && (
                     <Alert className={cn("mt-6 border-blue-100", isInline ? "bg-slate-100" : "bg-blue-50")}>

@@ -8,7 +8,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { usePeriod } from '@/contexts/PeriodContext';
 import { filterByBudgetDate } from '@/lib/dateUtils';
 import { useAnnualBudget } from '@/hooks/useAnnualBudget';
-import { parseISO, format, startOfMonth, eachMonthOfInterval } from 'date-fns';
+import { parseISO, format, startOfMonth, eachMonthOfInterval, startOfWeek } from 'date-fns';
 import { da } from 'date-fns/locale';
 import { formatCurrency } from '@/lib/formatUtils';
 import { cn } from '@/lib/utils';
@@ -78,20 +78,52 @@ export const SpecialOverview = () => {
     }
   }, [categories.length]); // Only run when category count changes (initial load/filter change)
 
-  // Special trend - group by month
+  // Special trend - group by month (or week for 90d)
   const trendData = useMemo(() => {
-    const months: Record<string, any> = {};
+    const is90d = selectedPeriod === '90d';
+    const groups: Record<string, any> = {};
 
     specialTransactions.forEach(t => {
-      const dateStr = t.budget_month || t.date;
-      const month = format(parseISO(dateStr), 'MM/yy', { locale: da });
+      const dateStr = is90d ? t.date : (t.budget_month || t.date);
+      const dateObj = parseISO(dateStr);
+      let label = '';
+      if (is90d) {
+        // e.g. W12/26
+        label = `W${format(dateObj, 'I')}/${format(dateObj, 'RR').slice(2)}`;
+      } else {
+        label = format(dateObj, 'MM/yy', { locale: da });
+      }
+
       const cat = t.category || 'Other';
-      if (!months[month]) months[month] = { month };
-      months[month][cat] = (months[month][cat] || 0) + t.amount;
+      if (!groups[label]) groups[label] = { month: label }; // keeping the key 'month' for XAxis
+      groups[label][cat] = (groups[label][cat] || 0) + t.amount;
     });
 
-    return Object.values(months);
-  }, [specialTransactions]);
+    // If it's 90d, we might want to ensure we have exactly 14 weeks.
+    // However, calculating from valid transactions inside the filtered list is easier,
+    // though filling gaps makes the chart smoother.
+    // For now we rely on the grouping logic which produces ordered keys if sorted,
+    // But since it's an object, it might lose order across years if we don't sort.
+
+    // Sort logic
+    return Object.values(groups).sort((a, b) => {
+      // Parse back the label to a date for sorting
+      let dateA, dateB;
+      if (is90d) {
+        // week sorting
+        const partsA = a.month.substring(1).split('/');
+        const partsB = b.month.substring(1).split('/');
+        if (partsA[1] !== partsB[1]) return parseInt(partsA[1]) - parseInt(partsB[1]);
+        return parseInt(partsA[0]) - parseInt(partsB[0]);
+      } else {
+        // month sorting
+        const partsA = a.month.split('/');
+        const partsB = b.month.split('/');
+        if (partsA[1] !== partsB[1]) return parseInt(partsA[1]) - parseInt(partsB[1]);
+        return parseInt(partsA[0]) - parseInt(partsB[0]);
+      }
+    });
+  }, [specialTransactions, selectedPeriod]);
 
   const toggleCategory = (categoryName: string) => {
     setExpandedCategories(prev => {
