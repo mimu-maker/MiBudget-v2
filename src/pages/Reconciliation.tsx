@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { format } from 'date-fns';
 import { TransactionDetailDialog } from '@/components/Transactions/TransactionDetailDialog';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -123,26 +124,26 @@ const Reconciliation = () => {
         return Array.from(entities).sort();
     }, [transactions, customEntities]);
 
-    // Group reconciled items by entity and session (updated_at mapping)
+    // Group reconciled items by entity and month
     const groupedHistory = useMemo(() => {
         const groups: Record<string, Record<string, Transaction[]>> = {};
 
         reconciledItems.forEach(item => {
             const entity = item.entity || 'Reconciled';
-            // Use updated_at as a session identifier. Quantize it to seconds to catch items from the same bulk update.
-            const session = item.updated_at ? Math.floor(new Date(item.updated_at).getTime() / 1000).toString() : 'legacy';
+            // Use budget_month or format date to Year-Month as the group identifier
+            const period = item.budget_month || (item.date ? item.date.substring(0, 7) : 'legacy');
 
             if (!groups[entity]) groups[entity] = {};
-            if (!groups[entity][session]) groups[entity][session] = [];
-            groups[entity][session].push(item);
+            if (!groups[entity][period]) groups[entity][period] = [];
+            groups[entity][period].push(item);
         });
 
-        // Sort sessions by date (descending) within each entity
+        // Sort periods by date (descending) within each entity
         const sortedGroups: Record<string, Transaction[][]> = {};
         Object.keys(groups).forEach(entity => {
             sortedGroups[entity] = Object.values(groups[entity]).sort((a, b) => {
-                const dateA = new Date(a[0].updated_at || 0).getTime();
-                const dateB = new Date(b[0].updated_at || 0).getTime();
+                const dateA = new Date(a[0].date || 0).getTime();
+                const dateB = new Date(b[0].date || 0).getTime();
                 return dateB - dateA;
             });
         });
@@ -604,36 +605,40 @@ const Reconciliation = () => {
                                         <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{entity}</span>
                                     </div>
                                     <div className="space-y-6">
-                                        {sessions.map((items, sessionIdx) => (
-                                            <div key={`${entity}-session-${sessionIdx}`} className="space-y-2 bg-slate-50/50 p-4 rounded-2xl border border-slate-100/50">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Reconciled Batch • {formatDate(items[0].updated_at || items[0].date, false, dateFormat)}</span>
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{items.length} ITEM{items.length > 1 ? 'S' : ''}</span>
-                                                </div>
-                                                <div className="space-y-1">
-                                                    {items.map(item => (
-                                                        <div
-                                                            key={item.id}
-                                                            className="flex items-center gap-4 py-2 px-1 border-b border-slate-100/30 last:border-0 text-xs group"
-                                                        >
-                                                            <div className="w-[80px] text-slate-400 font-medium">{formatDate(item.date, false, dateFormat)}</div>
-                                                            <div className="flex-1 font-bold truncate text-slate-600">{item.source}</div>
-                                                            <div className={cn("w-[100px] text-right font-black", item.amount >= 0 ? "text-emerald-600/60" : "text-rose-600/60")}>
-                                                                {formatCurrency(item.amount, settings.currency)}
-                                                            </div>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() => handleUnreconcile(item.id, entity)}
-                                                                className="opacity-0 group-hover:opacity-100 h-6 px-2 text-[10px] font-black uppercase text-blue-600 hover:text-blue-700 hover:bg-blue-50 transition-all"
+                                        {sessions.map((items, sessionIdx) => {
+                                            const monthStr = items[0].budget_month ? format(new Date(items[0].budget_month), 'MMMM yyyy') :
+                                                (items[0].date ? format(new Date(items[0].date), 'MMMM yyyy') : 'Past Time');
+                                            return (
+                                                <div key={`${entity}-session-${sessionIdx}`} className="space-y-2 bg-slate-50/50 p-4 rounded-2xl border border-slate-100/50">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{monthStr}</span>
+                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{items.length} ITEM{items.length > 1 ? 'S' : ''}</span>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        {items.map(item => (
+                                                            <div
+                                                                key={item.id}
+                                                                className="flex items-center gap-4 py-2 px-1 border-b border-slate-100/30 last:border-0 text-xs group"
                                                             >
-                                                                Restore
-                                                            </Button>
-                                                        </div>
-                                                    ))}
+                                                                <div className="w-[80px] text-slate-400 font-medium">{formatDate(item.date, false, dateFormat)}</div>
+                                                                <div className="flex-1 font-bold truncate text-slate-600">{item.source}</div>
+                                                                <div className={cn("w-[100px] text-right font-black", item.amount >= 0 ? "text-emerald-600/60" : "text-rose-600/60")}>
+                                                                    {formatCurrency(item.amount, settings.currency)}
+                                                                </div>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={() => handleUnreconcile(item.id, entity)}
+                                                                    className="opacity-0 group-hover:opacity-100 h-6 px-2 text-[10px] font-black uppercase text-blue-600 hover:text-blue-700 hover:bg-blue-50 transition-all"
+                                                                >
+                                                                    Restore
+                                                                </Button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             ))}

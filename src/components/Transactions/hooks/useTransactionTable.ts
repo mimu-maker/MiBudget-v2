@@ -530,7 +530,10 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       // Prioritize new schema fields
       const dbField = field;
 
-      let updates: any = { [dbField]: value };
+      let updates: any = {
+        [dbField]: value,
+        updated_at: new Date().toISOString()
+      };
 
       // Ensure both new and old fields are populated for compatibility
       if (field === 'source') {
@@ -878,6 +881,10 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
         dbUpdates.excluded = true;
         dbUpdates.budget = 'Exclude';
       }
+
+      // Always update the updated_at timestamp so history and sessions are tracked correctly
+      dbUpdates.updated_at = new Date().toISOString();
+
       let { error } = await (supabase as any)
         .from('transactions')
         .update(dbUpdates)
