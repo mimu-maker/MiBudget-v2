@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { usePersistentState } from '@/hooks/usePersistentState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { exportTransactions, ExportFormat } from '@/utils/exportUtils';
 import { UnifiedAddTransactionsDialog } from './UnifiedAddTransactionsDialog';
 import { TransactionSplitModal } from './TransactionSplitModal';
 import { TransactionEditDrawer } from './TransactionEditDrawer';
+import { ExportTransactionsDialog } from './ExportTransactionsDialog';
 
 import { TransactionsTableHeader } from './TransactionsTableHeader';
 import { TransactionsTableRow } from './TransactionsTableRow';
@@ -160,6 +162,7 @@ export const TransactionsTable = () => {
   const [transactionToSplit, setTransactionToSplit] = useState<Transaction | null>(null);
   const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   const feederCategoryNames = useMemo(() =>
     feeders.flatMap(f => f.categories.map(c => c.name.toLowerCase())),
@@ -199,11 +202,22 @@ export const TransactionsTable = () => {
     }
   };
 
+  const location = useLocation();
+  const navigate = useNavigate();
+
   useEffect(() => {
     const handleOpenAddTransaction = () => setAddTransactionsOpen(true);
     window.addEventListener('open-add-transaction', handleOpenAddTransaction);
+
+    // Check if we navigated here with intent to open the dialog
+    if (location.state && (location.state as any).openAddTransaction) {
+      setAddTransactionsOpen(true);
+      // Clear the state so it doesn't reopen on refresh
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+
     return () => window.removeEventListener('open-add-transaction', handleOpenAddTransaction);
-  }, []);
+  }, [location, navigate]);
 
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -302,25 +316,10 @@ export const TransactionsTable = () => {
                 }}
               />
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-2">
-                  <Download className="w-4 h-4" />
-                  <span>Export</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem onClick={() => exportTransactions(filteredAndSortedTransactions, 'csv')}>
-                  <span className="font-medium">Export as CSV</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportTransactions(filteredAndSortedTransactions, 'excel')}>
-                  <span className="font-medium">Export as Excel</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportTransactions(filteredAndSortedTransactions, 'pdf')}>
-                  <span className="font-medium">Export as PDF</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button variant="outline" size="sm" className="h-9 gap-2" onClick={() => setExportDialogOpen(true)}>
+              <Download className="w-4 h-4" />
+              <span>Export</span>
+            </Button>
           </div>
         </CardHeader>
 
@@ -606,6 +605,15 @@ export const TransactionsTable = () => {
         transaction={transactionToEdit}
         onClose={() => setTransactionToEdit(null)}
         onSave={(id, updates) => bulkUpdate({ ids: [id], updates })}
+      />
+
+      <ExportTransactionsDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+        transactions={filteredAndSortedTransactions}
+        filters={filters}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
       />
     </div >
   );

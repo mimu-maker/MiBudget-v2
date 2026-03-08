@@ -7,7 +7,7 @@ import { format } from 'date-fns';
 
 export type ExportFormat = 'csv' | 'excel' | 'pdf';
 
-export const exportTransactions = (transactions: Transaction[], formatType: ExportFormat) => {
+export const exportTransactions = (transactions: Transaction[], formatType: ExportFormat, customFilename?: string) => {
     const exportData = transactions.map(t => ({
         Date: format(new Date(t.date), 'yyyy-MM-dd'),
         Description: t.description || t.source || '',
@@ -19,7 +19,8 @@ export const exportTransactions = (transactions: Transaction[], formatType: Expo
         Planned: t.planned ? 'Yes' : 'No',
     }));
 
-    const filename = `Transactions_Export_${format(new Date(), 'yyyyMMdd_HHmmss')}`;
+    const defaultFilename = `Transactions_Export_${format(new Date(), 'yyyyMMdd_HHmmss')}`;
+    const filename = customFilename?.trim() || defaultFilename;
 
     switch (formatType) {
         case 'csv': {

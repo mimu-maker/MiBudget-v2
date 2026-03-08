@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Home, ArrowRightLeft, Target, TrendingUp, Settings, LogOut, User, Wallet, Clock, Link, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -88,6 +88,7 @@ export const Sidebar = () => {
   const { signOut, user } = useAuth();
   const { userProfile } = useProfile();
   const location = useLocation();
+  const navigate = useNavigate();
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebar-collapsed');
     return saved === 'true';
@@ -142,7 +143,13 @@ export const Sidebar = () => {
               "w-full bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-md shadow-blue-900/20 group/add",
               isCollapsed ? "h-10 w-10 mx-auto px-0 justify-center rounded-xl" : "h-10 px-4 justify-start rounded-xl"
             )}
-            onClick={() => window.dispatchEvent(new CustomEvent('open-add-transaction'))}
+            onClick={() => {
+              if (location.pathname === '/transactions') {
+                window.dispatchEvent(new CustomEvent('open-add-transaction'));
+              } else {
+                navigate('/transactions', { state: { openAddTransaction: true } });
+              }
+            }}
           >
             <Plus className={cn("h-5 w-5 shrink-0 transition-transform group-hover/add:scale-110", !isCollapsed && "mr-3")} />
             {!isCollapsed && "Add Transaction"}
