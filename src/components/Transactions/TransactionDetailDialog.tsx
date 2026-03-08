@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
@@ -72,21 +73,31 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
                         <div className="flex items-start justify-between relative z-10 w-full gap-4">
                             <div className="flex-1 space-y-1">
                                 <div className="flex items-center gap-2">
-                                    <h2 className="text-xl font-black text-slate-800 tracking-tight">
-                                        {editedTx.clean_source || transaction.source}
-                                    </h2>
+                                    {(editedTx.clean_source || transaction.clean_source) ? (
+                                        <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200 text-lg py-1 px-3 rounded-xl gap-2 font-black shadow-sm transition-all hover:ring-2 hover:ring-blue-100 items-center">
+                                            <Store className="w-4 h-4" />
+                                            {editedTx.clean_source || transaction.clean_source}
+                                        </Badge>
+                                    ) : (
+                                        <h2 className="text-xl font-black text-slate-800 tracking-tight">
+                                            {transaction.source}
+                                        </h2>
+                                    )}
                                     <Button
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => setIsMappingExpanded(!isMappingExpanded)}
                                         className="h-7 w-7 p-0 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                                        title="Edit Source Mapping"
                                     >
                                         <Pencil className="w-3.5 h-3.5" />
                                     </Button>
                                 </div>
-                                <div className="text-sm font-medium text-slate-500 font-mono">
-                                    {transaction.source}
-                                </div>
+                                {(editedTx.clean_source || transaction.clean_source) && (
+                                    <div className="text-sm font-medium text-slate-500 font-mono ml-1">
+                                        Raw: {transaction.source}
+                                    </div>
+                                )}
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                                 {!transaction.parent_id && (

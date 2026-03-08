@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Transaction } from './hooks/useTransactionTable';
 import { addMonths, startOfMonth, format, parseISO } from 'date-fns';
 import { formatBudgetMonth } from '@/lib/formatUtils';
-import { Calendar, Split } from 'lucide-react';
+import { Calendar, Split, Store, Pencil } from 'lucide-react';
 import { TransactionSplitModal } from './TransactionSplitModal';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -23,6 +23,7 @@ interface TransactionEditDrawerProps {
 
 export const TransactionEditDrawer = ({ transaction, onClose, onSave }: TransactionEditDrawerProps) => {
     const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
+
     const [updates, setUpdates] = useState<Partial<Transaction>>({});
     const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
 
@@ -49,13 +50,25 @@ export const TransactionEditDrawer = ({ transaction, onClose, onSave }: Transact
     return (
         <>
             <Sheet open={!!transaction} onOpenChange={(open) => !open && onClose()}>
-                <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
+                <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto [&>button]:right-6 [&>button]:top-6 [&>button]:w-8 [&>button]:h-8 [&>button]:bg-slate-100 [&>button]:rounded-full [&>button]:items-center [&>button]:justify-center [&>button]:hover:bg-slate-200">
                     <SheetHeader className="mb-6 pr-8">
                         <div className="flex items-start justify-between">
-                            <div>
+                            <div className="space-y-2">
                                 <SheetTitle className="text-xl">Edit Transaction</SheetTitle>
-                                <SheetDescription>
-                                    {transaction.clean_source || transaction.source} - {format(parseISO(transaction.date), 'MMM d, yyyy')}
+                                <div className="flex items-center gap-2 mt-1">
+                                    {(transaction.clean_source) ? (
+                                        <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200 text-sm py-1 px-2 rounded-xl gap-1.5 font-black shadow-sm transition-all hover:ring-2 hover:ring-blue-100 items-center">
+                                            <Store className="w-3.5 h-3.5" />
+                                            {transaction.clean_source}
+                                        </Badge>
+                                    ) : (
+                                        <span className="font-bold text-slate-800">
+                                            {transaction.source}
+                                        </span>
+                                    )}
+                                </div>
+                                <SheetDescription className="text-xs font-mono mt-1">
+                                    Raw: {transaction.source} • {format(parseISO(transaction.date), 'MMM d, yyyy')}
                                 </SheetDescription>
                             </div>
                             {!transaction.parent_id && (
