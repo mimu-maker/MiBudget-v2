@@ -596,7 +596,8 @@ export const TransactionsTable = () => {
           }}
           transaction={transactionToSplit}
           onSplitComplete={() => {
-            window.location.reload();
+            setSplitModalOpen(false);
+            setTransactionToSplit(null);
           }}
         />
       )}

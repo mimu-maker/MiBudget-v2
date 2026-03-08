@@ -290,7 +290,8 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
                     }}
                     transaction={transaction}
                     onSplitComplete={() => {
-                        window.location.reload();
+                        // The modal itself invalidates React Query now
+                        onOpenChange(false);
                     }}
                 />
             )}

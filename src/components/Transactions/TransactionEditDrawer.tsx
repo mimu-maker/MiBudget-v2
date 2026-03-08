@@ -243,7 +243,7 @@ export const TransactionEditDrawer = ({ transaction, onClose, onSave }: Transact
                     }}
                     transaction={transaction}
                     onSplitComplete={() => {
-                        window.location.reload();
+                        onClose();
                     }}
                 />
             )}

@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency } from '@/lib/formatUtils';
 import { Badge } from '@/components/ui/badge';
+import { useQueryClient } from '@tanstack/react-query';
 interface TransactionSplitModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -31,6 +32,7 @@ interface SplitItem {
 
 export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplitComplete }: TransactionSplitModalProps) => {
     const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
+    const queryClient = useQueryClient();
     const [items, setItems] = useState<SplitItem[]>([]);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -108,6 +110,9 @@ export const TransactionSplitModal = ({ open, onOpenChange, transaction, onSplit
                 .eq('id', transaction.id);
 
             if (updateError) throw updateError;
+
+            await queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+            await queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
 
             onOpenChange(false);
             onSplitComplete();
