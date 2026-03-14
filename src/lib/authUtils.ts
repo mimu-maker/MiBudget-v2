@@ -7,19 +7,29 @@ export const ALLOWED_EMAILS = [
 
 export const MASTER_ACCOUNT_EMAIL = 'michaelmullally@gmail.com';
 
+export const HOUSEHOLD_EMAILS = [
+  'michaelmullally@gmail.com',
+  'tanjen2@gmail.com'
+];
+
 export const isEmailAllowed = (email: string) => {
-  // Disabling strict email implementation for v0.8/v0.9 as requested.
-  // Will re-enable closer to v1.0 release.
   return true;
-  // return ALLOWED_EMAILS.includes(email.toLowerCase());
 };
 
 export const isQAEmail = (email: string) => {
   return ['qa@mimu.dev', 'automation@mimu.dev'].includes(email.toLowerCase());
 };
 
+export const isHouseholdEmail = (email: string) => {
+  return HOUSEHOLD_EMAILS.includes(email.toLowerCase());
+};
+
+export const getMasterEmail = (email: string) => {
+  if (isHouseholdEmail(email)) return MASTER_ACCOUNT_EMAIL;
+  return email;
+};
+
 export const getMasterAccountId = () => {
-  // Always use the same account ID for both emails
   return 'master-account-id';
 };
 

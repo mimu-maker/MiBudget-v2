@@ -220,6 +220,7 @@ const ProjectionChart = ({
         <ResponsiveContainer width="100%" height={450}>
           <ComposedChart
             data={combinedData}
+            margin={{ top: 20, right: 60, bottom: 20, left: 0 }}
             barGap={8}
             barCategoryGap="15%"
             onMouseMove={(state) => {
@@ -245,6 +246,7 @@ const ProjectionChart = ({
               tickLine={false}
               tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
               dy={10}
+              padding={{ left: 0, right: 0 }}
             />
             <YAxis
               yAxisId="bars"
@@ -262,6 +264,8 @@ const ProjectionChart = ({
               tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
             />
             <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc' }} />
+
+            <ReferenceLine yAxisId="cumulative" y={0} stroke="#e2e8f0" strokeWidth={2} strokeDasharray="3 3" />
 
 
             {uniqueSubCats.income.map((name, idx) => (
@@ -344,6 +348,17 @@ const ProjectionChart = ({
               strokeWidth={4}
               dot={renderLineDot}
               onMouseEnter={() => setHoveredKey("cumulativeBalance")}
+              label={(props: any) => {
+                const { x, y, index, value } = props;
+                if (index === combinedData.length - 1) {
+                  return (
+                    <text x={x + 15} y={y + 5} fill={value >= 0 ? '#10b981' : '#f43f5e'} fontSize={14} fontWeight="bold" textAnchor="start">
+                      {Math.round(value).toLocaleString()}
+                    </text>
+                  );
+                }
+                return null;
+              }}
             />
           </ComposedChart>
         </ResponsiveContainer>

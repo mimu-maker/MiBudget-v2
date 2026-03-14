@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { DeviceTrustDialog } from '@/components/Auth/DeviceTrustDialog';
 import { useDeviceTrust } from '@/hooks/useDeviceTrust';
 import { useSessionTimer } from '@/hooks/useSessionTimer';
-import { isEmailAllowed } from '@/lib/authUtils';
+import { isEmailAllowed, getMasterEmail, isHouseholdEmail } from '@/lib/authUtils';
 import { SessionConflictDialog } from '@/components/Auth/SessionConflictDialog';
 
 interface AuthContextType {
@@ -85,9 +85,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(session);
         setUser(session?.user ?? null);
 
-        if (session?.user) {
+        if (session?.user?.email) {
           // Robust profile fetching with timeout race
-          const profilePromise = fetchUserProfile(session.user.id);
+          const profilePromise = fetchUserProfile(session.user.id, session.user.email);
           const timeoutPromise = new Promise<any>(resolve => setTimeout(() => resolve(null), 5000));
 
           const profile = await Promise.race([profilePromise, timeoutPromise]);
@@ -128,9 +128,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user) {
+      if (session?.user?.email) {
         // Robust profile fetching with timeout race
-        const profilePromise = fetchUserProfile(session.user.id);
+        const profilePromise = fetchUserProfile(session.user.id, session.user.email);
         const timeoutPromise = new Promise<any>(resolve => setTimeout(() => resolve(null), 5000));
 
         const profile = await Promise.race([profilePromise, timeoutPromise]);
@@ -204,7 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return;
     try {
       const currentDeviceId = getDeviceId();
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('user_profiles')
         .update({ active_device_id: currentDeviceId })
         .eq('user_id', user.id);
@@ -233,13 +233,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) console.error('Error signing in with Google:', error);
   };
 
-  const fetchUserProfile = async (userId: string) => {
+  const fetchUserProfile = async (userId: string, email: string) => {
     try {
-      const { data, error } = await supabase
+      const targetEmail = getMasterEmail(email);
+      console.log(`AuthContext: Fetching profile for ${email} (Target: ${targetEmail})`);
+
+      const { data, error } = await (supabase
         .from('user_profiles')
         .select('*')
-        .eq('user_id', userId)
-        .maybeSingle();
+        .eq('email', targetEmail)
+        .maybeSingle() as any);
 
       if (error) {
         console.error('AuthContext: Profile fetch error:', error);
@@ -247,10 +250,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (!data) {
-        console.log('AuthContext: Profile not found, creating master profile');
+        console.log('AuthContext: Profile not found, creating profile for:', email);
         const newProfile = {
           user_id: userId,
-          email: session?.user?.email || '',
+          email: email,
           full_name: session?.user?.user_metadata?.full_name || 'User',
           currency: 'DKK',
           timezone: 'Europe/Copenhagen',
@@ -259,35 +262,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           onboarding_status: 'completed',
           active_device_id: getDeviceId()
         };
-        const { data: createdProfile, error: createError } = await supabase
+        const { data: createdProfile, error: createError } = await (supabase
           .from('user_profiles')
-          .insert(newProfile)
+          .insert(newProfile as any)
           .select()
-          .single();
+          .single() as any);
 
         if (createError) {
           console.error('AuthContext: Profile creation error', createError);
           return null;
         }
-        console.log('AuthContext: Created new profile with deviceId:', newProfile.active_device_id);
         return createdProfile;
       }
 
-      // Check active session
+      // Check active session (Shared hardware protection)
       const currentDeviceId = getDeviceId();
-      console.log('AuthContext: Checking session. Remote:', data.active_device_id, 'Local:', currentDeviceId);
-
       if (data.active_device_id && data.active_device_id !== currentDeviceId) {
-        console.warn('Session conflict detected. Active on:', data.active_device_id);
-        setSessionConflict(true);
+        // Only enforce session conflict for the same auth account or if specifically requested
+        // For Tanja sharing Michael's profile, we might NOT want to force sign-out if they use different devices
+        if (data.email === email) {
+          console.warn('Session conflict detected for own profile.');
+          setSessionConflict(true);
+        } else {
+          console.log('AuthContext: Household access - allowing concurrent session on different device.');
+        }
       } else if (!data.active_device_id) {
-        console.log('AuthContext: Claiming empty session for device:', currentDeviceId);
-        // Claim session if none exists
-        await supabase.from('user_profiles').update({ active_device_id: currentDeviceId }).eq('user_id', userId);
+        await (supabase as any).from('user_profiles').update({ active_device_id: currentDeviceId }).eq('id', data.id);
         data.active_device_id = currentDeviceId;
       }
 
-      console.log('AuthContext: Profile fetched successfully:', data.full_name);
+      console.log('AuthContext: Profile loaded:', data.full_name, ' (ID:', data.id, ')');
       return data;
     } catch (error) {
       console.error('Error in fetchUserProfile:', error);

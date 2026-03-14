@@ -53,11 +53,28 @@ const SignInScreen: React.FC = () => {
               </Button>
             </div>
 
-            <div className="pt-4 border-t border-gray-200">
-              <div className="flex items-center gap-2 text-xs text-gray-500">
+            <div className="pt-4 border-t border-gray-200 space-y-4">
+              <div className="flex items-center gap-2 text-xs text-gray-500 justify-center">
                 <Shield className="w-4 h-4" />
                 <span>Secure authentication powered by Google</span>
               </div>
+
+              {(import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
+                <div className="pt-4 border-t border-gray-200">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      localStorage.setItem('authMode', 'local');
+                      window.location.reload();
+                    }}
+                    className="w-full text-gray-600 hover:text-gray-900 flex items-center justify-center gap-2"
+                  >
+                    <Wallet className="w-4 h-4" />
+                    Bypass to Local Demo Account
+                  </Button>
+                  <p className="text-xs text-center text-gray-500 mt-2">Only visible on localhost</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

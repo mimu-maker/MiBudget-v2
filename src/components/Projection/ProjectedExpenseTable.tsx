@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { format, addMonths, startOfMonth } from 'date-fns';
-import { Edit2, Check, X } from 'lucide-react';
+import { Edit2, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { FutureTransaction } from '@/types/projection';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,7 @@ interface ProjectedExpenseTableProps {
     projections: FutureTransaction[];
     onUpdateValue: (categoryName: string, subCategoryName: string, monthKey: string, amount: number, mode: RecurrenceMode) => void;
     currency: string;
+    isScenario?: boolean;
 }
 
 const ProjectedExpenseTable = ({
@@ -28,21 +29,23 @@ const ProjectedExpenseTable = ({
     baseAmount,
     projections,
     onUpdateValue,
-    currency
+    currency,
+    isScenario
 }: ProjectedExpenseTableProps) => {
     const [editingCell, setEditingCell] = useState<{ monthKey: string, value: string } | null>(null);
+    const [monthOffset, setMonthOffset] = useState(0);
 
     const months = useMemo(() => {
         const today = startOfMonth(new Date());
         return Array.from({ length: 12 }, (_, i) => {
-            const d = addMonths(today, i);
+            const d = addMonths(today, i + monthOffset);
             return {
                 key: format(d, 'yyyy-MM'),
                 label: format(d, 'MMM yy'),
                 date: d
             };
         });
-    }, []);
+    }, [monthOffset]);
 
     const getValue = (monthKey: string) => {
         // Find projection matching stream (subCategoryName) and category
@@ -121,9 +124,19 @@ const ProjectedExpenseTable = ({
 
     return (
         <div className="overflow-x-auto w-full px-2 py-3 border-y border-dashed border-slate-200 shadow-inner bg-slate-50/30">
-            <div className="flex items-center gap-2 mb-2 px-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
-                <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider">Projected Timeline: {subCategoryName}</span>
+            <div className="flex items-center justify-between mb-2 px-2">
+                <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
+                    <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider">Projected Timeline: {subCategoryName}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                    <button onClick={() => setMonthOffset(Math.max(0, monthOffset - 6))} className="p-1 hover:bg-slate-200 rounded text-slate-500 disabled:opacity-30" disabled={monthOffset === 0}>
+                        <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setMonthOffset(monthOffset + 6)} className="p-1 hover:bg-slate-200 rounded text-slate-500">
+                        <ChevronRight className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
             <table className="w-full border-collapse rounded-lg overflow-hidden">
                 <thead>
@@ -193,8 +206,8 @@ const ProjectedExpenseTable = ({
                                             onClick={() => handleStartEdit(m.key, val)}
                                         >
                                             <span className={cn(
-                                                "font-semibold",
-                                                val !== baseAmount ? "underline decoration-dotted underline-offset-2 opacity-100" : "opacity-70"
+                                                "font-bold px-1.5 py-0.5 rounded transition-all",
+                                                isScenario && val !== baseAmount ? "bg-amber-100 text-amber-800 font-black shadow-sm ring-1 ring-amber-200" : "opacity-70 group-hover:bg-black/5"
                                             )}>
                                                 {val === 0 ? '-' : Math.round(val).toLocaleString()}
                                             </span>

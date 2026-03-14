@@ -121,17 +121,19 @@ const AuthWrapper = () => {
   // Always use Supabase auth (local auth disabled)
   return (
     <AuthProvider>
-      <ProfileProvider>
-        <UnifiedAuthProvider>
-          <PeriodProvider>
-            <ThemeProvider>
-              <BrowserRouter>
-                <AppLayout />
-              </BrowserRouter>
-            </ThemeProvider>
-          </PeriodProvider>
-        </UnifiedAuthProvider>
-      </ProfileProvider>
+      <LocalAuthProvider>
+        <ProfileProvider>
+          <UnifiedAuthProvider>
+            <PeriodProvider>
+              <ThemeProvider>
+                <BrowserRouter>
+                  <AppLayout />
+                </BrowserRouter>
+              </ThemeProvider>
+            </PeriodProvider>
+          </UnifiedAuthProvider>
+        </ProfileProvider>
+      </LocalAuthProvider>
     </AuthProvider>
   );
 };

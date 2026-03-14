@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import CreateScenarioDialog from '@/components/Projection/CreateScenarioDialog';
 import ScenarioMergeDialog from '@/components/Projection/ScenarioMergeDialog';
 import SuggestProjectionsWizard from '@/components/Projection/SuggestProjectionsWizard';
-import SummaryPane from '@/components/Projection/SummaryPane';
+
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PiggyBank, Sparkles, ChevronDown, ChevronUp, Clock, History, TrendingUp, TrendingDown, Scale, ArrowUpRight, ArrowDownRight, Wallet, PieChart, Plus, Trash2, BarChart3, UploadCloud } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Link } from 'react-router-dom';
 import { formatCurrency } from '@/lib/formatUtils';
+import { cn } from '@/lib/utils';
 import { useAnnualBudget, BudgetCategory, BudgetSubCategory } from '@/hooks/useAnnualBudget';
 import { useBudgetCategoryActionsForBudget } from '@/hooks/useBudgetCategories';
 import { useSettings } from '@/hooks/useSettings';
@@ -42,6 +43,7 @@ const Projection = () => {
   const [showPastProjections, setShowPastProjections] = useState(false);
   const [showCreateScenario, setShowCreateScenario] = useState(false);
   const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
+  const [projectionYears, setProjectionYears] = useState<number>(1);
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [disabledIncomeStreams, setDisabledIncomeStreams] = useState<Set<string>>(new Set());
   const [disabledExpenses, setDisabledExpenses] = useState<Set<string>>(new Set());
@@ -760,8 +762,9 @@ const Projection = () => {
       const today = new Date();
       const isCurrentYear = yearNum === today.getFullYear();
       const startMonth = isCurrentYear ? today.getMonth() : 0;
+      const monthsToGenerate = projectionYears * 12;
 
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < monthsToGenerate; i++) {
         const monthIdx = (startMonth + i) % 12;
         const yearOffset = Math.floor((startMonth + i) / 12);
         const currentYearNum = yearNum + yearOffset;
@@ -900,7 +903,7 @@ const Projection = () => {
     };
 
     return calculateData(futureTransactions);
-  }, [futureTransactions, selectedYear, klintemarkenData, specialCategoryNames, budget, disabledIncomeStreams, disabledExpenses]);
+  }, [futureTransactions, selectedYear, klintemarkenData, specialCategoryNames, budget, disabledIncomeStreams, disabledExpenses, projectionYears]);
 
   const stats = useMemo(() => {
     const totalIncome = projectionData.reduce((sum, d) => sum + (d.income || 0), 0);
@@ -955,8 +958,9 @@ const Projection = () => {
       const today = new Date();
       const isCurrentYear = yearNum === today.getFullYear();
       const startMonth = isCurrentYear ? today.getMonth() : 0;
+      const monthsToGenerate = projectionYears * 12;
 
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < monthsToGenerate; i++) {
         const monthIdx = (startMonth + i) % 12;
         const yearOffset = Math.floor((startMonth + i) / 12);
         const currentYearNum = yearNum + yearOffset;
@@ -1084,7 +1088,7 @@ const Projection = () => {
     };
 
     return calculateData(matchedMaster);
-  }, [masterProjectionsRaw, transactions, selectedYear, activeScenarioId, klintemarkenData, specialCategoryNames, budget, disabledIncomeStreams, disabledExpenses]);
+  }, [masterProjectionsRaw, transactions, selectedYear, activeScenarioId, klintemarkenData, specialCategoryNames, budget, disabledIncomeStreams, disabledExpenses, projectionYears]);
 
   const handleAddTransaction = () => {
     if (!newTransaction.amount) {
@@ -1293,38 +1297,31 @@ const Projection = () => {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-slate-400">
-        <Scale className="w-4 h-4" />
-        <span className="text-[10px] font-black uppercase tracking-[0.2em]">{activeScenarioId ? 'Scenario Comparison' : 'Baseline Projection'}</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-slate-400">
+          <Scale className="w-4 h-4" />
+          <span className="text-[10px] font-black uppercase tracking-[0.2em]">{activeScenarioId ? 'Scenario Comparison' : 'Baseline Projection'}</span>
+        </div>
+        <div className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-lg">
+          {[1, 3, 5].map(years => (
+            <button
+              key={years}
+              onClick={() => setProjectionYears(years)}
+              className={cn(
+                "px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all",
+                projectionYears === years
+                  ? "bg-white text-primary shadow-sm"
+                  : "text-slate-400 hover:text-slate-600 hover:bg-slate-200/50"
+              )}
+            >
+              {years} {years === 1 ? 'Year' : 'Years'}
+            </button>
+          ))}
+        </div>
       </div>
 
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
-        <SummaryPane
-          title="Total Income"
-          value={projectionData[0]?.income + projectionData[0]?.feeder || 0}
-          data={projectionData.map(d => (d.income || 0) + (d.feeder || 0))}
-          color="green"
-          icon={TrendingUp}
-          currency={settings.currency}
-        />
-        <SummaryPane
-          title="Total Expenses"
-          value={projectionData[0]?.expense + projectionData[0]?.slush || 0}
-          data={projectionData.map(d => (d.expense || 0) + (d.slush || 0))}
-          color="red"
-          icon={TrendingDown}
-          currency={settings.currency}
-        />
-        <SummaryPane
-          title="Net Savings"
-          value={projectionData[0]?.value || 0}
-          data={projectionData.map(d => d.value || 0)}
-          color="yellow"
-          icon={PiggyBank}
-          currency={settings.currency}
-        />
-      </div>
+
 
       <ProjectionChart
         data={projectionData}
@@ -1417,6 +1414,7 @@ const Projection = () => {
               <ProjectedIncomeTable
                 incomeCategories={incomeData as any}
                 projections={futureTransactions}
+                isScenario={!!activeScenarioId}
                 disabledStreams={disabledIncomeStreams}
                 onToggleStream={(name) => {
                   const next = new Set(disabledIncomeStreams);

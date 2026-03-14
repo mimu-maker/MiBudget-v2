@@ -6,6 +6,7 @@ import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tansta
 import { parseAmount } from '@/lib/importUtils';
 import { getLocalTransactions, saveLocalTransactions, clearLocalTransactions } from '@/lib/localDb';
 import { format, parseISO, startOfMonth } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
 
 export interface Transaction {
   id: string;
@@ -67,14 +68,20 @@ const parseBool = (val: any) => {
  */
 export const useAllTransactions = (options?: { enabled?: boolean }) => {
   const queryClient = useQueryClient();
+  const { userProfile, user } = useAuth();
 
   return useQuery({
     queryKey: ['transactions-all'],
     queryFn: async () => {
-      console.log("Fetching all transactions...");
+      // Use profile from context if available, fallback to direct auth UID.
+      // In household mode, userProfile?.user_id will be the master ID.
+      const userId = userProfile?.user_id || user?.id;
+      if (!userId) {
+        console.warn("useAllTransactions: No userId available");
+        return [];
+      }
 
-      const { data: authData } = await supabase.auth.getUser();
-      const userId = authData.user?.id || 'a316d106-5bc5-447a-b594-91dab8814c06';
+      console.log(`Fetching all transactions for ${userId}...`);
 
       let localData = await getLocalTransactions();
 
@@ -187,13 +194,14 @@ export const useAllTransactions = (options?: { enabled?: boolean }) => {
 /**
  * Hook for INFINITE transactions with server-side sorting/filtering
  */
-const useInfiniteTransactions = (sortBy: keyof Transaction, sortOrder: 'asc' | 'desc', filters: Record<string, any>, options?: { enabled?: boolean }) => {
+const useInfiniteTransactions = (userId: string | undefined, sortBy: keyof Transaction, sortOrder: 'asc' | 'desc', filters: Record<string, any>, options?: { enabled?: boolean }) => {
   return useInfiniteQuery({
     queryKey: ['transactions-infinite', sortBy, sortOrder, filters],
     initialPageParam: 0,
     queryFn: async ({ pageParam = 0 }) => {
-      const { data: authData } = await supabase.auth.getUser();
-      const userId = authData.user?.id || 'a316d106-5bc5-447a-b594-91dab8814c06';
+      if (!userId) return { data: [], nextCursor: null };
+      
+      console.log(`Fetching page ${pageParam} for ${userId}...`);
       const pageSize = 50;
       const from = pageParam * pageSize;
       const to = from + pageSize - 1;
@@ -293,8 +301,8 @@ const useInfiniteTransactions = (sortBy: keyof Transaction, sortOrder: 'asc' | '
         };
       }) as Transaction[];
     },
-    getNextPageParam: (lastPage, allPages) => {
-      return lastPage.length === 50 ? allPages.length : undefined;
+    getNextPageParam: (lastPage: any, allPages: any[]) => {
+      return (lastPage as any).length === 50 ? allPages.length : undefined;
     },
     staleTime: 1000 * 60 * 60 * 24,
     gcTime: 1000 * 60 * 60 * 24,
@@ -307,11 +315,12 @@ const useTransactions = () => useAllTransactions(); // Keep for backward compati
 
 
 const useTransactionCounts = (filters: Record<string, any>) => {
+  const { userProfile, user } = useAuth();
   return useQuery({
     queryKey: ['transactions-counts', filters],
     queryFn: async () => {
-      const { data: authData } = await supabase.auth.getUser();
-      const userId = authData.user?.id || 'a316d106-5bc5-447a-b594-91dab8814c06';
+      const userId = userProfile?.user_id || user?.id;
+      if (!userId) return { total: 0, filtered: 0, filteredSum: 0 };
 
       // 1. Total Count (non-excluded)
       const { count: totalCount, error: totalError } = await (supabase as any)
@@ -416,6 +425,7 @@ const useTransactionCounts = (filters: Record<string, any>) => {
 };
 
 export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { mode: 'infinite' }) => {
+  const { userProfile, user } = useAuth();
   const queryClient = useQueryClient();
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
 
@@ -488,7 +498,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
     isFetchingNextPage,
     isLoading: isInfiniteLoading,
     isError: isInfiniteError
-  } = useInfiniteTransactions(sortBy, sortOrder, filters, { enabled: options.mode === 'infinite' });
+  } = useInfiniteTransactions(userProfile?.user_id || user?.id, sortBy, sortOrder, filters, { enabled: options.mode === 'infinite' });
 
   // All Query (Optional Mode)
   const {
@@ -504,9 +514,9 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
   const transactions = useMemo(() => {
     let raw: Transaction[] = [];
     if (options.mode === 'all') {
-      raw = allData || [];
+      raw = (allData as any) || [];
     } else {
-      raw = infiniteData?.pages.flat() || [];
+      raw = (infiniteData?.pages as any)?.flat() || [];
     }
 
     return raw.map(t => ({
@@ -523,8 +533,8 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
 
   const updateTransactionMutation = useMutation({
     mutationFn: async ({ id, field, value }: { id: string, field: keyof Transaction, value: any }) => {
-      const { data: authData } = await supabase.auth.getUser();
-      const userId = authData.user?.id;
+      const userId = userProfile?.user_id || user?.id;
+      if (!userId) throw new Error('Not authenticated');
 
       // Compatibility mapping for the database
       // Prioritize new schema fields
@@ -643,8 +653,8 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
 
   const addTransactionMutation = useMutation({
     mutationFn: async (newTransaction: Omit<Transaction, 'id'>) => {
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData.user?.id;
+      const userId = userProfile?.user_id || user?.id;
+      if (!userId) throw new Error('Not authenticated');
       const dateObj = parseISO(newTransaction.date);
       const budgetMonth = newTransaction.budget_month || (isNaN(dateObj.getTime()) ? null : format(startOfMonth(dateObj), 'yyyy-MM-01'));
       const budgetYear = newTransaction.budget_year || (isNaN(dateObj.getTime()) ? null : dateObj.getFullYear());
@@ -732,8 +742,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData.user?.id;
+      const userId = userProfile?.user_id || user?.id;
       if (!userId) throw new Error('User not authenticated');
 
       // Chunk deletes to avoid "Request URI too long" or payload limits
@@ -763,8 +772,8 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
   });
 
   const handleImport = async (importedTransactions: any[], onProgress?: (current: number, total: number) => void) => {
-    const { data: authData } = await supabase.auth.getUser();
-    const userId = authData.user?.id || 'a316d106-5bc5-447a-b594-91dab8814c06';
+    const userId = userProfile?.user_id || user?.id;
+    if (!userId) throw new Error('Not authenticated');
 
     const toInsert = importedTransactions.map((t) => {
       let status = t.status || 'Pending Triage';
@@ -799,7 +808,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
         // Note: although types.ts may show 'source', the actual DB project uses 'merchant'
         const dbChunk = chunk.map((tx) => {
           // Mandatory user_id check
-          const userId = tx.user_id || 'a316d106-5bc5-447a-b594-91dab8814c06'; // Fallback if missing
+          const userId = tx.user_id || userProfile?.user_id || user?.id; // Fallback if missing
 
           const sanitized: any = {
             id: tx.id || crypto.randomUUID(),
@@ -833,7 +842,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
           return sanitized;
         });
 
-        const { error } = await supabase.from('transactions').upsert(dbChunk, { onConflict: 'fingerprint' });
+        const { error } = await (supabase as any).from('transactions').upsert(dbChunk as any, { onConflict: 'fingerprint' });
         if (error) throw error;
 
         processed += chunk.length;

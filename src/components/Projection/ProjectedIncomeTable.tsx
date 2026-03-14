@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { format, addMonths, startOfMonth } from 'date-fns';
-import { ChevronRight, ChevronDown, CheckCircle2, Circle, Edit2, Check, X, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, Circle, Edit2, Check, X, Info } from 'lucide-react';
 import { BudgetSubCategory, BudgetCategory } from '@/hooks/useAnnualBudget';
 import { FutureTransaction } from '@/types/projection';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,7 @@ interface ProjectedIncomeTableProps {
     onToggleStream: (streamName: string) => void;
     onUpdateValue: (streamName: string, categoryName: string, monthKey: string, amount: number, mode: 'single' | 'forward') => void;
     currency: string;
+    isScenario?: boolean;
 }
 
 const ProjectedIncomeTable = ({
@@ -28,21 +29,23 @@ const ProjectedIncomeTable = ({
     disabledStreams,
     onToggleStream,
     onUpdateValue,
-    currency
+    currency,
+    isScenario
 }: ProjectedIncomeTableProps) => {
     const [editingCell, setEditingCell] = useState<{ stream: string, monthKey: string, value: string } | null>(null);
+    const [monthOffset, setMonthOffset] = useState(0);
 
     const months = useMemo(() => {
         const today = startOfMonth(new Date());
         return Array.from({ length: 12 }, (_, i) => {
-            const d = addMonths(today, i);
+            const d = addMonths(today, i + monthOffset);
             return {
                 key: format(d, 'yyyy-MM'),
                 label: format(d, 'MMM yy'),
                 date: d
             };
         });
-    }, []);
+    }, [monthOffset]);
 
     const allSubCategories = useMemo(() => {
         const subs: { sub: BudgetSubCategory; cat: BudgetCategory }[] = [];
@@ -96,7 +99,19 @@ const ProjectedIncomeTable = ({
                 <thead>
                     <tr className="bg-emerald-50/30 border-b border-emerald-100">
                         <th className="py-3 px-4 text-left w-10"></th>
-                        <th className="py-3 px-4 text-left font-black text-[10px] uppercase tracking-widest text-emerald-800/50">Income Source</th>
+                        <th className="py-3 px-4 text-left font-black text-[10px] uppercase tracking-widest text-emerald-800/50">
+                            <div className="flex items-center justify-between">
+                                <span>Income Source</span>
+                                <div className="flex items-center gap-1">
+                                    <button onClick={() => setMonthOffset(Math.max(0, monthOffset - 6))} className="p-1 hover:bg-emerald-100 rounded text-emerald-600 disabled:opacity-30" disabled={monthOffset === 0}>
+                                        <ChevronLeft className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => setMonthOffset(monthOffset + 6)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600">
+                                        <ChevronRight className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        </th>
                         {months.map(m => (
                             <th key={m.key} className="py-3 px-2 text-right font-black text-[10px] uppercase tracking-widest text-emerald-800/50 min-w-[100px]">
                                 {m.label}
@@ -188,12 +203,12 @@ const ProjectedIncomeTable = ({
                                                 </div>
                                             ) : (
                                                 <div
-                                                    className="font-mono text-sm inline-flex items-center gap-1.5 cursor-pointer hover:bg-emerald-50 px-2 py-1 rounded transition-all"
+                                                    className="font-mono text-sm inline-flex items-center gap-1.5 cursor-pointer rounded transition-all group-hover:opacity-100"
                                                     onClick={() => handleStartEdit(sub.name, m.key, val)}
                                                 >
                                                     <span className={cn(
-                                                        "font-bold",
-                                                        val !== sub.budget_amount ? "text-emerald-700 underline decoration-dotted decoration-emerald-300 underline-offset-4" : "text-gray-600"
+                                                        "font-bold px-1.5 py-0.5 rounded transition-all",
+                                                        isScenario && val !== sub.budget_amount ? "bg-amber-100 text-amber-700 font-black shadow-sm ring-1 ring-amber-200" : "text-gray-600 hover:bg-emerald-50"
                                                     )}>
                                                         {Math.round(val).toLocaleString()}
                                                     </span>

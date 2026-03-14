@@ -27,7 +27,7 @@ export const LocalLogin: React.FC = () => {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    
+
     try {
       await signIn(formData.email, formData.password);
     } catch (err) {
@@ -38,17 +38,17 @@ export const LocalLogin: React.FC = () => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    
+
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
     }
-    
+
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters');
       return;
     }
-    
+
     try {
       await signUp(formData.email, formData.password, formData.name);
     } catch (err) {
@@ -102,7 +102,7 @@ export const LocalLogin: React.FC = () => {
                       required
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="signin-password">Password</Label>
                     <Input
@@ -143,7 +143,7 @@ export const LocalLogin: React.FC = () => {
                       required
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="signup-email">Email</Label>
                     <Input
@@ -155,7 +155,7 @@ export const LocalLogin: React.FC = () => {
                       required
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="signup-password">Password</Label>
                     <Input
@@ -167,7 +167,7 @@ export const LocalLogin: React.FC = () => {
                       required
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="signup-confirm-password">Confirm Password</Label>
                     <Input
@@ -197,9 +197,18 @@ export const LocalLogin: React.FC = () => {
           </CardContent>
         </Card>
 
-        <div className="text-center text-sm text-gray-600">
+        <div className="text-center text-sm text-gray-600 mt-6">
           <p>This is a local authentication system for testing purposes.</p>
           <p>No data is sent to external servers.</p>
+          <button
+            onClick={() => {
+              localStorage.removeItem('authMode');
+              window.location.reload();
+            }}
+            className="mt-4 text-blue-600 hover:text-blue-800 hover:underline font-medium"
+          >
+            Switch back to Google Sign In
+          </button>
         </div>
       </div>
     </div>

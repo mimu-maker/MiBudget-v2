@@ -1,5 +1,6 @@
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useAuth as useSupabaseAuth } from './AuthContext';
+import { useLocalAuth } from './LocalAuthContext';
 import { useProfile } from './ProfileContext';
 
 interface UnifiedUser {
@@ -45,43 +46,43 @@ const UnifiedAuthContext = createContext<UnifiedAuthContextType | undefined>(und
 export const UnifiedAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const isLocalAuth = localStorage.getItem('authMode') === 'local';
 
-  // For now, we're only using Supabase auth (local auth disabled)
+  // We unconditionally call both hooks, as required by React rules
   const supabaseAuth = useSupabaseAuth();
+  const localAuth = useLocalAuth();
   const profileContext = useProfile();
 
-  // Use Supabase auth (local auth disabled)
-  const user = supabaseAuth.user;
-  const userProfile = profileContext.userProfile as UnifiedUserProfile | null;
-  const session = supabaseAuth.session;
-  const loading = supabaseAuth.loading || profileContext.loading;
+  // Switch between them based on isLocalAuth
+  const user = isLocalAuth ? localAuth.user : supabaseAuth.user;
+  const userProfile = isLocalAuth ? localAuth.userProfile : profileContext.userProfile as UnifiedUserProfile | null;
+  const session = isLocalAuth ? localAuth.session : supabaseAuth.session;
+  const loading = isLocalAuth ? localAuth.loading : (supabaseAuth.loading || profileContext.loading);
 
-  const signIn = async (email: string, password: string) => {
-    // For Supabase, you'd need to implement email/password auth
-    throw new Error('Email/password auth not implemented for Supabase mode');
-  };
+  const signIn = isLocalAuth
+    ? localAuth.signIn
+    : async () => { throw new Error('Email/password auth not implemented for Supabase mode'); };
 
-  const signUp = async (email: string, password: string, name: string) => {
-    throw new Error('Email/password signup not implemented for Supabase mode');
-  };
+  const signUp = isLocalAuth
+    ? localAuth.signUp
+    : async () => { throw new Error('Email/password signup not implemented for Supabase mode'); };
 
-  const signOut = () => {
-    return supabaseAuth.signOut();
-  };
+  const signOut = isLocalAuth
+    ? () => { localAuth.signOut(); localStorage.removeItem('authMode'); window.location.reload(); }
+    : supabaseAuth.signOut;
 
-  const updateUserProfile = async (profile: Partial<UnifiedUserProfile>) => {
-    return profileContext.updateUserProfile(profile);
-  };
+  const updateUserProfile = isLocalAuth
+    ? localAuth.updateUserProfile as any
+    : profileContext.updateUserProfile;
 
   const value: UnifiedAuthContextType = {
-    user,
-    userProfile,
+    user: user as any,
+    userProfile: userProfile as any,
     session,
     loading,
     signIn,
     signUp,
     signOut,
     updateUserProfile,
-    isLocalAuth: false // Always false since local auth is disabled
+    isLocalAuth
   };
 
   return (

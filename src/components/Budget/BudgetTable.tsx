@@ -5,9 +5,11 @@ import { Input } from '@/components/ui/input';
 import { formatCurrency, formatPercentage } from '@/lib/formatUtils';
 import { BudgetCategory, BudgetSubCategory } from '@/hooks/useAnnualBudget';
 import ProjectedExpenseTable, { RecurrenceMode } from '../Projection/ProjectedExpenseTable';
+import { cn } from '@/lib/utils';
 
 interface EditableCellProps {
     value: number;
+    baseValue?: number;
     onUpdate: (val: string) => Promise<void>;
     currency: string;
     isPercent?: boolean;
@@ -20,7 +22,7 @@ interface EditableCellProps {
     annualMultiplier?: number;
 }
 
-const EditableCell = ({ value, onUpdate, currency, isPercent, className, isEditing, onEdit, onCancel, lastYearData, selectedYear, annualMultiplier = 1 }: EditableCellProps) => {
+const EditableCell = ({ value, baseValue, onUpdate, currency, isPercent, className, isEditing, onEdit, onCancel, lastYearData, selectedYear, annualMultiplier = 1 }: EditableCellProps) => {
     const [localValue, setLocalValue] = React.useState<string>("");
     const [isSaving, setIsSaving] = React.useState(false);
 
@@ -132,7 +134,12 @@ const EditableCell = ({ value, onUpdate, currency, isPercent, className, isEditi
     return (
         <td className={`py-2 px-3 text-right font-medium text-muted-foreground ${className}`}>
             <div
-                className="cursor-pointer hover:text-blue-500 rounded inline-flex items-center hover:bg-accent transition-all px-2 py-1 whitespace-nowrap"
+                className={cn(
+                    "cursor-pointer rounded inline-flex items-center transition-all px-2 py-1 whitespace-nowrap",
+                    baseValue !== undefined && value !== baseValue
+                        ? "bg-amber-100 text-amber-800 font-black shadow-sm ring-1 ring-amber-200"
+                        : "hover:text-blue-500 hover:bg-accent"
+                )}
                 onClick={(e) => { e.stopPropagation(); onEdit(); }}
             >
                 {isPercent
@@ -341,6 +348,7 @@ export const BudgetTable = ({
                                 <div className="flex items-center justify-end">
                                     <EditableCell
                                         value={(subcat as any).expected_amount ?? (subcat.budget_amount || 0)}
+                                        baseValue={isScenario ? (subcat.budget_amount || 0) : undefined}
                                         isEditing={editingBudget === monthlyKey}
                                         onEdit={() => setEditingBudget(monthlyKey)}
                                         onCancel={() => setEditingBudget(null)}
@@ -408,6 +416,7 @@ export const BudgetTable = ({
                                 projections={projections || []}
                                 onUpdateValue={onUpdateProjectionValue || (() => { })}
                                 currency={currency}
+                                isScenario={isScenario}
                             />
                         </td>
                     </tr>
@@ -586,6 +595,7 @@ export const BudgetTable = ({
                                                     <div className="flex items-center justify-end">
                                                         <EditableCell
                                                             value={(item as any).expected_amount ?? (item.budget_amount || 0)}
+                                                            baseValue={isScenario ? (item.budget_amount || 0) : undefined}
                                                             isEditing={editingBudget === `${item.id}-monthly`}
                                                             onEdit={() => setEditingBudget(`${item.id}-monthly`)}
                                                             onCancel={() => setEditingBudget(null)}
