@@ -81,7 +81,7 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
         let filtered = dateFilteredTransactions;
 
         if (!includeSpecial) {
-            filtered = filtered.filter(t => t.budget !== 'Special' && getGroup(t.category) !== 'special');
+            filtered = filtered.filter(t => t.budget !== 'Special' && t.category?.toLowerCase() !== 'slush fund' && getGroup(t.category) !== 'special');
         }
 
         // Respect both the local filter and the global beta feature toggle
@@ -92,7 +92,7 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
         }
         if (!includeCore) {
             filtered = filtered.filter(t => {
-                const isSpecial = t.budget === 'Special' || getGroup(t.category) === 'special';
+                const isSpecial = t.budget === 'Special' || t.category?.toLowerCase() === 'slush fund' || getGroup(t.category) === 'special';
                 const isKlintemarken = effectivelyIncludeKlintemarken && (t.budget === 'Klintemarken' || getGroup(t.category) === 'klintemarken');
                 // Keep only if it is one of the non-core types
                 return isSpecial || isKlintemarken;
@@ -219,6 +219,15 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
         const expenseCategoryNames = new Set(expenseCategories.map(c => c.name));
 
         const dataMap: Record<string, { budgeted: number; actual: number; icon?: string; color?: string }> = {};
+
+        console.log("DEBUG RADAR:", { 
+            budgetDataExists: !!budgetData,
+            categoriesCount: budgetData?.categories?.length,
+            expenseCategoriesCount: expenseCategories.length,
+            monthsInPeriod,
+            includeCore, 
+            includeSpecial 
+        });
 
         expenseCategories.forEach(cat => {
             dataMap[cat.name] = {

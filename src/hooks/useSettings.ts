@@ -1,5 +1,5 @@
-
 import { useState, useEffect } from 'react';
+import { useProfile } from '@/contexts/ProfileContext';
 
 export interface CategoryConfig {
     description?: string;
@@ -62,8 +62,12 @@ export const APP_STATUSES = ['Pending Triage', 'Pending Reconciliation', 'Reconc
 const STORAGE_KEY = 'financeSettings';
 
 export const useSettings = () => {
-    const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+    const { userProfile } = useProfile();
+    const [rawSettings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
     const [loading, setLoading] = useState(true);
+
+    const isDemo = userProfile?.user_id === '00000000-0000-0000-0000-000000000002';
+    const settings = isDemo ? { ...rawSettings, currency: 'USD' } : rawSettings;
 
     useEffect(() => {
         const stored = localStorage.getItem(STORAGE_KEY);
@@ -80,7 +84,7 @@ export const useSettings = () => {
     }, []);
 
     const saveSettings = (newSettings: Partial<AppSettings>) => {
-        const updated = { ...settings, ...newSettings, updatedAt: new Date().toISOString() };
+        const updated = { ...rawSettings, ...newSettings, updatedAt: new Date().toISOString() };
         setSettings(updated);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     };

@@ -15,7 +15,7 @@ import { cleanSource, SKIP_PATTERNS } from '@/lib/importBrain';
 import { SourceMappingRefiner } from './SourceMappingRefiner';
 import { SourceNameSelector } from './SourceNameSelector';
 import { TransactionNote } from './TransactionNote';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 import { useTransactionTable } from './hooks/useTransactionTable';
 import { useProfile } from '@/contexts/ProfileContext';
 import { Switch } from '@/components/ui/switch';

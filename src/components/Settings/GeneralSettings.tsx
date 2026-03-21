@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, DownloadCloud } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { generateBackupData, downloadBackupFile } from '@/lib/driveExport';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 import { useSettings } from '@/hooks/useSettings';
 
 export const GeneralSettings = () => {

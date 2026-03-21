@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as LucideIcons from 'lucide-react';
 import { Plus, Trash2, ArrowUp, ArrowDown, CheckCircle2, Circle, ArrowRightLeft, Target, Pencil, ChevronRight, ChevronDown, Sparkles, Activity, TrendingUp, TrendingDown, Layers, List } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 import { useMultiYearBudgets, useBudgetGroups, BudgetGroupRecord } from '@/hooks/useBudgetCategories';
 import { SubcategoryTransactionsDialog } from './SubcategoryTransactionsDialog';
 import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';

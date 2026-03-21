@@ -1,0 +1,90 @@
+[
+  {
+    "date": "2026-03-01",
+    "merchant": "Acme Corp Salary",
+    "amount": 4500.00,
+    "account": "Demo Checking",
+    "status": "Complete",
+    "category": "Income",
+    "sub_category": "Salary",
+    "planned": true,
+    "recurring": "Monthly"
+  },
+  {
+    "date": "2026-03-02",
+    "merchant": "Wells Fargo Mortgage",
+    "amount": -1850.50,
+    "account": "Demo Checking",
+    "status": "Complete",
+    "category": "Housing",
+    "sub_category": "Mortgage",
+    "planned": true,
+    "recurring": "Monthly"
+  },
+  {
+    "date": "2026-03-05",
+    "merchant": "Whole Foods Market",
+    "amount": -124.30,
+    "account": "Credit Card",
+    "status": "Complete",
+    "category": "Food",
+    "sub_category": "Groceries",
+    "planned": false,
+    "recurring": "N/A"
+  },
+  {
+    "date": "2026-03-10",
+    "merchant": "Chase Auto",
+    "amount": -350.00,
+    "account": "Demo Checking",
+    "status": "Complete",
+    "category": "Transport",
+    "sub_category": "Car Payment",
+    "planned": true,
+    "recurring": "Monthly"
+  },
+  {
+    "date": "2026-03-12",
+    "merchant": "Shell Gas Station",
+    "amount": -45.00,
+    "account": "Credit Card",
+    "status": "Pending",
+    "category": "Transport",
+    "sub_category": "Fuel",
+    "planned": false,
+    "recurring": "N/A"
+  },
+  {
+    "date": "2026-03-14",
+    "merchant": "Netflix Standard",
+    "amount": -15.49,
+    "account": "Credit Card",
+    "status": "Complete",
+    "category": "Entertainment",
+    "sub_category": "Streaming",
+    "planned": true,
+    "recurring": "Monthly"
+  },
+  {
+    "date": "2026-03-15",
+    "merchant": "Unknown Coffee Shop",
+    "amount": -5.50,
+    "account": "Credit Card",
+    "status": "Pending Reconciliation",
+    "category": "Food",
+    "sub_category": "Dining Out",
+    "planned": false,
+    "recurring": "N/A"
+  },
+  {
+    "date": "2026-03-16",
+    "merchant": "Internal Transfer",
+    "amount": -500.00,
+    "account": "Demo Checking",
+    "status": "Excluded",
+    "category": "Transfer",
+    "sub_category": "Savings",
+    "planned": false,
+    "recurring": "N/A"
+  }
+]

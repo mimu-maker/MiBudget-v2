@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Transaction } from './hooks/useTransactionTable';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 import { cleanSource } from '@/lib/importBrain';
 import { SourceRuleForm, SourceRuleState } from '@/components/Settings/SourceRuleForm';
 import { Sparkles } from 'lucide-react';

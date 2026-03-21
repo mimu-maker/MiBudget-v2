@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 import { format, parseISO, startOfMonth } from 'date-fns';
 
 export interface BudgetCategory {
@@ -117,92 +117,138 @@ export const useAnnualBudget = (year?: number) => {
 
       let budgetData: any;
 
-      const { data: unifiedBudget, error: budgetError } = await supabase
-        .from('budgets')
-        .select('*')
-        .eq('user_id', profile.id)
-        .eq('year', targetYear)
-        .eq('budget_type', 'unified')
-        .maybeSingle();
-
-      if (budgetError || !unifiedBudget) {
-        if (budgetError) console.warn('Unified search error:', budgetError.message);
-
-        // Fallback to primary budget
-        const { data: primaryBudget, error: primaryError } = await supabase
+      if (profile.user_id === '00000000-0000-0000-0000-000000000002') {
+        budgetData = {
+          id: '00000000-0000-0000-0000-000000000003',
+          user_id: profile.id,
+          year: targetYear,
+          name: `Unified ${targetYear}`,
+          budget_type: 'unified',
+          start_date: `${targetYear}-01-01`,
+          is_active: true,
+          isFallback: false
+        };
+      } else {
+        const { data: unifiedBudget, error: budgetError } = await supabase
           .from('budgets')
           .select('*')
           .eq('user_id', profile.id)
           .eq('year', targetYear)
-          .eq('budget_type', 'primary')
+          .eq('budget_type', 'unified')
           .maybeSingle();
 
-        if (primaryError) throw primaryError;
+        if (budgetError || !unifiedBudget) {
+          if (budgetError) console.warn('Unified search error:', budgetError.message);
 
-        if (!primaryBudget) {
-          console.log(`No existing budget found for ${targetYear}, providing fallback template.`);
-          budgetData = {
-            id: 'fallback-id', // Will be handled by mutations as a request to create
-            user_id: profile.id,
-            year: targetYear,
-            name: `Unified ${targetYear}`,
-            budget_type: 'unified',
-            start_date: `${targetYear}-01-01`,
-            is_active: true,
-            isFallback: true
-          };
+          // Fallback to primary budget
+          const { data: primaryBudget, error: primaryError } = await supabase
+            .from('budgets')
+            .select('*')
+            .eq('user_id', profile.id)
+            .eq('year', targetYear)
+            .eq('budget_type', 'primary')
+            .maybeSingle();
+
+          if (primaryError) throw primaryError;
+
+          if (!primaryBudget) {
+            console.log(`No existing budget found for ${targetYear}, providing fallback template.`);
+            budgetData = {
+              id: 'fallback-id', // Will be handled by mutations as a request to create
+              user_id: profile.id,
+              year: targetYear,
+              name: `Unified ${targetYear}`,
+              budget_type: 'unified',
+              start_date: `${targetYear}-01-01`,
+              is_active: true,
+              isFallback: true
+            };
+          } else {
+            budgetData = primaryBudget;
+          }
         } else {
-          budgetData = primaryBudget;
+          budgetData = unifiedBudget;
         }
-      } else {
-        budgetData = unifiedBudget;
       }
 
       console.log('Found budget:', budgetData);
 
       // 1. Fetch ALL categories and subcategories first (the master list)
-      const { data: allCategories, error: allError } = await supabase
-        .from('categories')
-        .select('*, sub_categories(id, name, display_order, label)')
-        .eq('user_id', profile.id)
-        .order('display_order', { ascending: true });
-
-      if (allError) throw allError;
-
-      // 2. Fetch hierarchical budget data (limits)
+      let allCategories: any[] = [];
       let hierarchicalCategories: any[] = [];
-      if (budgetData.id !== 'fallback-id') {
-        const { data, error: hierarchicalError } = await supabase
-          .rpc('get_hierarchical_categories', { p_budget_id: budgetData.id });
-
-        if (hierarchicalError) throw hierarchicalError;
-        hierarchicalCategories = data || [];
-      }
-
-      // 2.5 FETCH ACTUAL TRANSACTIONS for spent calculation (Frontend Override)
       let allYearTransactions: any[] = [];
-      let from = 0;
-      const CHUNK_SIZE = 1000;
-      let hasMore = true;
 
-      while (hasMore) {
-        const { data: chunk, error: fetchError } = await (supabase as any)
-          .from('transactions')
-          .select('*')
-          .eq('user_id', user.id)
-          .not('budget', 'eq', 'Exclude')
-          .or(`budget_year.eq.${targetYear},and(budget_month.gte."${targetYear}-01-01",budget_month.lte."${targetYear}-12-31"),and(date.gte."${targetYear}-01-01T00:00:00Z",date.lte."${targetYear}-12-31T23:59:59Z")`)
-          .range(from, from + CHUNK_SIZE - 1);
+      if (profile.user_id === '00000000-0000-0000-0000-000000000002') {
+        allCategories = [
+          { id: 'c1', name: 'Income', category_group: 'income', display_order: 1, icon: 'Wallet', color: '#22c55e', sub_categories: [{id: 's1', name: 'Salary', display_order: 1}, {id: 'inc2', name: 'Bonus', display_order: 2}, {id: 'inc3', name: 'Rental Income', display_order: 3}] },
+          { id: 'c2', name: 'Housing', category_group: 'expenditure', display_order: 2, icon: 'Home', color: '#3b82f6', sub_categories: [{id: 's2', name: 'Mortgage', display_order: 1, label: 'Fixed Committed'}, {id: 'hou2', name: 'Electricity', display_order: 2, label: 'Variable Essential'}, {id: 'hou3', name: 'Water & Gas', display_order: 3, label: 'Variable Essential'}, {id: 'hou4', name: 'Internet', display_order: 4, label: 'Fixed Committed'}, {id: 'hou5', name: 'HOA Fees', display_order: 5, label: 'Fixed Committed'}] },
+          { id: 'c3', name: 'Transport', category_group: 'expenditure', display_order: 3, icon: 'Car', color: '#f59e0b', sub_categories: [{id: 's3', name: 'Car Payment', display_order: 1, label: 'Fixed Committed'}, {id: 's4', name: 'Fuel', display_order: 2, label: 'Variable Essential'}, {id: 'trn3', name: 'Maintenance', display_order: 3, label: 'Variable Essential'}, {id: 'trn4', name: 'Public Transit', display_order: 4, label: 'Variable Essential'}, {id: 'trn5', name: 'Parking', display_order: 5, label: 'Variable Essential'}] },
+          { id: 'c4', name: 'Food', category_group: 'expenditure', display_order: 4, icon: 'Utensils', color: '#ef4444', sub_categories: [{id: 's5', name: 'Groceries', display_order: 1, label: 'Variable Essential'}, {id: 's6', name: 'Dining Out', display_order: 2, label: 'Discretionary'}, {id: 'foo3', name: 'Coffee Shops', display_order: 3, label: 'Discretionary'}, {id: 'foo4', name: 'Delivery', display_order: 4, label: 'Discretionary'}] },
+          { id: 'c5', name: 'Insurance', category_group: 'expenditure', display_order: 5, icon: 'ShieldCheck', color: '#8b5cf6', sub_categories: [{id: 's7', name: 'Home', display_order: 1, label: 'Fixed Committed'}, {id: 'ins2', name: 'Auto', display_order: 2, label: 'Fixed Committed'}, {id: 'ins3', name: 'Health', display_order: 3, label: 'Fixed Committed'}, {id: 'ins4', name: 'Life', display_order: 4, label: 'Fixed Committed'}] },
+          { id: 'c6', name: 'Shopping', category_group: 'expenditure', display_order: 6, icon: 'ShoppingBag', color: '#ec4899', sub_categories: [{id: 's8', name: 'Electronics', display_order: 1, label: 'Discretionary'}, {id: 's9', name: 'Clothing', display_order: 2, label: 'Discretionary'}, {id: 'sho3', name: 'Personal Care', display_order: 3, label: 'Discretionary'}, {id: 'sho4', name: 'Hobbies', display_order: 4, label: 'Discretionary'}, {id: 'sho5', name: 'Gifts', display_order: 5, label: 'Discretionary'}] },
+          { id: 'c7', name: 'Slush Fund', category_group: 'special', display_order: 7, icon: 'PiggyBank', color: '#14b8a6', sub_categories: [{id: 's10', name: 'Travel', display_order: 1}, {id: 's11', name: 'Home Repair', display_order: 2}, {id: 's12', name: 'Transport', display_order: 3}, {id: 's13', name: 'Events', display_order: 4}, {id: 's14', name: 'Pets', display_order: 5}, {id: 'slu6', name: 'Tech Gadgets', display_order: 6}, {id: 'slu7', name: 'Furniture', display_order: 7}] }
+        ];
+        hierarchicalCategories = [
+          { category_id: 'c1', sub_categories: [{id: 's1', budget_amount: 11000}, {id: 'inc2', budget_amount: 0}, {id: 'inc3', budget_amount: 1500}] },
+          { category_id: 'c2', sub_categories: [{id: 's2', budget_amount: 2800}, {id: 'hou2', budget_amount: 100}, {id: 'hou3', budget_amount: 60}, {id: 'hou4', budget_amount: 90}, {id: 'hou5', budget_amount: 200}] },
+          { category_id: 'c3', sub_categories: [{id: 's3', budget_amount: 800}, {id: 's4', budget_amount: 200}, {id: 'trn3', budget_amount: 80}, {id: 'trn4', budget_amount: 0}, {id: 'trn5', budget_amount: 0}] },
+          { category_id: 'c4', sub_categories: [{id: 's5', budget_amount: 600}, {id: 's6', budget_amount: 250}, {id: 'foo3', budget_amount: 80}, {id: 'foo4', budget_amount: 80}] },
+          { category_id: 'c5', sub_categories: [{id: 's7', budget_amount: 150}, {id: 'ins2', budget_amount: 100}, {id: 'ins3', budget_amount: 100}, {id: 'ins4', budget_amount: 50}] },
+          { category_id: 'c6', sub_categories: [{id: 's8', budget_amount: 50}, {id: 's9', budget_amount: 120}, {id: 'sho3', budget_amount: 50}, {id: 'sho4', budget_amount: 50}, {id: 'sho5', budget_amount: 50}] },
+          { category_id: 'c7', budget_amount: 1600, sub_categories: [{id: 's10', budget_amount: 600}, {id: 's11', budget_amount: 400}, {id: 's12', budget_amount: 0}, {id: 's13', budget_amount: 200}, {id: 's14', budget_amount: 100}, {id: 'slu6', budget_amount: 200}, {id: 'slu7', budget_amount: 100}] }
+        ];
 
-        if (fetchError) {
-          console.warn('Error fetching budget transactions chunk:', fetchError.message);
-          hasMore = false;
-        } else if (chunk && chunk.length > 0) {
-          allYearTransactions = [...allYearTransactions, ...chunk];
-          if (chunk.length < CHUNK_SIZE) hasMore = false;
-          else from += CHUNK_SIZE;
-        } else {
-          hasMore = false;
+        try {
+          const res = await fetch('/demo_data.json');
+          if (res.ok) {
+            allYearTransactions = await res.json();
+          }
+        } catch(e) {
+          console.error("Failed to load demo transactions", e);
+        }
+      } else {
+        const { data: dbCategories, error: allError } = await supabase
+          .from('categories')
+          .select('*, sub_categories(id, name, display_order, label)')
+          .eq('user_id', profile.id)
+          .order('display_order', { ascending: true });
+
+        if (allError) throw allError;
+        allCategories = dbCategories || [];
+
+        // 2. Fetch hierarchical budget data (limits)
+        if (budgetData.id !== 'fallback-id') {
+          const { data, error: hierarchicalError } = await supabase
+            .rpc('get_hierarchical_categories', { p_budget_id: budgetData.id });
+
+          if (hierarchicalError) throw hierarchicalError;
+          hierarchicalCategories = data || [];
+        }
+
+        // 2.5 FETCH ACTUAL TRANSACTIONS for spent calculation (Frontend Override)
+        let from = 0;
+        const CHUNK_SIZE = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          const { data: chunk, error: fetchError } = await (supabase as any)
+            .from('transactions')
+            .select('*')
+            .eq('user_id', user.id)
+            .not('budget', 'eq', 'Exclude')
+            .or(`budget_year.eq.${targetYear},and(budget_month.gte."${targetYear}-01-01",budget_month.lte."${targetYear}-12-31"),and(date.gte."${targetYear}-01-01T00:00:00Z",date.lte."${targetYear}-12-31T23:59:59Z")`)
+            .range(from, from + CHUNK_SIZE - 1);
+
+          if (fetchError) {
+            console.warn('Error fetching budget transactions chunk:', fetchError.message);
+            hasMore = false;
+          } else if (chunk && chunk.length > 0) {
+            allYearTransactions = [...allYearTransactions, ...chunk];
+            if (chunk.length < CHUNK_SIZE) hasMore = false;
+            else from += CHUNK_SIZE;
+          } else {
+            hasMore = false;
+          }
         }
       }
 

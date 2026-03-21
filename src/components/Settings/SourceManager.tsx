@@ -2,7 +2,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 import { useSettings } from '@/hooks/useSettings';
 import { useCategorySource } from '@/hooks/useBudgetCategories';
 import { SourceNameSelector } from '../Transactions/SourceNameSelector';

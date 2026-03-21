@@ -15,7 +15,7 @@ import { formatCurrency } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
 import { cleanSource } from '@/lib/importBrain';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 import { toast } from 'sonner';
 import { useCategorySource } from '@/hooks/useBudgetCategories';
 import { CategorySelector } from '@/components/Budget/CategorySelector';

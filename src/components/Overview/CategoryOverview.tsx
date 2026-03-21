@@ -17,6 +17,8 @@ export const CategoryOverview = ({ includeCore = true, includeSpecial, includeKl
         radarData,
         settings,
         amountFormat,
+        budgetData,
+        flowFiltered
     } = useOverviewData({ includeCore, includeSpecial, includeKlintemarken });
 
     const chartColors = {
@@ -71,9 +73,17 @@ export const CategoryOverview = ({ includeCore = true, includeSpecial, includeKl
                                     </RadarChart>
                                 </ResponsiveContainer>
                             ) : (
-                                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
-                                    <LucideIcons.SearchX className="w-8 h-8 opacity-20" />
-                                    <span className="text-xs font-medium italic">No categories found for this period</span>
+                                <div className="flex flex-col items-start justify-center h-full text-foreground gap-2 p-4 overflow-auto text-[10px]">
+                                    <strong>DEBUG RADAR DATA:</strong>
+                                    <pre>
+{JSON.stringify({
+    budgetDataId: budgetData?.id,
+    categoriesCount: budgetData?.categories?.length,
+    expenseCatCount: budgetData?.categories?.filter(c => c.category_group === 'expenditure')?.length,
+    flowFilteredCount: flowFiltered?.length,
+    mockRadarDataLength: radarData.length,
+}, null, 2)}
+                                    </pre>
                                 </div>
                             )}
                         </div>

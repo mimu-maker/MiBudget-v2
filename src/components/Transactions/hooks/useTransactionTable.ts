@@ -6,7 +6,7 @@ import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tansta
 import { parseAmount } from '@/lib/importUtils';
 import { getLocalTransactions, saveLocalTransactions, clearLocalTransactions } from '@/lib/localDb';
 import { format, parseISO, startOfMonth } from 'date-fns';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 
 export interface Transaction {
   id: string;
@@ -82,6 +82,22 @@ export const useAllTransactions = (options?: { enabled?: boolean }) => {
       }
 
       console.log(`Fetching all transactions for ${userId}...`);
+
+      // ====== DEMO ACCOUNT BYPASS ======
+      if (userId === '00000000-0000-0000-0000-000000000002') {
+         console.log('Local Demo Account Bypass - Fetching demo_data.json');
+         const res = await fetch('/demo_data.json');
+         const data = await res.json();
+         return data.map((t: any, index: number) => ({
+            ...t,
+            id: t.id || `demo-tx-all-${t.date}-${index}`,
+            source: t.source || t.merchant || 'Unknown',
+            clean_source: t.clean_source || t.clean_merchant,
+            source_description: t.source_description || t.merchant_description,
+            subCategory: t.sub_category || ''
+         })) as Transaction[];
+      }
+      // =================================
 
       let localData = await getLocalTransactions();
 
@@ -204,7 +220,78 @@ const useInfiniteTransactions = (userId: string | undefined, sortBy: keyof Trans
       console.log(`Fetching page ${pageParam} for ${userId}...`);
       const pageSize = 50;
       const from = pageParam * pageSize;
-      const to = from + pageSize - 1;
+      const to = from + pageSize;
+
+      // ====== DEMO ACCOUNT BYPASS ======
+      if (userId === '00000000-0000-0000-0000-000000000002') {
+         const res = await fetch('/demo_data.json');
+         let data = await res.json();
+         
+         // Basic Filtering Strategy for UI Completeness
+         Object.entries(filters).forEach(([field, filterValue]) => {
+            if (filterValue === undefined || filterValue === null || filterValue === '' || filterValue === 'all') return;
+            if (Array.isArray(filterValue) && filterValue.length === 0) return;
+            
+            if (field === 'status' && Array.isArray(filterValue)) {
+                data = data.filter((t: any) => filterValue.includes(t.status) || (filterValue.includes('Pending Reconciliation') && t.status?.startsWith('Pending')));
+                return;
+            }
+            if (field === 'amount' && filterValue.type === 'number') {
+                const val = parseFloat(filterValue.value);
+                if (!isNaN(val)) {
+                    data = data.filter((t: any) => {
+                       if (filterValue.operator === '=') return t.amount === val;
+                       if (filterValue.operator === '>') return t.amount > val;
+                       if (filterValue.operator === '<') return t.amount < val;
+                       return true;
+                    });
+                }
+            } else if (Array.isArray(filterValue)) {
+                data = data.filter((t: any) => filterValue.includes(t[field]));
+            } else if (typeof filterValue === 'string' && filterValue !== 'unresolved' && filterValue !== 'resolved') {
+                data = data.filter((t: any) => String(t[field]).toLowerCase().includes(filterValue.toLowerCase()));
+            }
+         });
+
+         if (!filters.status || (Array.isArray(filters.status) && filters.status.length === 0)) {
+            data = data.filter((t: any) => t.status !== 'Excluded');
+         }
+
+         data.sort((a: any, b: any) => {
+             const valA = a[sortBy];
+             const valB = b[sortBy];
+             if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+             if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+             return 0;
+         });
+
+         const paginated = data.slice(from, to);
+         return paginated.map((t: any, index: number) => {
+             const sourceName = t.source || t.merchant || 'Unknown';
+             let budget_month = t.budget_month;
+             let budget_year = t.budget_year;
+             if (!budget_month || !budget_year) {
+               const d = parseISO(t.date);
+               if (!isNaN(d.getTime())) {
+                 budget_month = budget_month || format(startOfMonth(d), 'yyyy-MM-01');
+                 budget_year = budget_year || d.getFullYear();
+               }
+             }
+
+             return {
+               ...t,
+               id: t.id || `demo-tx-${pageParam}-${index}-${t.date}`,
+               source: sourceName,
+               clean_source: t.clean_source || t.clean_merchant || null,
+               source_description: t.source_description || t.merchant_description || null,
+               subCategory: t.sub_category || '',
+               parent_id: t.parent_id,
+               budget_month,
+               budget_year
+             };
+         }) as Transaction[];
+      }
+      // =================================
 
       let query = (supabase as any)
         .from('transactions')
@@ -321,6 +408,27 @@ const useTransactionCounts = (filters: Record<string, any>) => {
     queryFn: async () => {
       const userId = userProfile?.user_id || user?.id;
       if (!userId) return { total: 0, filtered: 0, filteredSum: 0 };
+
+      // ====== DEMO ACCOUNT BYPASS ======
+      if (userId === '00000000-0000-0000-0000-000000000002') {
+         const res = await fetch('/demo_data.json');
+         let data = await res.json();
+         const total = data.filter((t:any) => t.status !== 'Excluded').length;
+         
+         Object.entries(filters).forEach(([field, filterValue]) => {
+             if (Array.isArray(filterValue) && field === 'status') {
+                 data = data.filter((t: any) => filterValue.includes(t.status) || (filterValue.includes('Pending Reconciliation') && t.status?.startsWith('Pending')));
+             }
+         });
+         
+         if (!filters.status || (Array.isArray(filters.status) && filters.status.length === 0)) {
+            data = data.filter((t: any) => t.status !== 'Excluded');
+         }
+
+         const filteredSum = data.reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
+         return { total, filtered: data.length, filteredSum };
+      }
+      // =================================
 
       // 1. Total Count (non-excluded)
       const { count: totalCount, error: totalError } = await (supabase as any)

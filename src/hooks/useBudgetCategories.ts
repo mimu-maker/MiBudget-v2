@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 import { useSettings } from './useSettings';
 
 const DEFAULT_BUDGET_NAME = 'Primary 2025';
@@ -48,6 +48,19 @@ const ALL_BUDGETS_QUERY_KEY = (profileId?: string): CategoryQueryKey => [
 ];
 
 const fetchOrCreateDefaultBudget = async (profileId: string) => {
+  if (profileId === '00000000-0000-0000-0000-000000000002') {
+    return {
+      id: '00000000-0000-0000-0000-000000000003',
+      user_id: profileId,
+      name: DEFAULT_BUDGET_NAME,
+      year: DEFAULT_BUDGET_YEAR,
+      budget_type: 'primary',
+      period_type: 'monthly',
+      start_date: `${DEFAULT_BUDGET_YEAR}-01-01`,
+      is_active: true
+    };
+  }
+
   const { data, error } = await supabase
     .from('budgets')
     .select('*')
@@ -78,6 +91,18 @@ const fetchOrCreateDefaultBudget = async (profileId: string) => {
 };
 
 const fetchCategories = async (profileId: string, budgetId?: string | null): Promise<BudgetCategoryRecord[]> => {
+  if (profileId === '00000000-0000-0000-0000-000000000002') {
+    return [
+      { id: 'c1', name: 'Income', category_group: 'income', display_order: 1, budget_amount: 6000 * 12, sub_categories: [{id: 's1', name: 'Salary', display_order: 1, budget_amount: 6000 * 12, is_active: true}] },
+      { id: 'c2', name: 'Housing', category_group: 'expenditure', display_order: 2, budget_amount: 1800 * 12, sub_categories: [{id: 's2', name: 'Mortgage', display_order: 1, budget_amount: 1800 * 12, is_active: true}] },
+      { id: 'c3', name: 'Transport', category_group: 'expenditure', display_order: 3, budget_amount: 700 * 12, sub_categories: [{id: 's3', name: 'Car Payment', display_order: 1, budget_amount: 500 * 12, is_active: true}, {id: 's4', name: 'Fuel', display_order: 2, budget_amount: 200 * 12, is_active: true}] },
+      { id: 'c4', name: 'Food', category_group: 'expenditure', display_order: 4, budget_amount: 1000 * 12, sub_categories: [{id: 's5', name: 'Groceries', display_order: 1, budget_amount: 800 * 12, is_active: true}, {id: 's6', name: 'Dining Out', display_order: 2, budget_amount: 200 * 12, is_active: true}] },
+      { id: 'c5', name: 'Insurance', category_group: 'expenditure', display_order: 5, budget_amount: 200 * 12, sub_categories: [{id: 's7', name: 'Home', display_order: 1, budget_amount: 200 * 12, is_active: true}] },
+      { id: 'c6', name: 'Shopping', category_group: 'expenditure', display_order: 6, budget_amount: 800 * 12, sub_categories: [{id: 's8', name: 'Electronics', display_order: 1, budget_amount: 500 * 12, is_active: true}, {id: 's9', name: 'Clothing', display_order: 2, budget_amount: 300 * 12, is_active: true}] },
+      { id: 'c7', name: 'Slush Fund', category_group: 'special', display_order: 7, budget_amount: 50000, sub_categories: [{id: 's10', name: 'Travel', display_order: 1, budget_amount: 25000, is_active: true}, {id: 's11', name: 'Home Repair', display_order: 2, budget_amount: 10000, is_active: true}, {id: 's12', name: 'Transport', display_order: 3, budget_amount: 10000, is_active: true}, {id: 's13', name: 'Events', display_order: 4, budget_amount: 2500, is_active: true}, {id: 's14', name: 'Pets', display_order: 5, budget_amount: 2500, is_active: true}] }
+    ] as any;
+  }
+
   const { data: categories, error } = await supabase
     .from('categories')
     .select(`
@@ -135,6 +160,18 @@ const fetchCategories = async (profileId: string, budgetId?: string | null): Pro
 };
 
 const fetchAllBudgets = async (profileId: string) => {
+  if (profileId === '00000000-0000-0000-0000-000000000002') {
+    return [{
+       id: '00000000-0000-0000-0000-000000000003',
+       user_id: profileId,
+       year: 2025,
+       name: `Unified 2025`,
+       budget_type: 'unified',
+       start_date: `2025-01-01`,
+       is_active: true
+    }];
+  }
+
   const { data, error } = await supabase
     .from('budgets')
     .select('*')
@@ -146,6 +183,18 @@ const fetchAllBudgets = async (profileId: string) => {
 };
 
 const fetchCategoriesWithMultiYearLimits = async (profileId: string, budgetIds: string[]): Promise<any[]> => {
+  if (profileId === '00000000-0000-0000-0000-000000000002') {
+    const demoCategories = await fetchCategories(profileId);
+    return demoCategories.map(cat => ({
+      ...cat,
+      limits: budgetIds.reduce((acc, bId) => ({ ...acc, [bId]: {is_active: true} }), {} as Record<string, any>),
+      sub_categories: cat.sub_categories.map((sub: any) => ({
+        ...sub,
+        limits: budgetIds.reduce((acc, bId) => ({ ...acc, [bId]: {is_active: true} }), {} as Record<string, any>)
+      }))
+    }));
+  }
+
   const { data: categories, error: catError } = await supabase
     .from('categories')
     .select(`
@@ -544,6 +593,8 @@ export interface BudgetGroupRecord {
 // ... existing code ...
 
 const fetchBudgetGroups = async (profileId: string) => {
+  if (profileId === '00000000-0000-0000-0000-000000000002') return [];
+
   const { data, error } = await supabase
     .from('budget_groups' as any)
     .select('*')

@@ -41,8 +41,8 @@ const LocalAuthContext = createContext<LocalAuthContextType | undefined>(undefin
 // Mock user database (in real app, this would be in localStorage or a backend)
 const mockUsers: LocalUserProfile[] = [
   {
-    id: '1',
-    user_id: 'local-user-1',
+    id: '00000000-0000-0000-0000-000000000001',
+    user_id: '00000000-0000-0000-0000-000000000001',
     email: 'test@example.com',
     full_name: 'Test User',
     currency: 'USD',
@@ -57,8 +57,8 @@ const mockUsers: LocalUserProfile[] = [
     import_completed: false
   },
   {
-    id: '2',
-    user_id: 'local-user-2',
+    id: '00000000-0000-0000-0000-000000000002',
+    user_id: '00000000-0000-0000-0000-000000000002',
     email: 'demo@example.com',
     full_name: 'Demo User',
     currency: 'USD',
@@ -90,8 +90,21 @@ export const LocalAuthProvider: React.FC<{ children: ReactNode }> = ({ children 
     const savedProfile = localStorage.getItem('localUserProfile');
     
     if (savedUser && savedProfile) {
-      setUser(JSON.parse(savedUser));
-      setUserProfile(JSON.parse(savedProfile));
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        const parsedProfile = JSON.parse(savedProfile);
+        if (!parsedUser.id || parsedUser.id.length < 30 || !parsedProfile.id || parsedProfile.id.length < 30) {
+          console.warn('Invalid local session detected. Clearing Mock Auth session.');
+          localStorage.removeItem('localUser');
+          localStorage.removeItem('localUserProfile');
+        } else {
+          setUser(parsedUser);
+          setUserProfile(parsedProfile);
+        }
+      } catch (e) {
+        localStorage.removeItem('localUser');
+        localStorage.removeItem('localUserProfile');
+      }
     }
     
     setLoading(false);

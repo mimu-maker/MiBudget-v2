@@ -24,7 +24,7 @@ export const LocalLogin: React.FC = () => {
     setError(null);
   };
 
-  const handleSignIn = async (e: React.FormEvent) => {
+const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 

@@ -29,8 +29,10 @@ import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { BudgetTable } from '@/components/Budget/BudgetTable';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 
 const Projection = () => {
+  const { isLocalAuth } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { settings } = useSettings();
@@ -64,6 +66,21 @@ const Projection = () => {
   const { data: allProjectionsRaw = [], isLoading: isLoadingProjections } = useQuery<any[]>({
     queryKey: ['projections', 'all'],
     queryFn: async () => {
+      if (isLocalAuth) {
+        return [
+           // Baseline Planned One-Offs (scenario_id: null)
+           // Baseline Planned One-Offs (scenario_id: null)
+           { id: 'mock-proj-base-1', scenario_id: null, category: 'Slush Fund', stream: 'Travel', merchant: 'Holiday to Bali', amount: -8500, date: '2026-08-15', recurring: 'N/A', planned: true },
+           { id: 'mock-proj-base-2', scenario_id: null, category: 'Slush Fund', stream: 'Home Repair', merchant: 'Kitchen Reno Phase 1', amount: -15000, date: '2026-05-10', recurring: 'N/A', planned: true },
+           { id: 'mock-proj-base-3', scenario_id: null, category: 'Income', stream: 'Bonus', merchant: 'Annual Bonus', amount: 5000, date: '2026-12-01', recurring: 'N/A', planned: true },
+           { id: 'mock-proj-base-4', scenario_id: null, category: 'Slush Fund', stream: 'Events', merchant: 'Taylor Swift VIP Tickets', amount: -2500, date: '2026-06-20', recurring: 'N/A', planned: true },
+           // Scenario: Buy New Car
+           { id: 'mock-proj-1', scenario_id: 'demo-scenario-1', category: 'Transport', stream: 'Car Payment', merchant: 'Car Bank', amount: -850, date: '2026-06-01', recurring: 'Monthly', planned: true },
+           { id: 'mock-proj-2', scenario_id: 'demo-scenario-1', category: 'Slush Fund', stream: 'Downpayment', merchant: 'Car Dealer', amount: -15000, date: '2026-05-15', recurring: 'N/A', planned: true },
+           // Scenario: Job Loss
+           { id: 'mock-proj-3', scenario_id: 'demo-scenario-2', category: 'Income', stream: 'Salary', merchant: 'Acme Corp Salary', amount: 0, date: '2026-06-01', overrides: { '2026-06': {amount: 0}, '2026-07': {amount: 0}, '2026-08': {amount: 0}, '2026-09': {amount: 0}, '2026-10': {amount: 0}, '2026-11': {amount: 0} }, recurring: 'Monthly', planned: true },
+        ];
+      }
       const { data, error } = await supabase
         .from('projections' as any)
         .select('*')
@@ -98,6 +115,12 @@ const Projection = () => {
   const { data: scenarios = [] } = useQuery<any[]>({
     queryKey: ['scenarios'],
     queryFn: async () => {
+      if (isLocalAuth) {
+        return [
+          { id: 'demo-scenario-1', name: 'Buy New Car', created_at: new Date().toISOString() },
+          { id: 'demo-scenario-2', name: 'Job Loss (6 months)', created_at: new Date().toISOString() },
+        ];
+      }
       const { data, error } = await supabase
         .from('scenarios')
         .select('*')

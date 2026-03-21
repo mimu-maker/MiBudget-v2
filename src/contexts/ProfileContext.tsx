@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth as useSupabaseAuth } from '@/contexts/AuthContext';
+import { useLocalAuth } from '@/contexts/LocalAuthContext';
 import { MASTER_ACCOUNT_EMAIL } from '@/lib/authUtils';
 
 export interface UserProfile {
@@ -39,7 +40,11 @@ export const useProfile = () => {
 };
 
 export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { user, session } = useAuth();
+    const isLocalAuth = localStorage.getItem('authMode') === 'local';
+    const supabaseAuth = useSupabaseAuth();
+    const localAuth = useLocalAuth();
+    const user = isLocalAuth ? localAuth.user : supabaseAuth.user;
+    const session = isLocalAuth ? localAuth.session : supabaseAuth.session;
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
 
