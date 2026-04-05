@@ -1341,6 +1341,7 @@ const Projection = () => {
                   <Link to="/budget">Budget</Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
+              <BreadcrumbSeparator />
               <BreadcrumbItem>
                 <BreadcrumbPage className="font-black text-2xl tracking-tighter flex items-center gap-2">
                   Projections
