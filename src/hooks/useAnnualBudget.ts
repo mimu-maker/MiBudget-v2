@@ -54,23 +54,22 @@ export interface AnnualBudget {
 
 export const useAnnualBudget = (year?: number) => {
   const { user, userProfile, currentAccountId } = useAuth();
-  const targetYear = year || 2025;
+  const queryClient = useQueryClient();
+  const targetYear = year || new Date().getFullYear();
 
   const { data: budget, isLoading, error } = useQuery<AnnualBudget | null>({
     queryKey: ['annual-budget', targetYear, currentAccountId],
     enabled: !!user?.id,
-    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    staleTime: 1000 * 60 * 5,
     queryFn: async () => {
       const profileId = userProfile?.id || user?.id;
       if (!profileId) return null;
 
-      const targetAccount = currentAccountId;
-
-      // 1. Fetch Budget record
+      // 1. Fetch Budget record (budgets table uses user_id, not account_id)
       const { data: unifiedBudget } = await supabase
         .from('budgets')
         .select('*')
-        .eq(targetAccount ? 'account_id' : 'user_id', targetAccount || profileId)
+        .eq('user_id', profileId)
         .eq('year', targetYear)
         .eq('budget_type', 'unified')
         .maybeSingle();
@@ -86,15 +85,28 @@ export const useAnnualBudget = (year?: number) => {
         isFallback: true
       };
 
-      // 2. Fetch Categories by Account
-      const { data: dbCategories, error: catError } = await (supabase
-        .from('categories')
-        .select('*, sub_categories(id, name, display_order, budget_amount, label)')
-        .eq(targetAccount ? 'account_id' : 'user_id', targetAccount || profileId)
-        .order('display_order', { ascending: true }) as any);
-
-      if (catError) throw catError;
-      const allCategories = dbCategories || [];
+      // 2. Fetch Categories (try account_id first, fall back to user_id)
+      let dbCategories: any[] = [];
+      if (currentAccountId) {
+        const { data, error: catError } = await (supabase as any)
+          .from('categories')
+          .select('*, sub_categories(id, name, display_order, budget_amount, label)')
+          .eq('account_id', currentAccountId)
+          .order('display_order', { ascending: true });
+        if (!catError && data && data.length > 0) {
+          dbCategories = data;
+        }
+      }
+      // Fallback to user_id if account_id returned nothing
+      if (dbCategories.length === 0) {
+        const { data, error: catError } = await (supabase as any)
+          .from('categories')
+          .select('*, sub_categories(id, name, display_order, budget_amount, label)')
+          .eq('user_id', profileId)
+          .order('display_order', { ascending: true });
+        if (catError) throw catError;
+        dbCategories = data || [];
+      }
 
       // 3. Fetch budget_category_limits (where the actual budget amounts live)
       let categoryBudgets: Record<string, number> = {};
@@ -122,7 +134,7 @@ export const useAnnualBudget = (year?: number) => {
 
       while (hasMore) {
         let query = (supabase as any).from('transactions').select('*');
-        if (targetAccount) query = query.eq('account_id', targetAccount);
+        if (currentAccountId) query = query.eq('account_id', currentAccountId);
         else query = query.or(`user_id.eq.${user?.id},user_id.eq.${profileId}`);
 
         const { data: chunk, error: fetchError } = await query
@@ -139,7 +151,7 @@ export const useAnnualBudget = (year?: number) => {
       }
 
       // 5. Build Budget Object with proper amounts from budget_category_limits
-      const categories: BudgetCategory[] = allCategories.map(cat => {
+      const categories: BudgetCategory[] = dbCategories.map((cat: any) => {
         const catBudgetAmount = categoryBudgets[cat.id] ?? 0;
         const catTransactions = allYearTransactions.filter(t => t.category === cat.name);
         const spent = catTransactions.reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
@@ -191,7 +203,9 @@ export const useAnnualBudget = (year?: number) => {
     }
   });
 
-  return { budget, loading: isLoading, error: error?.message || null };
+  const refreshBudget = () => queryClient.invalidateQueries({ queryKey: ['annual-budget', targetYear, currentAccountId] });
+
+  return { budget, loading: isLoading, error: error?.message || null, refreshBudget };
 };
 
 // --- RESTORED HOOKS FOR COMPATIBILITY ---
