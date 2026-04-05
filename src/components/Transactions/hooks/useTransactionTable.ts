@@ -519,18 +519,28 @@ const useTransactionCounts = (filters: Record<string, any>) => {
 
       if (filteredError) throw filteredError;
 
-      // 3. Filtered Sum (using a separate query to get all amounts for summation)
-      // We don't use RPC here to avoid database-side changes, and we select ONLY the amount column to keep it light.
-      const { data: sumData, error: sumError } = await filteredQuery.select('amount');
+      // 3. Filtered Sum (Optimized: Use .sum instead of fetching all rows)
+      // We perform a specialized query for the sum to avoid transferring 2000+ rows to the client
+      const { data: sumData, error: sumError } = await filteredQuery
+        .select('amount.sum()')
+        .single();
 
-      if (sumError) throw sumError;
-
-      const filteredSum = (sumData || []).reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
+      if (sumError) {
+        console.warn("Fast sum failed, falling back to manual calculate:", sumError.message);
+        // Fallback for older Postgrest versions or edge cases
+        const { data: fallbackData } = await filteredQuery.select('amount');
+        const manualSum = (fallbackData || []).reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
+        return {
+          total: totalCount || 0,
+          filtered: filteredCount || 0,
+          filteredSum: manualSum
+        };
+      }
 
       return {
         total: totalCount || 0,
         filtered: filteredCount || 0,
-        filteredSum
+        filteredSum: (sumData as any)?.sum || 0
       };
     },
     staleTime: 1000 * 60 * 60 * 24,

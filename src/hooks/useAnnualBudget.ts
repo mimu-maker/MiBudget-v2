@@ -75,11 +75,14 @@ export const useAnnualBudget = (year?: number) => {
       const profileId = userProfile?.id || user.id;
 
       // 1. Fetch Budget record
+      const { currentAccountId } = useAuth();
+      const targetAccount = currentAccountId;
       let budgetData: any = null;
+
       const { data: unifiedBudget, error: budgetError } = await supabase
         .from('budgets')
         .select('*')
-        .eq('user_id', profileId) // Prioritize profile ID for data ownership
+        .eq(targetAccount ? 'account_id' : 'user_id', targetAccount || profileId)
         .eq('year', targetYear)
         .eq('budget_type', 'unified')
         .maybeSingle();
@@ -108,12 +111,11 @@ export const useAnnualBudget = (year?: number) => {
         };
       }
 
-      // 2. Fetch Categories using BOTH IDs (Profile PK and Auth ID)
-      // This is necessary because different migrations used different FK targets.
+      // 2. Fetch Categories by Account
       const { data: dbCategories, error: catError } = await (supabase
         .from('categories')
         .select('*, sub_categories(id, name, display_order, label)')
-        .or(`user_id.eq.${user.id},user_id.eq.${profileId}`)
+        .eq(targetAccount ? 'account_id' : 'user_id', targetAccount || profileId)
         .order('display_order', { ascending: true }) as any);
 
       if (catError) throw catError;
@@ -134,11 +136,18 @@ export const useAnnualBudget = (year?: number) => {
       let hasMore = true;
 
       while (hasMore) {
-        const { data: chunk, error: fetchError } = await (supabase as any)
+        let query = (supabase as any)
           .from('transactions')
-          .select('*')
-          .or(`user_id.eq.${user.id},user_id.eq.${profileId}`)
-          .or(`budget_year.eq.${targetYear},and(budget_month.gte."${targetYear}-01-01",budget_month.lte."${targetYear}-12-31"),and(date.gte."${targetYear}-01-01T00:00:00Z",date.lte."${targetYear}-12-31T23:59:59Z")`)
+          .select('*');
+        
+        if (targetAccount) {
+          query = query.eq('account_id', targetAccount);
+        } else {
+          query = query.or(`user_id.eq.${user.id},user_id.eq.${profileId}`);
+        }
+
+        const { data: chunk, error: fetchError } = await query
+          .or(`budget_year.eq.${targetYear},and(budget_month.gte."${targetYear}-01-01",budget_month.lte."${targetYear}-12-31")`)
           .range(from, from + CHUNK_SIZE - 1);
 
         if (fetchError) {
