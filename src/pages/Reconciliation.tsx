@@ -97,6 +97,9 @@ const Reconciliation = () => {
     // Unknown Transactions Note Prompt
     const [promptingNoteTx, setPromptingNoteTx] = useState<Transaction | null>(null);
     const [triageNote, setTriageNote] = useState("");
+    
+    // Recon confirmation
+    const [confirmingReconEntity, setConfirmingReconEntity] = useState<{entity: string, items: Transaction[], net: number} | null>(null);
 
     // Filter for Pending Reconciliation items
     const pendingItems = useMemo(() => {
@@ -321,6 +324,26 @@ const Reconciliation = () => {
         }
     };
 
+    const handleCompleteRecon = async () => {
+        if (!confirmingReconEntity) return;
+        const { entity, items } = confirmingReconEntity;
+        
+        try {
+            const promises = items.map(item => {
+                const newNote = item.notes ? `${item.notes}\nRecon: ${entity}` : `Recon: ${entity}`;
+                return bulkUpdate({ 
+                    ids: [item.id], 
+                    updates: { status: 'Reconciled', notes: newNote }
+                });
+            });
+            await Promise.all(promises);
+            toast.success(`Completed Reconciliation for ${entity}`);
+        } catch(err) {
+            toast.error("Failed to complete recon");
+        }
+        setConfirmingReconEntity(null);
+    };
+
     return (
         <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-12 animate-in fade-in duration-500 pb-32">
             <div className="flex items-center justify-between">
@@ -515,6 +538,23 @@ const Reconciliation = () => {
                                         </div>
                                     </div>
                                     <div className="flex items-center pr-4">
+                                        {items.some(t => t.amount > 0) && items.some(t => t.amount < 0) && (
+                                            <Button 
+                                                variant="secondary"
+                                                size="sm"
+                                                className="mr-4 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 uppercase font-black text-[10px] tracking-widest h-8"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (items.some(t => !t.category || !t.sub_category)) {
+                                                        toast.error("All transactions must have a category and sub-category set");
+                                                        return;
+                                                    }
+                                                    setConfirmingReconEntity({ entity, items, net: entityBalance });
+                                                }}
+                                            >
+                                                Complete Recon
+                                            </Button>
+                                        )}
                                         <span className={cn("font-black text-lg", entityBalance >= 0 ? "text-emerald-600" : "text-rose-600")}>
                                             {formatCurrency(entityBalance, settings.currency)}
                                         </span>
@@ -707,6 +747,29 @@ const Reconciliation = () => {
                         >
                             Submit & Move
                         </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={!!confirmingReconEntity} onOpenChange={(open) => !open && setConfirmingReconEntity(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-black text-slate-800 tracking-tight">Complete Reconciliation</DialogTitle>
+                        <DialogDescription className="text-slate-500 font-medium">
+                            You are about to reconcile {confirmingReconEntity?.items.length} items for {confirmingReconEntity?.entity}.
+                            {Math.abs(confirmingReconEntity?.net || 0) > 0.01 && (
+                                <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-xl space-y-1 text-left">
+                                    <div className="text-orange-800 font-black tracking-widest uppercase text-[10px]">Warning: Outstanding Balance</div>
+                                    <div className="text-orange-900/80 text-sm font-medium">
+                                        There is a net difference of <span className="font-black text-orange-600">{formatCurrency(confirmingReconEntity?.net || 0, settings.currency)}</span>. This balance will remain assigned to the respective categories.
+                                    </div>
+                                </div>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="ghost" onClick={() => setConfirmingReconEntity(null)} className="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Cancel</Button>
+                        <Button onClick={handleCompleteRecon} className="bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase text-[10px] tracking-widest">Confirm & Complete</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

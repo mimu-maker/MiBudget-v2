@@ -1,8 +1,16 @@
-# Walkthrough: Sub-category Selection & Filtering Improvement
+# Walkthrough: Recon Feature & Sub-category Improvements
 
-This update addresses the issue where sub-category selection and filtering were inconsistent, incomplete, or showed unrelated categories.
+This update implements the new Recon flow and addresses sub-category selection.
 
-## Key Fixes & Enhancements
+## 1. Recon Feature Implementation
+Added the ability to "Complete Recon" for transaction groups that possess both positive and negative values.
+
+*   **Completion Flow**: When reviewing groups matching these criteria in the Reconciliation tab, a "Complete Recon" button becomes available in the entity group header.
+*   **Validation Check**: Users are guided to ensure all line items inside the group have both a `category` and `sub_category` populated. Attempting to complete the flow without these flags will issue a warning.
+*   **Outstanding Amount Summary**: If the positive and negative amounts don't exactly equal zero, the confirmation dialog will warn users of the net outstanding amount prior to execution.
+*   **Audit Reference Note**: Completing the flow successfully appends `"Recon: [Entity Name]"` to the underlying notes of all modified transactions and marks them as Reconciled.
+
+## 2. Key Fixes & Enhancements (Previous)
 
 1.  **Contextual Filtering in Transactions Table**:
     *   The sub-category filter in the table header now detects if a category filter (e.g., "Household") is active.
@@ -24,15 +32,7 @@ This update addresses the issue where sub-category selection and filtering were 
 
 ## Verification Steps
 
-1.  Navigate to the **Transactions** tab.
-2.  Apply a filter for a specific category (e.g., "Household").
-3.  Click the filter icon on the **Sub-category** column.
-    *   **Verify**: You should see a group named "Sub-categories for Household" on top.
-    *   **Verify**: Other sub-categories should be below in "Other Sub-categories".
-4.  Clear all filters and check the Sub-category filter again.
-    *   **Verify**: All sub-categories should be listed under "All Sub-categories".
-5.  Click on a sub-category cell in a row to edit it.
-    *   **Verify**: The dropdown should show sub-categories grouped by their parent category (Income, Property, etc.).
-    *   **Verify**: Choosing a sub-category belonging to a different category than currently set should update both fields in the transaction record.
-
-These changes ensure a premium, predictable, and robust user experience across all transaction views.
+1.  Navigate to the **Transactions** -> **Reconciliation** tab and locate an entity group containing both positive and negative values.
+2.  Press **Complete Recon**. Ensure the system blocks completion if any sub-categories are missing.
+3.  Set all sub-categories and press **Complete Recon** again. Confirm the dialog displays any net positive or negative remaining balance before continuing.
+4.  Proceed with confirmation, observe the transactions clear, and check their underlying notes for the appended `Recon:` reference string.
