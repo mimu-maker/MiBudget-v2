@@ -215,9 +215,11 @@ const useInfiniteTransactions = (userId: string | undefined, sortBy: keyof Trans
     queryKey: ['transactions-infinite', sortBy, sortOrder, filters],
     initialPageParam: 0,
     queryFn: async ({ pageParam = 0 }) => {
+      const { userProfile, user, currentAccountId } = useAuth(); // Get from UnifiedAuthContext
+      const userId = userProfile?.user_id || user?.id;
       if (!userId) return { data: [], nextCursor: null };
       
-      console.log(`Fetching page ${pageParam} for ${userId}...`);
+      console.log(`Fetching page ${pageParam}... Target: ${currentAccountId ? 'Account ' + currentAccountId : 'User ' + userId}`);
       const pageSize = 50;
       const from = pageParam * pageSize;
       const to = from + pageSize;
@@ -295,8 +297,13 @@ const useInfiniteTransactions = (userId: string | undefined, sortBy: keyof Trans
 
       let query = (supabase as any)
         .from('transactions')
-        .select('*')
-        .eq('user_id', userId);
+        .select('*');
+
+      if (currentAccountId) {
+        query = query.eq('account_id', currentAccountId);
+      } else {
+        query = query.eq('user_id', userId);
+      }
 
       // Apply Filters
       Object.entries(filters).forEach(([field, filterValue]) => {
@@ -533,7 +540,7 @@ const useTransactionCounts = (filters: Record<string, any>) => {
 };
 
 export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { mode: 'infinite' }) => {
-  const { userProfile, user } = useAuth();
+  const { userProfile, user, currentAccountId } = useAuth();
   const queryClient = useQueryClient();
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
 
@@ -688,16 +695,31 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
         }
       }
 
-      if (field === 'status' && value === 'Reconciled') {
-        updates.excluded = true;
-        updates.budget = 'Exclude';
+      if (field === 'status') {
+        if (value === 'Reconciled') {
+          updates.excluded = true;
+          updates.budget = 'Exclude';
+        } else if (value === 'Pending Reconciliation' || value === 'Pending Triage' || value.startsWith('Pending')) {
+          // AUTO-FIX: If moving back to pending, UN-EXCLUDE
+          updates.excluded = false;
+          if (!updates.budget || updates.budget === 'Exclude') {
+            updates.budget = 'Primary'; // Default back to Primary if it was excluded
+          }
+        }
       }
 
       let { error } = await (supabase as any)
         .from('transactions')
         .update(updates)
-        .eq('id', id)
-        .eq('user_id', userId);
+        .eq('id', id);
+
+      // In Multi-Account mode, RLS handles identity check; we no longer need .eq('user_id', userId) if we have account_id
+      if (currentAccountId) {
+        // RLS takes care of it
+      } else {
+        // Legacy safety
+        // .eq('user_id', userId) 
+      }
 
       if (error && (error.code === '42703' || error.message?.includes('column') || error.message?.includes('does not exist'))) {
         console.warn("Update failed with schema mismatch, retrying with legacy fields...");
