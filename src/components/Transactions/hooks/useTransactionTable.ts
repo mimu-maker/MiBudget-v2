@@ -210,13 +210,11 @@ export const useAllTransactions = (options?: { enabled?: boolean }) => {
 /**
  * Hook for INFINITE transactions with server-side sorting/filtering
  */
-const useInfiniteTransactions = (userId: string | undefined, sortBy: keyof Transaction, sortOrder: 'asc' | 'desc', filters: Record<string, any>, options?: { enabled?: boolean }) => {
+const useInfiniteTransactions = (userId: string | undefined, currentAccountId: string | null, sortBy: keyof Transaction, sortOrder: 'asc' | 'desc', filters: Record<string, any>, options?: { enabled?: boolean }) => {
   return useInfiniteQuery({
-    queryKey: ['transactions-infinite', sortBy, sortOrder, filters],
+    queryKey: ['transactions-infinite', sortBy, sortOrder, filters, currentAccountId],
     initialPageParam: 0,
     queryFn: async ({ pageParam = 0 }) => {
-      const { userProfile, user, currentAccountId } = useAuth(); // Get from UnifiedAuthContext
-      const userId = userProfile?.user_id || user?.id;
       if (!userId) return { data: [], nextCursor: null };
       
       console.log(`Fetching page ${pageParam}... Target: ${currentAccountId ? 'Account ' + currentAccountId : 'User ' + userId}`);
@@ -408,12 +406,10 @@ const useInfiniteTransactions = (userId: string | undefined, sortBy: keyof Trans
 const useTransactions = () => useAllTransactions(); // Keep for backward compatibility internally if needed
 
 
-const useTransactionCounts = (filters: Record<string, any>) => {
-  const { userProfile, user } = useAuth();
+const useTransactionCounts = (userId: string | undefined, currentAccountId: string | null, filters: Record<string, any>) => {
   return useQuery({
-    queryKey: ['transactions-counts', filters],
+    queryKey: ['transactions-counts', filters, currentAccountId],
     queryFn: async () => {
-      const userId = userProfile?.user_id || user?.id;
       if (!userId) return { total: 0, filtered: 0, filteredSum: 0 };
 
       // ====== DEMO ACCOUNT BYPASS ======
@@ -519,28 +515,21 @@ const useTransactionCounts = (filters: Record<string, any>) => {
 
       if (filteredError) throw filteredError;
 
-      // 3. Filtered Sum (Optimized: Use .sum instead of fetching all rows)
-      // We perform a specialized query for the sum to avoid transferring 2000+ rows to the client
-      const { data: sumData, error: sumError } = await filteredQuery
-        .select('amount.sum()')
-        .single();
-
+      // 3. Filtered Sum (Optimized for reliability)
+      let finalSum = 0;
+      // We select only the amount column to keep it light
+      const { data: amounts, error: sumError } = await filteredQuery.select('amount');
+      
       if (sumError) {
-        console.warn("Fast sum failed, falling back to manual calculate:", sumError.message);
-        // Fallback for older Postgrest versions or edge cases
-        const { data: fallbackData } = await filteredQuery.select('amount');
-        const manualSum = (fallbackData || []).reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
-        return {
-          total: totalCount || 0,
-          filtered: filteredCount || 0,
-          filteredSum: manualSum
-        };
+        console.warn("Sum query failed:", sumError.message);
+      } else {
+        finalSum = (amounts || []).reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
       }
 
       return {
         total: totalCount || 0,
         filtered: filteredCount || 0,
-        filteredSum: (sumData as any)?.sum || 0
+        filteredSum: finalSum
       };
     },
     staleTime: 1000 * 60 * 60 * 24,
@@ -615,7 +604,6 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
   const [sortOrder, setSortOrder] = usePersistentState<'asc' | 'desc'>('mimu_tx_sortOrder', 'desc');
   const [filters, setFilters] = usePersistentState<Record<string, any>>('mimu_tx_filters', {});
 
-  // Infinite Query (Default)
   const {
     data: infiniteData,
     fetchNextPage,
@@ -623,7 +611,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
     isFetchingNextPage,
     isLoading: isInfiniteLoading,
     isError: isInfiniteError
-  } = useInfiniteTransactions(userProfile?.user_id || user?.id, sortBy, sortOrder, filters, { enabled: options.mode === 'infinite' });
+  } = useInfiniteTransactions(userProfile?.user_id || user?.id, currentAccountId, sortBy, sortOrder, filters, { enabled: options.mode === 'infinite' });
 
   // All Query (Optional Mode)
   const {
@@ -632,7 +620,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
     isError: isAllError
   } = useAllTransactions({ enabled: options.mode === 'all' });
 
-  const { data: counts } = useTransactionCounts(filters);
+  const { data: counts } = useTransactionCounts(userProfile?.user_id || user?.id, currentAccountId, filters);
   const totalCount = counts?.total || 0;
   const filteredCount = counts?.filtered || 0;
 

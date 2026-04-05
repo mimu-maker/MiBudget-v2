@@ -56,13 +56,16 @@ export const useAnnualBudget = (year?: number) => {
   const [budget, setBudget] = useState<AnnualBudget | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, currentAccountId } = useAuth();
 
   const fetchBudget = useCallback(async (budgetYearOverride?: number) => {
     const targetYear = budgetYearOverride || year || 2025;
     
     // We NEED a user and ideally their profile ID to find categories
-    if (!user?.id) {
+    const profileId = userProfile?.id || user?.id; // Define here from top-level state
+    const userId = user?.id;
+
+    if (!profileId) {
       setLoading(false);
       return;
     }
@@ -71,13 +74,8 @@ export const useAnnualBudget = (year?: number) => {
       setLoading(true);
       setError(null);
       
-      // Use the profile ID from AuthContext if available, fallback to Auth ID
-      const profileId = userProfile?.id || user.id;
-
       // 1. Fetch Budget record
-      const { currentAccountId } = useAuth();
       const targetAccount = currentAccountId;
-      let budgetData: any = null;
 
       const { data: unifiedBudget, error: budgetError } = await supabase
         .from('budgets')
@@ -87,6 +85,7 @@ export const useAnnualBudget = (year?: number) => {
         .eq('budget_type', 'unified')
         .maybeSingle();
 
+      let budgetData;
       if (unifiedBudget) {
         budgetData = unifiedBudget;
       } else {
@@ -94,7 +93,7 @@ export const useAnnualBudget = (year?: number) => {
         const { data: fallbackBudget } = await supabase
           .from('budgets')
           .select('*')
-          .or(`user_id.eq.${user.id},user_id.eq.${profileId}`)
+          .or(`user_id.eq.${userId},user_id.eq.${profileId}`)
           .eq('year', targetYear)
           .eq('budget_type', 'primary')
           .maybeSingle();
@@ -143,7 +142,7 @@ export const useAnnualBudget = (year?: number) => {
         if (targetAccount) {
           query = query.eq('account_id', targetAccount);
         } else {
-          query = query.or(`user_id.eq.${user.id},user_id.eq.${profileId}`);
+          query = query.or(`user_id.eq.${userId},user_id.eq.${profileId}`);
         }
 
         const { data: chunk, error: fetchError } = await query
