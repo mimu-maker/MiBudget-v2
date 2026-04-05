@@ -1341,9 +1341,11 @@ const Projection = () => {
                   <Link to="/budget">Budget</Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
-              <BreadcrumbSeparator />
               <BreadcrumbItem>
-                <BreadcrumbPage>Projections</BreadcrumbPage>
+                <BreadcrumbPage className="font-black text-2xl tracking-tighter flex items-center gap-2">
+                  Projections
+                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full letter-spacing-tight">v1.2-Safe-Profile</span>
+                </BreadcrumbPage>
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
