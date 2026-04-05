@@ -89,22 +89,32 @@ export const useAnnualBudget = (year?: number) => {
       // 2. Fetch Categories by Account
       const { data: dbCategories, error: catError } = await (supabase
         .from('categories')
-        .select('*, sub_categories(id, name, display_order, label)')
+        .select('*, sub_categories(id, name, display_order, budget_amount, label)')
         .eq(targetAccount ? 'account_id' : 'user_id', targetAccount || profileId)
         .order('display_order', { ascending: true }) as any);
 
       if (catError) throw catError;
       const allCategories = dbCategories || [];
 
-      // 3. Hierarchical data (if needed)
-      let hierarchicalCategories: any[] = [];
+      // 3. Fetch budget_category_limits (where the actual budget amounts live)
+      let categoryBudgets: Record<string, number> = {};
       if (budgetData.id !== 'fallback-id') {
-        const { data: hData, error: hError } = await supabase
-          .rpc('get_hierarchical_categories' as any, { p_budget_id: budgetData.id });
-        if (!hError) hierarchicalCategories = hData || [];
+        const { data: limitsData } = await (supabase as any)
+          .from('budget_category_limits')
+          .select('category_id, sub_category_id, limit_amount, is_active')
+          .eq('budget_id', budgetData.id);
+
+        (limitsData || []).forEach((limit: any) => {
+          if (limit.sub_category_id) {
+            categoryBudgets[limit.sub_category_id] = Number(limit.limit_amount ?? 0);
+            categoryBudgets[`${limit.category_id}-${limit.sub_category_id}-active`] = limit.is_active ? 1 : 0;
+          } else {
+            categoryBudgets[limit.category_id] = Number(limit.limit_amount ?? 0);
+          }
+        });
       }
 
-      // 4. Heavy Fetch Transactions for the year (Simplified for stability)
+      // 4. Fetch Transactions for the year
       let allYearTransactions: any[] = [];
       let from = 0;
       const CHUNK_SIZE = 1000;
@@ -128,8 +138,9 @@ export const useAnnualBudget = (year?: number) => {
         }
       }
 
-      // 5. Build Budget Object
+      // 5. Build Budget Object with proper amounts from budget_category_limits
       const categories: BudgetCategory[] = allCategories.map(cat => {
+        const catBudgetAmount = categoryBudgets[cat.id] ?? 0;
         const catTransactions = allYearTransactions.filter(t => t.category === cat.name);
         const spent = catTransactions.reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
         
@@ -140,24 +151,27 @@ export const useAnnualBudget = (year?: number) => {
           display_order: cat.display_order,
           icon: cat.icon,
           color: cat.color,
-          budget_amount: cat.budget_amount || 0,
+          budget_amount: catBudgetAmount,
           alert_threshold: cat.alert_threshold || 80,
           spent,
-          remaining: (cat.budget_amount || 0) - spent,
-          remaining_percent: cat.budget_amount > 0 ? Math.round(((cat.budget_amount - spent) / cat.budget_amount) * 100) : 0,
+          remaining: catBudgetAmount - spent,
+          remaining_percent: catBudgetAmount > 0 ? Math.round(((catBudgetAmount - spent) / catBudgetAmount) * 100) : 0,
           label: cat.label,
-          sub_categories: (cat.sub_categories || []).map((sub: any) => {
-            const subSpent = catTransactions.filter(t => t.sub_category === sub.name).reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
-            return {
-              id: sub.id,
-              name: sub.name,
-              budget_amount: sub.budget_amount || 0,
-              spent: subSpent,
-              remaining: (sub.budget_amount || 0) - subSpent,
-              is_active: sub.is_active !== false,
-              label: sub.label
-            };
-          })
+          sub_categories: (cat.sub_categories || [])
+            .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
+            .map((sub: any) => {
+              const subBudgetAmount = sub.budget_amount ?? 0;
+              const subSpent = catTransactions.filter(t => t.sub_category === sub.name).reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
+              return {
+                id: sub.id,
+                name: sub.name,
+                budget_amount: subBudgetAmount,
+                spent: subSpent,
+                remaining: subBudgetAmount - subSpent,
+                is_active: categoryBudgets[`${cat.id}-${sub.id}-active`] !== 0,
+                label: sub.label
+              };
+            })
         };
       });
 
@@ -196,7 +210,7 @@ export const useUnifiedCategoryActions = () => {
   const { currentAccountId } = useAuth();
 
   const addCategory = async (name: string) => {
-    const { data: newCat, error } = await supabase
+    const { data: newCat, error } = await (supabase as any)
       .from('categories')
       .insert([{ 
         name, 
@@ -214,7 +228,7 @@ export const useUnifiedCategoryActions = () => {
 
   const addSubCategory = async (categoryName: string, subName: string) => {
     // 1. Find category ID
-    const { data: cat } = await supabase
+    const { data: cat } = await (supabase as any)
       .from('categories')
       .select('id')
       .eq('name', categoryName)
@@ -223,8 +237,8 @@ export const useUnifiedCategoryActions = () => {
 
     if (!cat) throw new Error(`Category ${categoryName} not found`);
 
-    const { data: newSub, error } = await supabase
-      .from('sub_categories' as any)
+    const { data: newSub, error } = await (supabase as any)
+      .from('sub_categories')
       .insert([{
         category_id: cat.id,
         name: subName,
