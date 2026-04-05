@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/UnifiedAuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { format, parseISO, startOfMonth } from 'date-fns';
 
 export interface BudgetCategory {
@@ -56,11 +56,12 @@ export const useAnnualBudget = (year?: number) => {
   const [budget, setBudget] = useState<AnnualBudget | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
 
   const fetchBudget = useCallback(async (budgetYearOverride?: number) => {
     const targetYear = budgetYearOverride || year || 2025;
     
+    // We NEED a user and ideally their profile ID to find categories
     if (!user?.id) {
       setLoading(false);
       return;
@@ -69,87 +70,59 @@ export const useAnnualBudget = (year?: number) => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching budget for year:', targetYear, 'user:', user.id);
+      
+      // Use the profile ID from AuthContext if available, fallback to Auth ID
+      const profileId = userProfile?.id || user.id;
+      console.log('Fetching budget for:', { targetYear, authId: user.id, profileId });
 
-      // GIGA-ROBUST Profile Resolution:
-      // We'll try to find the Profile record but CATCH any recursion 500 errors 
-      // by separating it from the main flow.
-      let profileId = user.id;
-      try {
-        const { data: profileRecord, error: profileErr } = await supabase
-          .from('user_profiles')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        
-        if (!profileErr && profileRecord) {
-          profileId = profileRecord.id;
-        } else if (profileErr) {
-          console.warn('Skip profile fetch due to RLS recursion (using Auth ID fallback):', profileErr.message);
-        }
-      } catch (e) {
-        console.warn('Profile fetch threw an exception, continuing with Auth ID fallback:', e);
-      }
-
-      // 1. Fetch Budget - try by Auth ID first (Standard)
+      // 1. Fetch Budget record
       let budgetData: any = null;
       const { data: unifiedBudget, error: budgetError } = await supabase
         .from('budgets')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', profileId) // Prioritize profile ID for data ownership
         .eq('year', targetYear)
         .eq('budget_type', 'unified')
         .maybeSingle();
 
-      if (!budgetError && unifiedBudget) {
+      if (unifiedBudget) {
         budgetData = unifiedBudget;
       } else {
-        // Fallback or Try Profile PK if it differs
-        const searchId = (budgetError && budgetError.code === '42P17') ? user.id : (profileId || user.id);
-        const { data: altBudget } = await supabase
+        // Try fallback to Auth ID or secondary types
+        const { data: fallbackBudget } = await supabase
           .from('budgets')
           .select('*')
-          .eq('user_id', searchId)
+          .or(`user_id.eq.${user.id},user_id.eq.${profileId}`)
           .eq('year', targetYear)
           .eq('budget_type', 'primary')
           .maybeSingle();
         
-        if (altBudget) {
-          budgetData = altBudget;
-        } else {
-          budgetData = {
-            id: 'fallback-id', 
-            user_id: user.id,
-            year: targetYear,
-            name: `Unified ${targetYear}`,
-            budget_type: 'unified',
-            start_date: `${targetYear}-01-01`,
-            is_active: true,
-            isFallback: true
-          };
-        }
+        budgetData = fallbackBudget || {
+          id: 'fallback-id', 
+          user_id: profileId,
+          year: targetYear,
+          name: `Unified ${targetYear}`,
+          budget_type: 'unified',
+          start_date: `${targetYear}-01-01`,
+          is_active: true,
+          isFallback: true
+        };
       }
 
-      // 2. Fetch Categories - use BOTH IDs to be absolutely sure we find them
-      // In migrations, categories.user_id sometimes references profile(id) and sometimes auth_id
-      const queryId = profileId || user.id;
-      const { data: dbCategories, error: catError } = await supabase
+      // 2. Fetch Categories using BOTH IDs (Profile PK and Auth ID)
+      // This is necessary because different migrations used different FK targets.
+      const { data: dbCategories, error: catError } = await (supabase
         .from('categories')
         .select('*, sub_categories(id, name, display_order, label)')
-        .or(`user_id.eq.${user.id},user_id.eq.${queryId}`)
-        .order('display_order', { ascending: true });
+        .or(`user_id.eq.${user.id},user_id.eq.${profileId}`)
+        .order('display_order', { ascending: true }) as any);
 
-      if (catError && catError.code === '42P17') {
-         // SILENT RECOVERY: If RLS recursion blocks the cross-ID query, fallback to the bare minimum categories
-         console.warn("RLS recursion blocking categories, loading empty set to prevent UI crash.");
-      } else if (catError) {
-         throw catError;
-      }
+      if (catError) throw catError;
       const allCategories = dbCategories || [];
 
-      // 3. Hierarchical limits
+      // 3. Hierarchical data
       let hierarchicalCategories: any[] = [];
-      if (budgetData.id !== 'fallback-id' && !budgetError) {
+      if (budgetData.id !== 'fallback-id') {
         const { data: hData, error: hError } = await supabase
           .rpc('get_hierarchical_categories' as any, { p_budget_id: budgetData.id });
         if (!hError) hierarchicalCategories = hData || [];
@@ -165,7 +138,7 @@ export const useAnnualBudget = (year?: number) => {
         const { data: chunk, error: fetchError } = await (supabase as any)
           .from('transactions')
           .select('*')
-          .eq('user_id', user.id)
+          .or(`user_id.eq.${user.id},user_id.eq.${profileId}`)
           .or(`budget_year.eq.${targetYear},and(budget_month.gte."${targetYear}-01-01",budget_month.lte."${targetYear}-12-31"),and(date.gte."${targetYear}-01-01T00:00:00Z",date.lte."${targetYear}-12-31T23:59:59Z")`)
           .range(from, from + CHUNK_SIZE - 1);
 
@@ -180,7 +153,6 @@ export const useAnnualBudget = (year?: number) => {
         }
       }
 
-      // Process Transactions
       const transactions = allYearTransactions.map((t: any) => {
         let bm = t.budget_month;
         if (!bm && t.date) bm = format(startOfMonth(parseISO(t.date)), 'yyyy-MM-01');
@@ -194,21 +166,22 @@ export const useAnnualBudget = (year?: number) => {
         t.budget_month && t.budget_month.startsWith(`${targetYear}-`) && !t.excluded && t.status !== 'Excluded'
       );
 
-      // Hierarchical Map
       const hierarchicalMap: Record<string, any> = {};
       hierarchicalCategories.forEach(item => { hierarchicalMap[item.category_id] = item; });
 
-      // Build Categories list ...
-      const categoriesList: BudgetCategory[] = allCategories.map((cat: any) => {
+      const mappedCategories: BudgetCategory[] = allCategories.map((cat: any) => {
         const isIncome = cat.category_group === 'income';
         const hCat = hierarchicalMap[cat.id];
         const subCategories = (cat.sub_categories || []).sort((a: any, b: any) => a.name.localeCompare(b.name)).map((sub: any) => {
           const hSub = (hCat?.sub_categories || []).find((s: any) => s.id === sub.id);
           const subBudget = hSub?.budget_amount ?? 0;
-          const subNet = transactions.filter(t => t.category === cat.name && t.subCategory === sub.name).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-          const subSpent = isIncome ? subNet : (subNet * -1);
+          const subSpent = transactions
+            .filter(t => t.category === cat.name && t.subCategory === sub.name)
+            .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+          
+          const finalSpent = isIncome ? subSpent : (subSpent * -1);
           return {
-            id: sub.id, name: sub.name, budget_amount: subBudget, spent: subSpent, remaining: subBudget - subSpent, 
+            id: sub.id, name: sub.name, budget_amount: subBudget, spent: finalSpent, remaining: subBudget - finalSpent, 
             is_active: hSub ? (hSub.is_active !== false) : true, 
             label: sub.label
           };
@@ -226,39 +199,31 @@ export const useAnnualBudget = (year?: number) => {
         };
       }).filter(cat => cat.sub_categories.length > 0 || cat.name === 'Special');
 
-      const totalBudget = categoriesList.reduce((sum, cat) => sum + cat.budget_amount, 0);
-      const totalSpent = categoriesList.reduce((sum, cat) => sum + cat.spent, 0);
+      const totalBudget = mappedCategories.reduce((sum, cat) => sum + cat.budget_amount, 0);
+      const totalSpent = mappedCategories.reduce((sum, cat) => sum + cat.spent, 0);
 
       const finalBudget: AnnualBudget = {
-        id: budgetData.id,
-        name: budgetData.name,
-        year: budgetData.year,
-        budget_type: budgetData.budget_type,
-        start_date: budgetData.start_date,
-        is_active: budgetData.is_active,
-        isFallback: budgetData.isFallback,
-        categories: categoriesList,
-        total_budget: totalBudget,
-        total_spent: totalSpent,
-        total_remaining: totalBudget - totalSpent,
+        id: budgetData.id, name: budgetData.name, year: budgetData.year, budget_type: budgetData.budget_type, start_date: budgetData.start_date,
+        is_active: budgetData.is_active, isFallback: budgetData.isFallback, categories: mappedCategories,
+        total_budget: totalBudget, total_spent: totalSpent, total_remaining: totalBudget - totalSpent,
         category_groups: {
-          income: categoriesList.filter(c => c.category_group === 'income'),
-          expenditure: categoriesList.filter(c => c.category_group === 'expenditure'),
-          klintemarken: categoriesList.filter(c => c.category_group === 'klintemarken'),
-          special: categoriesList.filter(c => c.category_group === 'special'),
+          income: mappedCategories.filter(c => c.category_group === 'income'),
+          expenditure: mappedCategories.filter(c => c.category_group === 'expenditure'),
+          klintemarken: mappedCategories.filter(c => c.category_group === 'klintemarken'),
+          special: mappedCategories.filter(c => c.category_group === 'special'),
         }
       };
 
       setBudget(finalBudget);
       return finalBudget;
     } catch (err: any) {
-      console.error('Budget overall hook crash prevented:', err);
-      setError(err?.message || 'Error recovery active');
+      console.error('Budget error:', err);
+      setError(err?.message || 'Error');
       return null;
     } finally {
       setLoading(false);
     }
-  }, [year, user?.id]);
+  }, [year, user?.id, userProfile?.id]);
 
   useEffect(() => {
     fetchBudget();
@@ -273,13 +238,19 @@ export const useCategories = () => {
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
+
   useEffect(() => {
     const fetchCategories = async () => {
       if (!user?.id) return;
       try {
         setLoading(true);
-        const { data, error: catError } = await (supabase.from('categories').select('*, sub_categories(id, name)').eq('user_id', user.id).order('created_at', { ascending: true }) as any);
+        const profileId = userProfile?.id || user.id;
+        const { data, error: catError } = await (supabase
+          .from('categories')
+          .select('*, sub_categories(id, name)')
+          .or(`user_id.eq.${user.id},user_id.eq.${profileId}`)
+          .order('created_at', { ascending: true }) as any);
         if (catError) throw catError;
         setCategories(data || []);
       } catch (err: any) {
@@ -289,6 +260,7 @@ export const useCategories = () => {
       }
     };
     fetchCategories();
-  }, [user?.id]);
+  }, [user?.id, userProfile?.id]);
+
   return { categories, loading, error };
 };
