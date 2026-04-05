@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { format, parseISO, startOfMonth } from 'date-fns';
@@ -53,31 +53,21 @@ export interface AnnualBudget {
 }
 
 export const useAnnualBudget = (year?: number) => {
-  const [budget, setBudget] = useState<AnnualBudget | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const { user, userProfile, currentAccountId } = useAuth();
+  const targetYear = year || 2025;
 
-  const fetchBudget = useCallback(async (budgetYearOverride?: number) => {
-    const targetYear = budgetYearOverride || year || 2025;
-    
-    // We NEED a user and ideally their profile ID to find categories
-    const profileId = userProfile?.id || user?.id; // Define here from top-level state
-    const userId = user?.id;
+  const { data: budget, isLoading, error } = useQuery<AnnualBudget | null>({
+    queryKey: ['annual-budget', targetYear, currentAccountId],
+    enabled: !!user?.id,
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    queryFn: async () => {
+      const profileId = userProfile?.id || user?.id;
+      if (!profileId) return null;
 
-    if (!profileId) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // 1. Fetch Budget record
       const targetAccount = currentAccountId;
 
-      const { data: unifiedBudget, error: budgetError } = await supabase
+      // 1. Fetch Budget record
+      const { data: unifiedBudget } = await supabase
         .from('budgets')
         .select('*')
         .eq(targetAccount ? 'account_id' : 'user_id', targetAccount || profileId)
@@ -85,30 +75,16 @@ export const useAnnualBudget = (year?: number) => {
         .eq('budget_type', 'unified')
         .maybeSingle();
 
-      let budgetData;
-      if (unifiedBudget) {
-        budgetData = unifiedBudget;
-      } else {
-        // Try fallback to Auth ID or secondary types
-        const { data: fallbackBudget } = await supabase
-          .from('budgets')
-          .select('*')
-          .or(`user_id.eq.${userId},user_id.eq.${profileId}`)
-          .eq('year', targetYear)
-          .eq('budget_type', 'primary')
-          .maybeSingle();
-        
-        budgetData = fallbackBudget || {
-          id: 'fallback-id', 
-          user_id: profileId,
-          year: targetYear,
-          name: `Unified ${targetYear}`,
-          budget_type: 'unified',
-          start_date: `${targetYear}-01-01`,
-          is_active: true,
-          isFallback: true
-        };
-      }
+      let budgetData = unifiedBudget || {
+        id: 'fallback-id', 
+        user_id: profileId,
+        year: targetYear,
+        name: `Unified ${targetYear}`,
+        budget_type: 'unified',
+        start_date: `${targetYear}-01-01`,
+        is_active: true,
+        isFallback: true
+      };
 
       // 2. Fetch Categories by Account
       const { data: dbCategories, error: catError } = await (supabase
@@ -120,7 +96,7 @@ export const useAnnualBudget = (year?: number) => {
       if (catError) throw catError;
       const allCategories = dbCategories || [];
 
-      // 3. Hierarchical data
+      // 3. Hierarchical data (if needed)
       let hierarchicalCategories: any[] = [];
       if (budgetData.id !== 'fallback-id') {
         const { data: hData, error: hError } = await supabase
@@ -128,146 +104,78 @@ export const useAnnualBudget = (year?: number) => {
         if (!hError) hierarchicalCategories = hData || [];
       }
 
-      // 4. Transactions
+      // 4. Heavy Fetch Transactions for the year (Simplified for stability)
       let allYearTransactions: any[] = [];
       let from = 0;
       const CHUNK_SIZE = 1000;
       let hasMore = true;
 
       while (hasMore) {
-        let query = (supabase as any)
-          .from('transactions')
-          .select('*');
-        
-        if (targetAccount) {
-          query = query.eq('account_id', targetAccount);
-        } else {
-          query = query.or(`user_id.eq.${userId},user_id.eq.${profileId}`);
-        }
+        let query = (supabase as any).from('transactions').select('*');
+        if (targetAccount) query = query.eq('account_id', targetAccount);
+        else query = query.or(`user_id.eq.${user?.id},user_id.eq.${profileId}`);
 
         const { data: chunk, error: fetchError } = await query
           .or(`budget_year.eq.${targetYear},and(budget_month.gte."${targetYear}-01-01",budget_month.lte."${targetYear}-12-31")`)
           .range(from, from + CHUNK_SIZE - 1);
 
-        if (fetchError) {
+        if (fetchError || !chunk || chunk.length === 0) {
           hasMore = false;
-        } else if (chunk && chunk.length > 0) {
+        } else {
           allYearTransactions = [...allYearTransactions, ...chunk];
           if (chunk.length < CHUNK_SIZE) hasMore = false;
           else from += CHUNK_SIZE;
-        } else {
-          hasMore = false;
         }
       }
 
-      const transactions = allYearTransactions.map((t: any) => {
-        let bm = t.budget_month;
-        if (!bm && t.date) bm = format(startOfMonth(parseISO(t.date)), 'yyyy-MM-01');
+      // 5. Build Budget Object
+      const categories: BudgetCategory[] = allCategories.map(cat => {
+        const catTransactions = allYearTransactions.filter(t => t.category === cat.name);
+        const spent = catTransactions.reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
+        
         return {
-          ...t,
-          category: (t.category || 'Uncategorized').trim(),
-          subCategory: (t.sub_category || '').trim(),
-          budget_month: bm
+          id: cat.id,
+          name: cat.name,
+          category_group: cat.category_group,
+          display_order: cat.display_order,
+          icon: cat.icon,
+          color: cat.color,
+          budget_amount: cat.budget_amount || 0,
+          alert_threshold: cat.alert_threshold || 80,
+          spent,
+          remaining: (cat.budget_amount || 0) - spent,
+          remaining_percent: cat.budget_amount > 0 ? Math.round(((cat.budget_amount - spent) / cat.budget_amount) * 100) : 0,
+          label: cat.label,
+          sub_categories: (cat.sub_categories || []).map((sub: any) => {
+            const subSpent = catTransactions.filter(t => t.sub_category === sub.name).reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
+            return {
+              id: sub.id,
+              name: sub.name,
+              budget_amount: sub.budget_amount || 0,
+              spent: subSpent,
+              remaining: (sub.budget_amount || 0) - subSpent,
+              is_active: sub.is_active !== false,
+              label: sub.label
+            };
+          })
         };
-      }).filter((t: any) => 
-        t.budget_month && t.budget_month.startsWith(`${targetYear}-`) && !t.excluded && t.status !== 'Excluded'
-      );
+      });
 
-      const hierarchicalMap: Record<string, any> = {};
-      hierarchicalCategories.forEach(item => { hierarchicalMap[item.category_id] = item; });
-
-      const mappedCategories: BudgetCategory[] = allCategories.map((cat: any) => {
-        const isIncome = cat.category_group === 'income';
-        const hCat = hierarchicalMap[cat.id];
-        const subCategories = (cat.sub_categories || []).sort((a: any, b: any) => a.name.localeCompare(b.name)).map((sub: any) => {
-          const hSub = (hCat?.sub_categories || []).find((s: any) => s.id === sub.id);
-          const subBudget = hSub?.budget_amount ?? 0;
-          const subSpent = transactions
-            .filter(t => t.category === cat.name && t.subCategory === sub.name)
-            .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-          
-          const finalSpent = isIncome ? subSpent : (subSpent * -1);
-          return {
-            id: sub.id, name: sub.name, budget_amount: subBudget, spent: finalSpent, remaining: subBudget - finalSpent, 
-            is_active: hSub ? (hSub.is_active !== false) : true, 
-            label: sub.label
-          };
-        });
-
-        const subTotalBudget = subCategories.reduce((sum, sub) => sum + sub.budget_amount, 0);
-        const catNet = transactions.filter(t => t.category === cat.name).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-        const catSpent = isIncome ? catNet : (catNet * -1);
-
-        return {
-          id: cat.id, name: cat.name, category_group: cat.category_group, display_order: cat.display_order, icon: cat.icon, color: cat.color,
-          budget_amount: (cat.name === 'Special' || subCategories.length === 0) ? (hCat?.budget_amount || 0) : subTotalBudget,
-          spent: catSpent, remaining: subTotalBudget - catSpent, remaining_percent: subTotalBudget > 0 ? ((subTotalBudget - catSpent) / subTotalBudget) * 100 : 0,
-          sub_categories: subCategories, label: cat.label
-        };
-      }).filter(cat => cat.sub_categories.length > 0 || cat.name === 'Special');
-
-      const totalBudget = mappedCategories.reduce((sum, cat) => sum + cat.budget_amount, 0);
-      const totalSpent = mappedCategories.reduce((sum, cat) => sum + cat.spent, 0);
-
-      const finalBudget: AnnualBudget = {
-        id: budgetData.id, name: budgetData.name, year: budgetData.year, budget_type: budgetData.budget_type, start_date: budgetData.start_date,
-        is_active: budgetData.is_active, isFallback: budgetData.isFallback, categories: mappedCategories,
-        total_budget: totalBudget, total_spent: totalSpent, total_remaining: totalBudget - totalSpent,
+      return {
+        ...budgetData,
+        categories,
+        total_budget: categories.reduce((sum, c) => sum + c.budget_amount, 0),
+        total_spent: categories.reduce((sum, c) => sum + c.spent, 0),
+        total_remaining: categories.reduce((sum, c) => sum + c.remaining, 0),
         category_groups: {
-          income: mappedCategories.filter(c => c.category_group === 'income'),
-          expenditure: mappedCategories.filter(c => c.category_group === 'expenditure'),
-          klintemarken: mappedCategories.filter(c => c.category_group === 'klintemarken'),
-          special: mappedCategories.filter(c => c.category_group === 'special'),
+          income: categories.filter(c => c.category_group === 'income'),
+          expenditure: categories.filter(c => c.category_group === 'expenditure'),
+          klintemarken: categories.filter(c => c.category_group === 'klintemarken'),
+          special: categories.filter(c => c.category_group === 'special'),
         }
       };
-
-      setBudget(finalBudget);
-      return finalBudget;
-    } catch (err: any) {
-      console.error('Budget error:', err);
-      setError(err?.message || 'Error');
-      return null;
-    } finally {
-      setLoading(false);
     }
-  }, [year, user?.id, userProfile?.id]);
+  });
 
-  useEffect(() => {
-    fetchBudget();
-  }, [fetchBudget]);
-
-  const refreshBudget = useCallback(() => fetchBudget(), [fetchBudget]);
-
-  return { budget, loading, error, fetchBudget, refreshBudget };
-};
-
-export const useCategories = () => {
-  const [categories, setCategories] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const { user, userProfile } = useAuth();
-
-  useEffect(() => {
-    const fetchCategories = async () => {
-      if (!user?.id) return;
-      try {
-        setLoading(true);
-        const profileId = userProfile?.id || user.id;
-        const { data, error: catError } = await (supabase
-          .from('categories')
-          .select('*, sub_categories(id, name)')
-          .or(`user_id.eq.${user.id},user_id.eq.${profileId}`)
-          .order('created_at', { ascending: true }) as any);
-        if (catError) throw catError;
-        setCategories(data || []);
-      } catch (err: any) {
-        setError(err?.message || 'Err');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCategories();
-  }, [user?.id, userProfile?.id]);
-
-  return { categories, loading, error };
+  return { budget, loading: isLoading, error: error?.message || null };
 };
