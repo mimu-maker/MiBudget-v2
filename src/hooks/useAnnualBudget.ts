@@ -73,7 +73,6 @@ export const useAnnualBudget = (year?: number) => {
       
       // Use the profile ID from AuthContext if available, fallback to Auth ID
       const profileId = userProfile?.id || user.id;
-      console.log('Fetching budget for:', { targetYear, authId: user.id, profileId });
 
       // 1. Fetch Budget record
       let budgetData: any = null;
