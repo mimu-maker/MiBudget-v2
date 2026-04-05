@@ -251,9 +251,9 @@ const ProjectionChart = ({
               </linearGradient>
 
               {/* Slush Fund Income Pattern: Green & Light Purple Diagonal Stripes */}
-              <pattern id="slushIncomePattern" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
-                <rect width="4" height="8" fill="#10b981" />
-                <rect x="4" width="4" height="8" fill="#a855f7" />
+              <pattern id="slushIncomePattern" patternUnits="userSpaceOnUse" width="16" height="16" patternTransform="rotate(45)">
+                <rect width="8" height="16" fill="#10b981" />
+                <rect x="8" width="8" height="16" fill="#a855f7" />
               </pattern>
             </defs>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />

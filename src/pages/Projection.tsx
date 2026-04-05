@@ -1345,7 +1345,9 @@ const Projection = () => {
               <BreadcrumbItem>
                 <BreadcrumbPage className="font-black text-2xl tracking-tighter flex items-center gap-2">
                   Projections
-                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full letter-spacing-tight">v1.2-Safe-Profile</span>
+                  <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full tracking-wider border border-emerald-200">
+                    v1.2-Safe-Profile (Cats: {budget?.categories?.length || 0})
+                  </span>
                 </BreadcrumbPage>
               </BreadcrumbItem>
             </BreadcrumbList>
