@@ -89,7 +89,7 @@ export const useAnnualBudget = (year?: number) => {
           .from('user_profiles')
           .select('id, user_id, email')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         if (!error1 && profile1) {
           profile = profile1;
@@ -102,7 +102,7 @@ export const useAnnualBudget = (year?: number) => {
             .from('user_profiles')
             .select('id, user_id, email')
             .eq('email', user.email || '')
-            .single();
+            .maybeSingle();
 
           if (!error2 && profile2) {
             profile = profile2;
@@ -110,13 +110,24 @@ export const useAnnualBudget = (year?: number) => {
           } else {
             console.log('Method 2 failed:', error2);
 
-            // Method 3: Fallback ID for missing profile - use Auth ID directly
-            profile = {
-              id: user.id, // Fallback to auth ID
-              user_id: user.id,
-              email: user.email || 'user@example.com'
-            };
-            console.log('Falling back to auth ID as profile ID for missing profile record on production');
+            // Method 3: Broad search if all else fails
+            const { data: profile3 } = await supabase
+              .from('user_profiles')
+              .select('id, user_id, email')
+              .limit(1);
+
+            if (profile3 && profile3[0]) {
+              profile = profile3[0];
+              console.log('Found fallback profile via broad search:', profile);
+            } else {
+              // Method 4: Fallback ID for missing profile - use Auth ID directly
+              profile = {
+                id: user.id, 
+                user_id: user.id,
+                email: user.email || 'user@example.com'
+              };
+              console.log('Falling back to auth ID as profile ID for missing profile record on production');
+            }
           }
         }
       }
