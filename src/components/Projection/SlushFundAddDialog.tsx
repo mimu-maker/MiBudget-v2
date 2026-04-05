@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FutureTransaction } from '@/types/projection';
 
 interface SlushFundAddDialogProps {
@@ -28,6 +29,7 @@ const SlushFundAddDialog = ({ open, onOpenChange, onSubmit, editingTransaction }
     const [month, setMonth] = useState(new Date().getMonth().toString());
     const [year, setYear] = useState(currentYear.toString());
     const [amount, setAmount] = useState('');
+    const [type, setType] = useState<'income' | 'expense'>('expense');
 
     // Populate form when editing
     useEffect(() => {
@@ -37,11 +39,13 @@ const SlushFundAddDialog = ({ open, onOpenChange, onSubmit, editingTransaction }
             setMonth(d.getMonth().toString());
             setYear(d.getFullYear().toString());
             setAmount(Math.abs(editingTransaction.amount).toString());
+            setType(editingTransaction.category === 'Slush Fund Income' ? 'income' : 'expense');
         } else {
             setName('');
             setMonth(new Date().getMonth().toString());
             setYear(currentYear.toString());
             setAmount('');
+            setType('expense');
         }
     }, [editingTransaction, open]);
 
@@ -56,8 +60,8 @@ const SlushFundAddDialog = ({ open, onOpenChange, onSubmit, editingTransaction }
         onSubmit({
             name: name.trim(),
             date,
-            amount: -Math.abs(parsedAmount), // always negative for expense
-            category: 'Slush Fund'
+            amount: parsedAmount, // always positive
+            category: type === 'income' ? 'Slush Fund Income' : 'Slush Fund'
         });
 
         onOpenChange(false);
@@ -77,6 +81,13 @@ const SlushFundAddDialog = ({ open, onOpenChange, onSubmit, editingTransaction }
                 </DialogHeader>
 
                 <div className="space-y-4 py-2">
+                    <Tabs value={type} onValueChange={(v) => setType(v as 'income' | 'expense')} className="w-full">
+                        <TabsList className="grid w-full grid-cols-2">
+                            <TabsTrigger value="income">Income</TabsTrigger>
+                            <TabsTrigger value="expense">Expense</TabsTrigger>
+                        </TabsList>
+                    </Tabs>
+
                     <div className="space-y-1.5">
                         <Label htmlFor="slush-name" className="text-sm font-semibold text-purple-800">
                             Name <span className="text-red-500">*</span>

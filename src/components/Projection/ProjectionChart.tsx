@@ -35,7 +35,10 @@ const ProjectionChart = ({
       if (d.breakdown) {
         Object.keys(d.breakdown.incomeBreakdown).forEach(k => income.add(k));
         Object.keys(d.breakdown.expenseLabelBreakdown).forEach(k => expense.add(k));
-        Object.keys(d.breakdown.slushBreakdown).forEach(k => expense.add(k));
+        Object.entries(d.breakdown.slushBreakdown).forEach(([k, v]) => {
+          if (v < 0) income.add(k);
+          else expense.add(k);
+        });
 
         // Handle Feeder Budget dynamically by sign in combinedData mapping, 
         // but add to sets here for Bar generation
@@ -103,7 +106,15 @@ const ProjectionChart = ({
       if (d.breakdown) {
         Object.entries(d.breakdown.incomeBreakdown).forEach(([k, v]) => row[`in_${k}`] = v || 0);
         Object.entries(d.breakdown.expenseLabelBreakdown).forEach(([k, v]) => row[`out_${k}`] = v || 0);
-        Object.entries(d.breakdown.slushBreakdown).forEach(([k, v]) => row[`out_${k}`] = v || 0);
+        Object.entries(d.breakdown.slushBreakdown).forEach(([k, v]) => {
+          if (v < 0) {
+            row[`in_${k}`] = Math.abs(v);
+            row[`out_${k}`] = 0;
+          } else {
+            row[`in_${k}`] = 0;
+            row[`out_${k}`] = v || 0;
+          }
+        });
 
         // Feeder Budget placement based on sign
         const feederVal = d.breakdown.feederBreakdown['Feeder Budget'] || 0;
@@ -238,6 +249,12 @@ const ProjectionChart = ({
                 <stop offset={lineGradientOffset} stopColor="#f43f5e" stopOpacity={1} />
                 <stop offset="1" stopColor="#f43f5e" stopOpacity={1} />
               </linearGradient>
+
+              {/* Slush Fund Income Pattern: Green & Light Purple Diagonal Stripes */}
+              <pattern id="slushIncomePattern" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+                <rect width="4" height="8" fill="#10b981" />
+                <rect x="4" width="4" height="8" fill="#a855f7" />
+              </pattern>
             </defs>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             <XAxis
@@ -268,19 +285,22 @@ const ProjectionChart = ({
             <ReferenceLine yAxisId="cumulative" y={0} stroke="#e2e8f0" strokeWidth={2} strokeDasharray="3 3" />
 
 
-            {uniqueSubCats.income.map((name, idx) => (
-              <Bar
-                key={`in_${name}`}
-                yAxisId="bars"
-                dataKey={`in_${name}`}
-                name={`in_${name}`}
-                stackId="income"
-                fill={getIncomeColor(name, idx)}
-                radius={idx === uniqueSubCats.income.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                barSize={32}
-                onMouseEnter={() => setHoveredKey(`in_${name}`)}
-              />
-            ))}
+            {uniqueSubCats.income.map((name, idx) => {
+              const isSlush = name.includes('[') && name.includes(']');
+              return (
+                <Bar
+                  key={`in_${name}`}
+                  yAxisId="bars"
+                  dataKey={`in_${name}`}
+                  name={`in_${name}`}
+                  stackId="income"
+                  fill={isSlush ? "url(#slushIncomePattern)" : getIncomeColor(name, idx)}
+                  radius={idx === uniqueSubCats.income.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                  barSize={32}
+                  onMouseEnter={() => setHoveredKey(`in_${name}`)}
+                />
+              );
+            })}
             {uniqueSubCats.expense.map((name, idx) => {
               const isSlush = name.includes('[') && name.includes(']');
               return (

@@ -32,7 +32,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/UnifiedAuthContext';
 
 const Projection = () => {
-  const { isLocalAuth } = useAuth();
+  const { user, isLocalAuth } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { settings } = useSettings();
@@ -62,24 +62,36 @@ const Projection = () => {
   const [editingBudget, setEditingBudget] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
+  // Initial seed data for local mode
+  const SEED_PROJECTIONS = [
+    // Baseline Planned One-Offs (scenario_id: null)
+    { id: 'mock-proj-base-1', scenario_id: null, category: 'Slush Fund', stream: 'Travel', merchant: 'Holiday to Bali', amount: -8500, date: '2026-08-15', recurring: 'N/A' as RecurringInterval, planned: true },
+    { id: 'mock-proj-base-2', scenario_id: null, category: 'Slush Fund', stream: 'Home Repair', merchant: 'Kitchen Reno Phase 1', amount: -15000, date: '2026-05-10', recurring: 'N/A' as RecurringInterval, planned: true },
+    { id: 'mock-proj-base-3', scenario_id: null, category: 'Income', stream: 'Bonus', merchant: 'Annual Bonus', amount: 5000, date: '2026-12-01', recurring: 'N/A' as RecurringInterval, planned: true },
+    { id: 'mock-proj-base-4', scenario_id: null, category: 'Slush Fund', stream: 'Events', merchant: 'Taylor Swift VIP Tickets', amount: -2500, date: '2026-06-20', recurring: 'N/A' as RecurringInterval, planned: true },
+    // Scenario: Buy New Car
+    { id: 'mock-proj-1', scenario_id: 'demo-scenario-1', category: 'Transport', stream: 'Car Payment', merchant: 'Car Bank', amount: -850, date: '2026-06-01', recurring: 'Monthly' as RecurringInterval, planned: true },
+    { id: 'mock-proj-2', scenario_id: 'demo-scenario-1', category: 'Slush Fund', stream: 'Downpayment', merchant: 'Car Dealer', amount: -15000, date: '2026-05-15', recurring: 'N/A' as RecurringInterval, planned: true },
+    // Scenario: Job Loss
+    { id: 'mock-proj-3', scenario_id: 'demo-scenario-2', category: 'Income', stream: 'Salary', merchant: 'Acme Corp Salary', amount: 0, date: '2026-06-01', overrides: { '2026-06': {amount: 0}, '2026-07': {amount: 0}, '2026-08': {amount: 0}, '2026-09': {amount: 0}, '2026-10': {amount: 0}, '2026-11': {amount: 0} }, recurring: 'Monthly' as RecurringInterval, planned: true },
+  ];
+
   // 1. Fetch ALL Projections (including Master)
   const { data: allProjectionsRaw = [], isLoading: isLoadingProjections } = useQuery<any[]>({
     queryKey: ['projections', 'all'],
     queryFn: async () => {
       if (isLocalAuth) {
-        return [
-           // Baseline Planned One-Offs (scenario_id: null)
-           // Baseline Planned One-Offs (scenario_id: null)
-           { id: 'mock-proj-base-1', scenario_id: null, category: 'Slush Fund', stream: 'Travel', merchant: 'Holiday to Bali', amount: -8500, date: '2026-08-15', recurring: 'N/A', planned: true },
-           { id: 'mock-proj-base-2', scenario_id: null, category: 'Slush Fund', stream: 'Home Repair', merchant: 'Kitchen Reno Phase 1', amount: -15000, date: '2026-05-10', recurring: 'N/A', planned: true },
-           { id: 'mock-proj-base-3', scenario_id: null, category: 'Income', stream: 'Bonus', merchant: 'Annual Bonus', amount: 5000, date: '2026-12-01', recurring: 'N/A', planned: true },
-           { id: 'mock-proj-base-4', scenario_id: null, category: 'Slush Fund', stream: 'Events', merchant: 'Taylor Swift VIP Tickets', amount: -2500, date: '2026-06-20', recurring: 'N/A', planned: true },
-           // Scenario: Buy New Car
-           { id: 'mock-proj-1', scenario_id: 'demo-scenario-1', category: 'Transport', stream: 'Car Payment', merchant: 'Car Bank', amount: -850, date: '2026-06-01', recurring: 'Monthly', planned: true },
-           { id: 'mock-proj-2', scenario_id: 'demo-scenario-1', category: 'Slush Fund', stream: 'Downpayment', merchant: 'Car Dealer', amount: -15000, date: '2026-05-15', recurring: 'N/A', planned: true },
-           // Scenario: Job Loss
-           { id: 'mock-proj-3', scenario_id: 'demo-scenario-2', category: 'Income', stream: 'Salary', merchant: 'Acme Corp Salary', amount: 0, date: '2026-06-01', overrides: { '2026-06': {amount: 0}, '2026-07': {amount: 0}, '2026-08': {amount: 0}, '2026-09': {amount: 0}, '2026-10': {amount: 0}, '2026-11': {amount: 0} }, recurring: 'Monthly', planned: true },
-        ];
+        const stored = localStorage.getItem('local_projections');
+        if (stored) {
+          try {
+            return JSON.parse(stored);
+          } catch (e) {
+            console.error('Failed to parse local projections, falling back to seed');
+          }
+        }
+        // Save initial seed if nothing stored
+        localStorage.setItem('local_projections', JSON.stringify(SEED_PROJECTIONS));
+        return SEED_PROJECTIONS;
       }
       const { data, error } = await supabase
         .from('projections' as any)
@@ -430,14 +442,31 @@ const Projection = () => {
   // Mutations
   const addProjectionMutation = useMutation({
     mutationFn: async (newP: any) => {
+      if (isLocalAuth) {
+        console.log('Local Mode: Mocking addition of projection', newP);
+        const stored = localStorage.getItem('local_projections');
+        const current = stored ? JSON.parse(stored) : SEED_PROJECTIONS;
+        const newItem = {
+          ...newP,
+          id: `local-${Date.now()}`,
+          merchant: newP.source || newP.merchant,
+          scenario_id: activeScenarioId || null
+        };
+        const updated = [...current, newItem];
+        localStorage.setItem('local_projections', JSON.stringify(updated));
+        return;
+      }
+      
       const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated with Supabase');
+
       // Map source -> merchant for DB
       const { source, ...rest } = newP;
       const dbPayload = {
         ...rest,
-        merchant: source,
-        user_id: userData.user?.id,
-        scenario_id: activeScenarioId
+        merchant: source || rest.merchant,
+        user_id: userData.user.id,
+        scenario_id: activeScenarioId || null
       };
 
       const { error } = await (supabase.from('projections' as any) as any)
@@ -456,14 +485,31 @@ const Projection = () => {
 
   const batchAddProjectionsMutation = useMutation({
     mutationFn: async (items: any[]) => {
+      if (isLocalAuth) {
+        console.log('Local Mode: Mocking batch addition', items.length);
+        const stored = localStorage.getItem('local_projections');
+        const current = stored ? JSON.parse(stored) : SEED_PROJECTIONS;
+        const newItems = items.map((p, idx) => ({
+          ...p,
+          id: `local-${Date.now()}-${idx}`,
+          merchant: p.source || p.merchant,
+          scenario_id: activeScenarioId || null
+        }));
+        const updated = [...current, ...newItems];
+        localStorage.setItem('local_projections', JSON.stringify(updated));
+        return;
+      }
+
       const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated with Supabase');
+
       const dbPayloads = items.map(p => {
         const { source, ...rest } = p;
         return {
           ...rest,
           merchant: source,
           user_id: userData.user?.id,
-          scenario_id: activeScenarioId
+          scenario_id: activeScenarioId || null
         };
       });
 
@@ -483,6 +529,16 @@ const Projection = () => {
 
   const deleteProjectionMutation = useMutation({
     mutationFn: async (id: string | number) => {
+      if (isLocalAuth) {
+        console.log('Local Mode: Mocking deletion', id);
+        const stored = localStorage.getItem('local_projections');
+        if (stored) {
+          const current = JSON.parse(stored);
+          const updated = current.filter((p: any) => p.id !== id);
+          localStorage.setItem('local_projections', JSON.stringify(updated));
+        }
+        return;
+      }
       const { error } = await supabase.from('projections' as any).delete().eq('id', id);
       if (error) throw error;
     },
@@ -498,6 +554,18 @@ const Projection = () => {
 
   const updateProjectionMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string | number, updates: any }) => {
+      if (isLocalAuth) {
+        console.log('Local Mode: Mocking update', id, updates);
+        const stored = localStorage.getItem('local_projections');
+        if (stored) {
+          const current = JSON.parse(stored);
+          const updated = current.map((p: any) => 
+            p.id === id ? { ...p, ...updates, merchant: updates.source || updates.merchant || p.merchant } : p
+          );
+          localStorage.setItem('local_projections', JSON.stringify(updated));
+        }
+        return;
+      }
       // Map source -> merchant if present in updates
       const dbUpdates = { ...updates };
       if (updates.source) {
@@ -523,16 +591,21 @@ const Projection = () => {
   const klintemarkenData = budget?.category_groups?.klintemarken || [];
 
   const specialCategoryNames = useMemo(() => {
-    if (!budget?.category_groups?.special) return ['Slush Fund'];
+    if (!budget?.category_groups?.special) return ['Slush Fund', 'Slush Fund Income'];
     return [
       ...budget.category_groups.special.map(c => c.name),
-      'Slush Fund' // Always include as fallback
+      'Slush Fund',
+      'Slush Fund Income' // Always include as fallback
     ];
   }, [budget]);
 
   const incomeTransactions = useMemo(() =>
-    (futureTransactions as any[]).filter(t => t.amount >= 0 && (t.recurring !== 'N/A' || t.date?.slice(0, 4) >= currentYear.toString())),
-    [futureTransactions, selectedYear]
+    (futureTransactions as any[]).filter(t => 
+      t.amount >= 0 && 
+      !specialCategoryNames.includes(t.category) &&
+      (t.recurring !== 'N/A' || t.date?.slice(0, 4) >= currentYear.toString())
+    ),
+    [futureTransactions, selectedYear, specialCategoryNames]
   );
 
   const expenseTransactions = useMemo(() =>
@@ -546,7 +619,6 @@ const Projection = () => {
 
   const slushFundTransactions = useMemo(() =>
     (futureTransactions as any[]).filter(t =>
-      t.amount < 0 &&
       specialCategoryNames.includes(t.category) &&
       (t.recurring !== 'N/A' || t.date?.slice(0, 4) >= currentYear.toString())
     ),
@@ -557,7 +629,6 @@ const Projection = () => {
     if (!activeScenarioId) return [];
     const masterTxs = matchProjectionsToActuals(masterProjectionsRaw, transactions);
     return (masterTxs as any[]).filter(t =>
-      t.amount < 0 &&
       specialCategoryNames.includes(t.category) &&
       (t.recurring !== 'N/A' || t.date?.slice(0, 4) >= currentYear.toString())
     );
@@ -871,7 +942,20 @@ const Projection = () => {
             // Skip monthly recurring projections for expenses as they are handled in the base rollup
             if (t.recurring === 'Monthly' && isExpenseCategory) return;
 
-            if (amountToUse > 0 && !isExpenseCategory) {
+            if (!isExpenseCategory && specialCategoryNames.includes(t.category)) {
+              // Show individual Slush items as requested
+              const itemName = t.source || t.stream || 'Slush Item';
+              const uniqueKey = `${itemName} [${t.id?.slice(0, 4) || 'tx'}]`;
+              const absVal = Math.abs(amountToUse);
+              
+              if (t.category === 'Slush Fund Income') {
+                slush -= absVal;
+                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) - absVal;
+              } else {
+                slush += absVal;
+                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
+              }
+            } else if (amountToUse > 0 && !isExpenseCategory) {
               // positive amounts not matching expense categories are income
               if (!isKnownIncome) {
                 const streamName = t.stream || t.source || 'Other';
@@ -883,13 +967,6 @@ const Projection = () => {
                 income += amountToUse;
                 incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
               }
-            } else if (amountToUse < 0 && !isExpenseCategory && specialCategoryNames.includes(t.category)) {
-              // Show individual Slush items as requested
-              const itemName = t.source || t.stream || 'Slush Item';
-              const uniqueKey = `${itemName} [${t.id?.slice(0, 4) || 'tx'}]`;
-              const absVal = Math.abs(amountToUse);
-              slush += absVal;
-              slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
             } else if (isExpenseCategory) {
               // Any other expense projection (Annually, Quarterly, etc.)
               const absVal = Math.abs(amountToUse);
@@ -900,6 +977,12 @@ const Projection = () => {
             }
           }
         });
+
+        // Prepare fresh breakdown objects for each month
+        const currentIncomeBreakdown = { ...incomeBreakdown };
+        const currentSlushBreakdown = { ...slushBreakdown };
+        const currentExpenseBreakdown = { ...expenseLabelBreakdownBase };
+        const currentFeederBreakdown = { 'Feeder Budget': feederMonthlyTotal };
 
         const monthlyNet = income + feederMonthlyTotal - expenseMonthlyTotal - slush;
         runningBalance += monthlyNet;
@@ -914,11 +997,11 @@ const Projection = () => {
           expense: expenseMonthlyTotal,
           slush,
           breakdown: {
-            incomeBreakdown,
-            feederBreakdown: { 'Feeder Budget': feederMonthlyTotal },
-            expenseBreakdown: expenseLabelBreakdownBase,
-            expenseLabelBreakdown: expenseLabelBreakdownBase,
-            slushBreakdown
+            incomeBreakdown: currentIncomeBreakdown,
+            feederBreakdown: currentFeederBreakdown,
+            expenseBreakdown: currentExpenseBreakdown,
+            expenseLabelBreakdown: currentExpenseBreakdown,
+            slushBreakdown: currentSlushBreakdown
           }
         });
       }
@@ -1059,7 +1142,19 @@ const Projection = () => {
 
             if (t.recurring === 'Monthly' && isExpenseCategory) return;
 
-            if (amountToUse > 0 && !isExpenseCategory) {
+            if (!isExpenseCategory && specialCategoryNames.includes(t.category)) {
+              const itemName = t.source || t.stream || 'Slush Item';
+              const uniqueKey = `${itemName} [${t.id?.slice(0, 4) || 'tx'}]`;
+              const absVal = Math.abs(amountToUse);
+              
+              if (t.category === 'Slush Fund Income') {
+                slush -= absVal;
+                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) - absVal;
+              } else {
+                slush += absVal;
+                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
+              }
+            } else if (amountToUse > 0 && !isExpenseCategory) {
               if (!isKnownIncome) {
                 const streamName = t.stream || t.source || 'Other';
                 const isIncomeCategory = incomeCategoryNames.has(t.category) || t.category === 'Income';
@@ -1070,12 +1165,6 @@ const Projection = () => {
                 income += amountToUse;
                 incomeBreakdown[streamName] = (incomeBreakdown[streamName] || 0) + amountToUse;
               }
-            } else if (amountToUse < 0 && !isExpenseCategory && specialCategoryNames.includes(t.category)) {
-              const itemName = t.source || t.stream || 'Slush Item';
-              const uniqueKey = `${itemName} [${t.id?.slice(0, 4) || 'tx'}]`;
-              const absVal = Math.abs(amountToUse);
-              slush += absVal;
-              slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
             } else if (isExpenseCategory) {
               const absVal = Math.abs(amountToUse);
               const categoryName = t.category || 'Other Expenses';
@@ -1085,6 +1174,12 @@ const Projection = () => {
             }
           }
         });
+
+        // Prepare fresh breakdown objects
+        const currentIncomeBreakdown = { ...incomeBreakdown };
+        const currentSlushBreakdown = { ...slushBreakdown };
+        const currentExpenseBreakdown = { ...expenseLabelBreakdownBase };
+        const currentFeederBreakdown = { 'Feeder Budget': feederMonthlyTotal };
 
         const monthlyNet = income + feederMonthlyTotal - expenseMonthlyTotal - slush;
         runningBalance += monthlyNet;
@@ -1099,11 +1194,11 @@ const Projection = () => {
           expense: expenseMonthlyTotal,
           slush,
           breakdown: {
-            incomeBreakdown,
-            feederBreakdown: { 'Feeder Budget': feederMonthlyTotal },
-            expenseBreakdown: expenseLabelBreakdownBase,
-            expenseLabelBreakdown: expenseLabelBreakdownBase,
-            slushBreakdown
+            incomeBreakdown: currentIncomeBreakdown,
+            feederBreakdown: currentFeederBreakdown,
+            expenseBreakdown: currentExpenseBreakdown,
+            expenseLabelBreakdown: currentExpenseBreakdown,
+            slushBreakdown: currentSlushBreakdown
           }
         });
       }
@@ -1381,7 +1476,13 @@ const Projection = () => {
             <div className="flex items-center gap-8">
               <div className="text-right">
                 <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Items</p>
-                <p className="text-sm font-black text-slate-900 font-mono">{slushFundTransactions.length}</p>
+                <p className="text-sm font-black text-slate-900 font-mono">
+                    {slushFundTransactions.filter(t => {
+                        const today = new Date();
+                        const startOfCurrentMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+                        return showPastProjections || t.recurring !== 'N/A' || t.date >= startOfCurrentMonth;
+                    }).length}
+                </p>
               </div>
               <div className="text-right border-l border-slate-200 pl-6">
                 <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Total Impact</p>

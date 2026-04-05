@@ -75,40 +75,54 @@ export const useAnnualBudget = (year?: number) => {
       // Get user profile - try multiple approaches
       let profile = null;
 
-      // Method 1: Direct user_id lookup
-      const { data: profile1, error: error1 } = await supabase
-        .from('user_profiles')
-        .select('id, user_id, email')
-        .eq('user_id', user.id)
-        .single();
-
-      if (!error1 && profile1) {
-        profile = profile1;
-        console.log('Found profile via user_id:', profile);
+      if (user?.id === '00000000-0000-0000-0000-000000000002' || !user?.id) {
+        // Force local mock profile for dev accounts or when unauthorized in local mode
+        profile = {
+          id: '00000000-0000-0000-0000-000000000002',
+          user_id: '00000000-0000-0000-0000-000000000002',
+          email: 'demo@mibudget.dk'
+        };
+        console.log('Using local mock profile for budget');
       } else {
-        console.log('Method 1 failed:', error1);
-
-        // Method 2: Email lookup
-        const { data: profile2, error: error2 } = await supabase
+        // Method 1: Direct user_id lookup
+        const { data: profile1, error: error1 } = await supabase
           .from('user_profiles')
           .select('id, user_id, email')
-          .eq('email', user.email || '')
+          .eq('user_id', user.id)
           .single();
 
-        if (!error2 && profile2) {
-          profile = profile2;
-          console.log('Found profile via email:', profile);
+        if (!error1 && profile1) {
+          profile = profile1;
+          console.log('Found profile via user_id:', profile);
         } else {
-          console.log('Method 2 failed:', error2);
+          console.log('Method 1 failed:', error1);
 
-          // Method 3: Get any profile (for debugging)
-          const { data: allProfiles, error: error3 } = await supabase
+          // Method 2: Email lookup
+          const { data: profile2, error: error2 } = await supabase
             .from('user_profiles')
             .select('id, user_id, email')
-            .limit(5);
+            .eq('email', user.email || '')
+            .single();
 
-          console.log('All profiles in database:', allProfiles, error3);
-          throw new Error(`User profile not found. Tried user_id lookup and email lookup. Auth user: ${user.id} / ${user.email}`);
+          if (!error2 && profile2) {
+            profile = profile2;
+            console.log('Found profile via email:', profile);
+          } else {
+            console.log('Method 2 failed:', error2);
+
+            // Method 3: Fallback for local mode even if IDs don't match exactly
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            if (isLocal) {
+              profile = {
+                id: '00000000-0000-0000-0000-000000000002',
+                user_id: '00000000-0000-0000-0000-000000000002',
+                email: 'demo@mibudget.dk'
+              };
+              console.log('Falling back to local mock profile due to missing profile in DB');
+            } else {
+              throw new Error(`User profile not found. Tried user_id lookup and email lookup. Auth user: ${user.id} / ${user.email}`);
+            }
+          }
         }
       }
 

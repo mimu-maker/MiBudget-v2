@@ -96,11 +96,15 @@ const SlushFundTransactionsTable = ({
         setEditingOccurrence(null);
     };
 
+    const today = new Date();
+    const startOfCurrentMonth = format(new Date(today.getFullYear(), today.getMonth(), 1), 'yyyy-MM-dd');
+
     // Filter out past projections if not requested
     const filteredTransactions = transactions.filter(t => {
         if (showPastProjections) return true;
         if (t.recurring === 'N/A') {
-            return t.date >= todayStr;
+            // Show items from the start of the current month onwards
+            return t.date >= startOfCurrentMonth;
         }
         return true;
     });
@@ -160,9 +164,13 @@ const SlushFundTransactionsTable = ({
                     ) : (
                         Object.entries(
                             filteredTransactions.reduce((groups, tx) => {
-                                const stream = tx.stream || tx.category || 'Other';
-                                if (!groups[stream]) groups[stream] = [];
-                                groups[stream].push(tx);
+                                // Prefer stream, fallback to category, ensure 'Slush Fund Income' stands out
+                                let groupKey = tx.stream || tx.category || 'Other';
+                                if (tx.category === 'Slush Fund Income' && !tx.stream) {
+                                    groupKey = 'Slush Fund Income';
+                                }
+                                if (!groups[groupKey]) groups[groupKey] = [];
+                                groups[groupKey].push(tx);
                                 return groups;
                             }, {} as Record<string, FutureTransaction[]>)
                         ).map(([stream, streamTxs]) => (
