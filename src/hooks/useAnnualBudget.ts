@@ -65,13 +65,16 @@ export const useAnnualBudget = (year?: number) => {
       const profileId = userProfile?.id || user?.id;
       if (!profileId) return null;
 
-      // 1. Fetch Budget record (budgets table uses user_id, not account_id)
+      // 1. Fetch Budget record - match exact logic from useBudgetCategories.ts
+      const DEFAULT_BUDGET_NAME = 'Primary 2025';
+      const DEFAULT_BUDGET_YEAR = 2025;
+
       const { data: unifiedBudget } = await supabase
         .from('budgets')
         .select('*')
         .eq('user_id', profileId)
-        .eq('year', targetYear)
-        .eq('budget_type', 'unified')
+        .eq('name', DEFAULT_BUDGET_NAME)
+        .eq('year', DEFAULT_BUDGET_YEAR)
         .maybeSingle();
 
       let budgetData = unifiedBudget || {
