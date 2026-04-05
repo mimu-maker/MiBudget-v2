@@ -34,6 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentAccountId, setCurrentAccountId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionConflict, setSessionConflict] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const {
     showDeviceTrustDialog,
@@ -89,6 +90,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await supabase.auth.signOut();
             return;
           }
+
+          // SESSION RESTRICTION: Update and monitor last_session_id
+          const newSessionId = crypto.randomUUID();
+          setActiveSessionId(newSessionId);
+          await (supabase
+            .from('user_profiles' as any)
+            .update({ last_session_id: newSessionId } as any)
+            .eq('user_id', session.user.id) as any);
+
+          // Listen for session conflicts
+          const channel = supabase
+            .channel(`session-${session.user.id}`)
+            .on(
+              'postgres_changes',
+              { event: 'UPDATE', schema: 'public', table: 'user_profiles', filter: `user_id=eq.${session.user.id}` },
+              (payload) => {
+                if (payload.new.last_session_id !== newSessionId) {
+                  setSessionConflict(true);
+                }
+              }
+            )
+            .subscribe();
+
+          return () => {
+            supabase.removeChannel(channel);
+          };
         } else {
           updateProfileAndAccount(null);
         }
@@ -165,7 +192,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const handleSessionReplace = async () => {
-     // Implementation ...
+     if (!user) return;
+     const newSessionId = crypto.randomUUID();
+     setActiveSessionId(newSessionId);
+     await (supabase
+       .from('user_profiles' as any)
+       .update({ last_session_id: newSessionId } as any)
+       .eq('user_id', user.id) as any);
+     setSessionConflict(false);
   };
 
   const handleSessionCancel = () => {
@@ -191,6 +225,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           onTrust={() => handleDeviceTrust()}
           onDontTrust={() => handleDeviceDontTrust()}
           onLogout={signOut}
+        />
+      )}
+      {sessionConflict && (
+        <SessionConflictDialog 
+          onConfirm={handleSessionReplace}
+          onCancel={handleSessionCancel}
         />
       )}
     </AuthContext.Provider>

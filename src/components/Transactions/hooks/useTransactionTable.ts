@@ -220,7 +220,7 @@ const useInfiniteTransactions = (userId: string | undefined, currentAccountId: s
       console.log(`Fetching page ${pageParam}... Target: ${currentAccountId ? 'Account ' + currentAccountId : 'User ' + userId}`);
       const pageSize = 50;
       const from = pageParam * pageSize;
-      const to = from + pageSize;
+      const to = from + pageSize - 1;
 
       // ====== DEMO ACCOUNT BYPASS ======
       if (userId === '00000000-0000-0000-0000-000000000002') {
