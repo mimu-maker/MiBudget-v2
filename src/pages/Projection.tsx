@@ -948,7 +948,8 @@ const Projection = () => {
               const uniqueKey = `${itemName} [${t.id?.slice(0, 4) || 'tx'}]`;
               const absVal = Math.abs(amountToUse);
               
-              if (t.category === 'Slush Fund Income') {
+              // If amount is positive (inflow), subtract from slush sum (to make it an income in net calculation)
+              if (amountToUse > 0 || t.category === 'Slush Fund Income') {
                 slush -= absVal;
                 slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) - absVal;
               } else {
