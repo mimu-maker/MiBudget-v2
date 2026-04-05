@@ -110,18 +110,13 @@ export const useAnnualBudget = (year?: number) => {
           } else {
             console.log('Method 2 failed:', error2);
 
-            // Method 3: Fallback for local mode even if IDs don't match exactly
-            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-            if (isLocal) {
-              profile = {
-                id: '00000000-0000-0000-0000-000000000002',
-                user_id: '00000000-0000-0000-0000-000000000002',
-                email: 'demo@mibudget.dk'
-              };
-              console.log('Falling back to local mock profile due to missing profile in DB');
-            } else {
-              throw new Error(`User profile not found. Tried user_id lookup and email lookup. Auth user: ${user.id} / ${user.email}`);
-            }
+            // Method 3: Fallback ID for missing profile - use Auth ID directly
+            profile = {
+              id: user.id, // Fallback to auth ID
+              user_id: user.id,
+              email: user.email || 'user@example.com'
+            };
+            console.log('Falling back to auth ID as profile ID for missing profile record on production');
           }
         }
       }
