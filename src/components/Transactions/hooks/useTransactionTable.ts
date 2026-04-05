@@ -68,7 +68,7 @@ const parseBool = (val: any) => {
  */
 export const useAllTransactions = (options?: { enabled?: boolean }) => {
   const queryClient = useQueryClient();
-  const { userProfile, user } = useAuth();
+  const { userProfile, user, currentAccountId } = useAuth();
 
   return useQuery({
     queryKey: ['transactions-all'],
@@ -155,10 +155,17 @@ export const useAllTransactions = (options?: { enabled?: boolean }) => {
         let hasMore = true;
 
         while (hasMore) {
-          const { data, error } = await (supabase as any)
+          let allQuery = (supabase as any)
             .from('transactions')
-            .select('*')
-            .eq('user_id', userId)
+            .select('*');
+
+          if (currentAccountId) {
+            allQuery = allQuery.eq('account_id', currentAccountId);
+          } else {
+            allQuery = allQuery.eq('user_id', userId);
+          }
+
+          const { data, error } = await allQuery
             .order('date', { ascending: false })
             .range(from, from + batchSize - 1);
 
@@ -916,6 +923,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
         ...t,
         id: (t.id && t.id.includes('-')) ? t.id : crypto.randomUUID(),
         user_id: userId,
+        account_id: currentAccountId || null,
         source: t.source || 'Unknown',
         merchant: t.source || 'Unknown', // Compatibility
         amount: parseAmount(t.amount.toString()) || 0,
@@ -946,6 +954,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
           const sanitized: any = {
             id: tx.id || crypto.randomUUID(),
             user_id: userId,
+            account_id: currentAccountId || null,
             date: tx.date,
             merchant: tx.source || tx.merchant || 'Unknown', // DB expects 'merchant'
             amount: Number(tx.amount) || 0,
