@@ -364,8 +364,10 @@ const useInfiniteTransactions = (userId: string | undefined, currentAccountId: s
         }
       });
 
-      // Default: Hide Excluded if no status filter
+      // Default Filter Optimization:
+      // We only hide 'Excluded' by default. Everything else (Pending Triage, etc) stays visible.
       if (!filters.status || (Array.isArray(filters.status) && filters.status.length === 0)) {
+        // Exclude 'Excluded' explicitly but KEEP all Pending states!
         query = query.neq('status', 'Excluded');
       }
 
@@ -394,7 +396,10 @@ const useInfiniteTransactions = (userId: string | undefined, currentAccountId: s
       }) as Transaction[];
     },
     getNextPageParam: (lastPage: any, allPages: any[]) => {
-      return (lastPage as any).length === 50 ? allPages.length : undefined;
+      // If we got a full page, there's likely more data.
+      // Even if not perfectly 50, let's allow it to try the next page if the last one wasn't empty
+      // to avoid edge cases with filtered results or exactly-on-the-boundary imports.
+      return (lastPage as any).length >= 50 ? allPages.length : undefined;
     },
     staleTime: 1000 * 60 * 60 * 24,
     gcTime: 1000 * 60 * 60 * 24,
