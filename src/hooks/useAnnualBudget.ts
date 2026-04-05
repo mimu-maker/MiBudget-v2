@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { format, parseISO, startOfMonth } from 'date-fns';
@@ -178,4 +178,65 @@ export const useAnnualBudget = (year?: number) => {
   });
 
   return { budget, loading: isLoading, error: error?.message || null };
+};
+
+// --- RESTORED HOOKS FOR COMPATIBILITY ---
+
+export const useCategories = () => {
+  const { budget, loading, error } = useAnnualBudget();
+  return { 
+    categories: budget?.categories || [], 
+    loading, 
+    error 
+  };
+};
+
+export const useUnifiedCategoryActions = () => {
+  const queryClient = useQueryClient();
+  const { currentAccountId } = useAuth();
+
+  const addCategory = async (name: string) => {
+    const { data: newCat, error } = await supabase
+      .from('categories')
+      .insert([{ 
+        name, 
+        account_id: currentAccountId, 
+        category_group: 'expenditure',
+        display_order: 100 
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    queryClient.invalidateQueries({ queryKey: ['annual-budget'] });
+    return newCat;
+  };
+
+  const addSubCategory = async (categoryName: string, subName: string) => {
+    // 1. Find category ID
+    const { data: cat } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('name', categoryName)
+      .eq('account_id', currentAccountId)
+      .maybeSingle();
+
+    if (!cat) throw new Error(`Category ${categoryName} not found`);
+
+    const { data: newSub, error } = await supabase
+      .from('sub_categories' as any)
+      .insert([{
+        category_id: cat.id,
+        name: subName,
+        is_active: true
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    queryClient.invalidateQueries({ queryKey: ['annual-budget'] });
+    return newSub;
+  };
+
+  return { addCategory, addSubCategory };
 };
