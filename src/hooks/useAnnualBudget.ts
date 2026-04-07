@@ -186,10 +186,33 @@ export const useAnnualBudget = (year?: number) => {
 
       // 5. Build Budget Object with proper amounts from budget_category_limits
       const categories: BudgetCategory[] = dbCategories.map((cat: any) => {
-        const catBudgetAmount = categoryBudgets[cat.id] ?? 0;
         const catTransactions = allYearTransactions.filter(t => t.category === cat.name);
         const spent = catTransactions.reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
-        
+
+        const subCategories = (cat.sub_categories || [])
+          .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
+          .map((sub: any) => {
+            // Use budget_category_limits as source of truth; fall back to sub_categories.budget_amount
+            const subBudgetAmount = categoryBudgets[sub.id] !== undefined
+              ? categoryBudgets[sub.id]
+              : (sub.budget_amount ?? 0);
+            const subSpent = catTransactions.filter(t => t.sub_category === sub.name).reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
+            return {
+              id: sub.id,
+              name: sub.name,
+              budget_amount: subBudgetAmount,
+              spent: subSpent,
+              remaining: subBudgetAmount - subSpent,
+              is_active: categoryBudgets[`${cat.id}-${sub.id}-active`] !== 0,
+              label: sub.label
+            };
+          });
+
+        // Category total: use explicit category-level limit, otherwise sum sub-category limits
+        const catBudgetAmount = categoryBudgets[cat.id] !== undefined
+          ? categoryBudgets[cat.id]
+          : subCategories.reduce((sum, sub) => sum + sub.budget_amount, 0);
+
         return {
           id: cat.id,
           name: cat.name,
@@ -203,21 +226,7 @@ export const useAnnualBudget = (year?: number) => {
           remaining: catBudgetAmount - spent,
           remaining_percent: catBudgetAmount > 0 ? Math.round(((catBudgetAmount - spent) / catBudgetAmount) * 100) : 0,
           label: cat.label,
-          sub_categories: (cat.sub_categories || [])
-            .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
-            .map((sub: any) => {
-              const subBudgetAmount = sub.budget_amount ?? 0;
-              const subSpent = catTransactions.filter(t => t.sub_category === sub.name).reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
-              return {
-                id: sub.id,
-                name: sub.name,
-                budget_amount: subBudgetAmount,
-                spent: subSpent,
-                remaining: subBudgetAmount - subSpent,
-                is_active: categoryBudgets[`${cat.id}-${sub.id}-active`] !== 0,
-                label: sub.label
-              };
-            })
+          sub_categories: subCategories
         };
       });
 
