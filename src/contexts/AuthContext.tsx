@@ -14,6 +14,7 @@ interface AuthContextType {
   currentAccountId: string | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithDemo: () => Promise<string | null>;
   signOut: () => Promise<void>;
 }
 
@@ -179,6 +180,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const signInWithDemo = async (): Promise<string | null> => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: 'demo@example.com',
+      password: 'demo123',
+    });
+    if (error) {
+      console.error('Demo sign in failed:', error);
+      return error.message;
+    }
+    return null;
+  };
+
   const signOut = async () => {
     try {
       await supabase.auth.signOut();
@@ -213,6 +226,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     currentAccountId,
     loading,
     signInWithGoogle,
+    signInWithDemo,
     signOut
   };
 

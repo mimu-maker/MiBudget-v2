@@ -65,28 +65,59 @@ export const useAnnualBudget = (year?: number) => {
       const profileId = userProfile?.id || user?.id;
       if (!profileId) return null;
 
-      // 1. Fetch Budget record - match exact logic from useBudgetCategories.ts
-      const DEFAULT_BUDGET_NAME = 'Primary 2025';
-      const DEFAULT_BUDGET_YEAR = 2025;
+      // 1. Fetch Budget record for the target year
+      let budgetData: any = null;
 
-      const { data: unifiedBudget } = await supabase
-        .from('budgets')
-        .select('*')
-        .eq('user_id', profileId)
-        .eq('name', DEFAULT_BUDGET_NAME)
-        .eq('year', DEFAULT_BUDGET_YEAR)
-        .maybeSingle();
+      // Try account_id + year first (preferred)
+      if (currentAccountId) {
+        // Prefer own user's budget, fall back to any in the account for this year
+        const { data: ownBudget } = await (supabase as any)
+          .from('budgets')
+          .select('*')
+          .eq('account_id', currentAccountId)
+          .eq('year', targetYear)
+          .eq('user_id', profileId)
+          .maybeSingle();
 
-      let budgetData = unifiedBudget || {
-        id: 'fallback-id', 
-        user_id: profileId,
-        year: targetYear,
-        name: `Unified ${targetYear}`,
-        budget_type: 'unified',
-        start_date: `${targetYear}-01-01`,
-        is_active: true,
-        isFallback: true
-      };
+        if (ownBudget) {
+          budgetData = ownBudget;
+        } else {
+          const { data: acctBudget } = await (supabase as any)
+            .from('budgets')
+            .select('*')
+            .eq('account_id', currentAccountId)
+            .eq('year', targetYear)
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          budgetData = acctBudget || null;
+        }
+      }
+
+      // Fallback: user_id + year
+      if (!budgetData) {
+        const { data: userBudget } = await (supabase as any)
+          .from('budgets')
+          .select('*')
+          .eq('user_id', profileId)
+          .eq('year', targetYear)
+          .maybeSingle();
+        budgetData = userBudget || null;
+      }
+
+      // Final fallback: synthetic stub so UI renders without data
+      if (!budgetData) {
+        budgetData = {
+          id: 'fallback-id',
+          user_id: profileId,
+          year: targetYear,
+          name: `Budget ${targetYear}`,
+          budget_type: 'unified',
+          start_date: `${targetYear}-01-01`,
+          is_active: true,
+          isFallback: true
+        };
+      }
 
       // 2. Fetch Categories (try account_id first, fall back to user_id)
       let dbCategories: any[] = [];
