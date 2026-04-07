@@ -84,8 +84,9 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
             filtered = filtered.filter(t => t.budget !== 'Special' && t.category?.toLowerCase() !== 'slush fund' && getGroup(t.category) !== 'special');
         }
 
-        // Respect both the local filter and the global beta feature toggle
-        const effectivelyIncludeKlintemarken = includeKlintemarken && settings.enableFeederBudgets;
+        // Klintemarken transactions are always included in cash flow unless the user explicitly hides them.
+        // The enableFeederBudgets flag only controls the FEEDER toggle button visibility, not cash flow inclusion.
+        const effectivelyIncludeKlintemarken = includeKlintemarken;
 
         if (!effectivelyIncludeKlintemarken) {
             filtered = filtered.filter(t => t.budget !== 'Klintemarken' && getGroup(t.category) !== 'klintemarken');

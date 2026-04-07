@@ -71,7 +71,7 @@ export const useAllTransactions = (options?: { enabled?: boolean }) => {
   const { userProfile, user, currentAccountId } = useAuth();
 
   return useQuery({
-    queryKey: ['transactions-all'],
+    queryKey: ['transactions-all', currentAccountId],
     queryFn: async () => {
       // Use profile from context if available, fallback to direct auth UID.
       // In household mode, userProfile?.user_id will be the master ID.
@@ -207,7 +207,7 @@ export const useAllTransactions = (options?: { enabled?: boolean }) => {
       }
     },
     retry: 1,
-    staleTime: 1000 * 60 * 60 * 24, // Keep 24h
+    staleTime: 1000 * 60 * 5, // 5 min — ensure fresh data
     gcTime: 1000 * 60 * 60 * 24, // Keep 24h
     enabled: options?.enabled !== false,
     refetchOnWindowFocus: false,
@@ -686,7 +686,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
 
       // Shadow logic & Self-healing
       if (field === 'date') {
-        const previousAll = queryClient.getQueryData<Transaction[]>(['transactions-all']);
+        const previousAll = queryClient.getQueryData<Transaction[]>(['transactions-all', currentAccountId]);
         const oldTx = previousAll?.find(t => t.id === id);
 
         if (oldTx) {
@@ -755,11 +755,11 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       await queryClient.cancelQueries({ queryKey: ['transactions-infinite'] });
       await queryClient.cancelQueries({ queryKey: ['transactions-all'] });
 
-      const previousTotalAll = queryClient.getQueryData<Transaction[]>(['transactions-all']);
+      const previousTotalAll = queryClient.getQueryData<Transaction[]>(['transactions-all', currentAccountId]);
       const previousTx = previousTotalAll?.find(t => t.id === id);
 
       if (previousTotalAll) {
-        queryClient.setQueryData(['transactions-all'], (old: Transaction[] | undefined) => {
+        queryClient.setQueryData(['transactions-all', currentAccountId], (old: Transaction[] | undefined) => {
           if (!old) return [];
           return old.map(t => t.id === id ? { ...t, [field]: value } : t);
         });
@@ -783,7 +783,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
     },
     onError: (err, variables, context) => {
       if (context?.previousTotalAll) {
-        queryClient.setQueryData(['transactions-all'], context.previousTotalAll);
+        queryClient.setQueryData(['transactions-all', currentAccountId], context.previousTotalAll);
       }
       queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
     },
@@ -902,7 +902,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       }
     },
     onSuccess: (_, variables) => {
-      const previousTotalAll = queryClient.getQueryData<Transaction[]>(['transactions-all']);
+      const previousTotalAll = queryClient.getQueryData<Transaction[]>(['transactions-all', currentAccountId]);
       const deletedTxs = previousTotalAll?.filter(t => variables.includes(t.id)) || [];
 
       queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
@@ -1063,10 +1063,10 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       await queryClient.cancelQueries({ queryKey: ['transactions-infinite'] });
       await queryClient.cancelQueries({ queryKey: ['transactions-all'] });
 
-      const previousTotalAll = queryClient.getQueryData<Transaction[]>(['transactions-all']);
+      const previousTotalAll = queryClient.getQueryData<Transaction[]>(['transactions-all', currentAccountId]);
 
       if (previousTotalAll) {
-        queryClient.setQueryData(['transactions-all'], (old: Transaction[] | undefined) => {
+        queryClient.setQueryData(['transactions-all', currentAccountId], (old: Transaction[] | undefined) => {
           if (!old) return [];
           return old.map(t => ids.includes(t.id) ? { ...t, ...updates } : t);
         });

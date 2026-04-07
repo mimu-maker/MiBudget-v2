@@ -38,6 +38,7 @@ interface UnifiedAuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  signInWithDemo: () => Promise<string | null>;
   signOut: () => void;
   updateUserProfile: (profile: Partial<UnifiedUserProfile>) => Promise<void>;
   isLocalAuth: boolean;
@@ -76,6 +77,10 @@ export const UnifiedAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
     ? async () => { throw new Error('Google Sign In is not available in local test mode. Click Bypass.') }
     : supabaseAuth.signInWithGoogle;
 
+  const signInWithDemo = isLocalAuth
+    ? async (): Promise<string | null> => 'Demo sign in is not available in local test mode.'
+    : supabaseAuth.signInWithDemo;
+
   const updateUserProfile = isLocalAuth
     ? localAuth.updateUserProfile as any
     : profileContext.updateUserProfile;
@@ -89,6 +94,7 @@ export const UnifiedAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
     signIn,
     signUp,
     signInWithGoogle,
+    signInWithDemo,
     signOut,
     updateUserProfile,
     isLocalAuth
