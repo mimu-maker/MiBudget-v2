@@ -23,9 +23,8 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
         queryKey: ['existing-source-names-ranked'],
         queryFn: async () => {
             // Fetch rules and common clean sources from transactions
-            const [sourceRes, merchantRes, txRes] = await Promise.allSettled([
-                (supabase as any).from('source_rules').select('*'),
-                (supabase as any).from('merchant_rules').select('*'),
+            const [rulesRes, txRes] = await Promise.allSettled([
+                (supabase as any).from('classification_rules').select('*'),
                 (supabase as any).from('transactions')
                     .select('clean_source')
                     .not('clean_source', 'is', null)
@@ -33,30 +32,15 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
                     .limit(500)
             ]);
 
-            const rules: any[] = [];
             const sourceMap = new Map<string, { name: string, score: number }>();
 
-            // Process source_rules (New)
-            if (sourceRes.status === 'fulfilled' && sourceRes.value.data) {
-                sourceRes.value.data.forEach((r: any) => {
-                    const name = r.clean_source_name || r.source_name;
+            // Process classification_rules
+            if (rulesRes.status === 'fulfilled' && rulesRes.value.data) {
+                rulesRes.value.data.forEach((r: any) => {
+                    const name = r.clean_name || r.raw_name;
                     if (name) {
                         let score = 50;
-                        if (r.auto_recurring === 'N/A') score += 20;
-                        if (!sourceMap.has(name) || score > sourceMap.get(name)!.score) {
-                            sourceMap.set(name, { name, score });
-                        }
-                    }
-                });
-            }
-
-            // Process merchant_rules (Legacy)
-            if (merchantRes.status === 'fulfilled' && merchantRes.value.data) {
-                merchantRes.value.data.forEach((r: any) => {
-                    const name = r.clean_merchant_name || r.merchant || r.merchant_name;
-                    if (name) {
-                        let score = 40; // Lower priority for legacy
-                        if (r.auto_recurring === 'N/A') score += 10;
+                        // Boost score based on rule status/completeness if desired
                         if (!sourceMap.has(name) || score > sourceMap.get(name)!.score) {
                             sourceMap.set(name, { name, score });
                         }

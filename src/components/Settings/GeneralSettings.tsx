@@ -14,7 +14,7 @@ import { useSettings } from '@/hooks/useSettings';
 export const GeneralSettings = () => {
     const { userProfile, updateUserProfile, loading } = useProfile();
     const { settings, saveSettings } = useSettings();
-    const { user } = useAuth();
+    const { user, currentAccountId } = useAuth();
     const { toast } = useToast();
     const [saving, setSaving] = useState(false);
     const [backingUp, setBackingUp] = useState(false);
@@ -61,7 +61,7 @@ export const GeneralSettings = () => {
                 title: "Preparing Backup",
                 description: "Gathering your database records...",
             });
-            const backupData = await generateBackupData(user.id);
+            const backupData = await generateBackupData(user.id, currentAccountId);
             downloadBackupFile(backupData);
             toast({
                 title: "Backup Complete",

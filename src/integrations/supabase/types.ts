@@ -132,6 +132,66 @@ export type Database = {
         }
         Relationships: []
       }
+      classification_rules: {
+        Row: {
+          id: string
+          account_id: string
+          user_id: string
+          match_type: 'merchant' | 'source'
+          raw_name: string | null
+          clean_name: string
+          match_mode: 'exact' | 'contains' | 'starts_with'
+          auto_category: string | null
+          auto_sub_category: string | null
+          auto_budget: string | null
+          skip_triage: boolean
+          auto_verify: boolean
+          auto_planned: boolean
+          auto_recurring: string | null
+          secondary_categories: string[] | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          account_id: string
+          user_id: string
+          match_type: 'merchant' | 'source'
+          raw_name?: string | null
+          clean_name: string
+          match_mode?: 'exact' | 'contains' | 'starts_with'
+          auto_category?: string | null
+          auto_sub_category?: string | null
+          auto_budget?: string | null
+          skip_triage?: boolean
+          auto_verify?: boolean
+          auto_planned?: boolean
+          auto_recurring?: string | null
+          secondary_categories?: string[] | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          account_id?: string
+          user_id?: string
+          match_type?: 'merchant' | 'source'
+          raw_name?: string | null
+          clean_name?: string
+          match_mode?: 'exact' | 'contains' | 'starts_with'
+          auto_category?: string | null
+          auto_sub_category?: string | null
+          auto_budget?: string | null
+          skip_triage?: boolean
+          auto_verify?: boolean
+          auto_planned?: boolean
+          auto_recurring?: string | null
+          secondary_categories?: string[] | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       projections: {
         Row: {
           id: string

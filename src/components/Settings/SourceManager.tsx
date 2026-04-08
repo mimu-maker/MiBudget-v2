@@ -29,7 +29,7 @@ import { useToast } from '@/hooks/use-toast';
 
 export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }) => {
     const queryClient = useQueryClient();
-    const { user } = useAuth();
+    const { user, currentAccountId } = useAuth();
     const { toast } = useToast();
     const { settings } = useSettings();
     const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
@@ -65,7 +65,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
     const { data: sourceSettings = [] } = useQuery({
         queryKey: ['sources'],
         queryFn: async () => {
-            const { data, error } = await supabase
+            const { data, error } = await (supabase as any)
                 .from('sources')
                 .select('*');
             if (error) {
@@ -78,7 +78,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
     const updateSourceMutation = useMutation({
         mutationFn: async ({ name, updates }: { name: string, updates: any }) => {
-            const { error } = await supabase
+            const { error } = await (supabase as any)
                 .from('sources')
                 .upsert({
                     user_id: user?.id,
@@ -98,50 +98,31 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
     });
 
     const { data: rules = [], isLoading } = useQuery({
-        queryKey: ['source_rules'],
+        queryKey: ['classification_rules'],
         queryFn: async () => {
-            // Fetch both new source_rules and legacy merchant_rules in parallel
-            const [sourceRes, merchantRes] = await Promise.allSettled([
-                (supabase as any).from('source_rules').select('*').order('clean_source_name'),
-                (supabase as any).from('merchant_rules').select('*').order('clean_merchant_name')
-            ]);
+            const { data, error } = await (supabase as any)
+                .from('classification_rules')
+                .select('*')
+                .order('clean_name');
 
-            const rules = [];
-
-            // Process source_rules (New)
-            if (sourceRes.status === 'fulfilled' && sourceRes.value.data) {
-                rules.push(...sourceRes.value.data.map((r: any) => ({
-                    ...r,
-                    // Ensure unified field names for the UI
-                    source_name: r.source_name || r.merchant_name, // Fallback if schema varies
-                    clean_source_name: r.clean_source_name || r.clean_merchant_name
-                })));
-            } else if (sourceRes.status === 'rejected') {
-                console.warn("Failed to fetch source_rules:", sourceRes.reason);
+            if (error) {
+                console.error("Classification Rules Fetch Error:", error);
+                return [];
             }
 
-            // Process merchant_rules (Legacy)
-            if (merchantRes.status === 'fulfilled' && merchantRes.value.data) {
-                rules.push(...merchantRes.value.data.map((r: any) => ({
-                    ...r,
-                    // Map legacy fields to new schema, handling potential column name variations
-                    source_name: r.merchant || r.merchant_name,
-                    clean_source_name: r.clean_merchant_name || r.name,
-                    id: r.id // Keep original ID for updates if needed (though updates might need care)
-                })));
-            } else if (merchantRes.status === 'rejected') {
-                console.warn("Failed to fetch merchant_rules:", merchantRes.reason);
-            }
-
-            // Combine both lists without deduplication (we want to see ALL patterns)
-            return [...rules];
+            return data.map((r: any) => ({
+                ...r,
+                // Map to UI-friendly names if needed, though we should prefer new schema
+                source_name: r.raw_name,
+                clean_source_name: r.clean_name
+            }));
         }
     });
 
     const { data: transactions = [] } = useQuery({
         queryKey: ['transactions'],
         queryFn: async () => {
-            const { data, error } = await supabase.from('transactions').select('*');
+            const { data, error } = await (supabase as any).from('transactions').select('*');
             if (error) {
                 console.error("Transactions Fetch Error:", error);
                 return [];
@@ -163,44 +144,25 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
     const addMutation = useMutation({
         mutationFn: async ({ rule, applyToIds }: { rule: any, applyToIds: string[] }) => {
-            const sourceRuleData = {
+            const ruleData = {
+                account_id: currentAccountId,
                 user_id: user?.id,
-                source_name: rule.raw_name,
-                clean_source_name: rule.name,
+                match_type: 'source' as const, // Default to source for these UI-created rules
+                raw_name: rule.raw_name,
+                clean_name: rule.name,
                 auto_category: rule.category,
                 auto_sub_category: rule.sub_category,
                 skip_triage: rule.skip_triage,
                 auto_recurring: rule.auto_recurring,
                 auto_planned: rule.auto_planned,
-                match_mode: rule.match_mode || 'fuzzy',
+                match_mode: rule.match_mode || 'contains',
                 secondary_categories: rule.secondary_categories || [],
                 auto_budget: rule.auto_exclude ? 'Exclude' : 'Budgeted'
             };
 
-            let { error: ruleError } = await (supabase as any)
-                .from('source_rules')
-                .upsert([sourceRuleData], { onConflict: 'user_id, source_name' });
-
-            if (ruleError && (ruleError.code === '42P01' || ruleError.code === 'PGRST205' || ruleError.code === 'PGRST204' || ruleError.message?.includes('not found') || ruleError.message?.includes('column'))) {
-                const fallbackPayload = {
-                    user_id: user?.id,
-                    merchant_name: rule.raw_name,
-                    clean_merchant_name: rule.name,
-                    auto_category: rule.category,
-                    auto_sub_category: rule.sub_category,
-                    skip_triage: rule.skip_triage,
-                    auto_recurring: rule.auto_recurring,
-                    auto_planned: rule.auto_planned,
-                    match_mode: rule.match_mode || 'fuzzy',
-                    secondary_categories: rule.secondary_categories || [],
-                    auto_budget: rule.auto_exclude ? 'Exclude' : 'Budgeted'
-                };
-
-                const { error: fallbackError } = await (supabase as any)
-                    .from('merchant_rules')
-                    .upsert([fallbackPayload], { onConflict: 'user_id, merchant_name' });
-                ruleError = fallbackError;
-            }
+            const { error: ruleError } = await (supabase as any)
+                .from('classification_rules')
+                .upsert([ruleData], { onConflict: 'account_id, raw_name' });
 
             if (ruleError) throw ruleError;
 
@@ -237,8 +199,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
             }
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
-            queryClient.invalidateQueries({ queryKey: ['merchant_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['classification-rules'] }); // Invalidate both keys used
             queryClient.invalidateQueries({ queryKey: ['existing-source-names'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names-ranked'] });
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -256,7 +218,6 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
     const editMutation = useMutation({
         mutationFn: async (rule: any) => {
-            // Base fields common to both tables
             const baseUpdates: any = {
                 auto_category: rule.auto_category,
                 auto_sub_category: rule.auto_sub_category,
@@ -265,80 +226,40 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 auto_budget: rule.auto_budget,
                 skip_triage: rule.skip_triage,
                 secondary_categories: rule.secondary_categories || [],
-                match_mode: rule.match_mode || 'fuzzy'
+                match_mode: rule.match_mode || 'contains'
             };
 
             if (rule.isGroupDefault) {
                 // Bulk update all rules in this group by name
-                // 1. Update source_rules
-                const sourceUpdates = {
-                    ...baseUpdates,
-                    clean_source_name: rule.clean_source_name || rule.name
-                };
                 const { error: groupError } = await (supabase as any)
-                    .from('source_rules')
-                    .update(sourceUpdates)
-                    .eq('clean_source_name', rule.clean_source_name);
+                    .from('classification_rules')
+                    .update({
+                        ...baseUpdates,
+                        clean_name: rule.clean_source_name || rule.name
+                    })
+                    .eq('clean_name', rule.clean_source_name);
 
-                // 2. Update legacy merchant rules if they exist
-                const merchantUpdates = {
-                    ...baseUpdates,
-                    clean_merchant_name: rule.clean_source_name || rule.name
-                };
-                await (supabase as any)
-                    .from('merchant_rules')
-                    .update(merchantUpdates)
-                    .eq('clean_merchant_name', rule.clean_source_name);
-
-                if (groupError && groupError.code !== '42P01') throw groupError;
+                if (groupError) throw groupError;
                 return;
             }
 
             // Single Rule Update
-            // 1. Try source_rules first
-            const sourceRuleUpdates = {
+            const ruleUpdates = {
                 ...baseUpdates,
-                clean_source_name: rule.clean_source_name || rule.name,
-                source_name: rule.source_name || rule.raw_name // Allow updating the pattern itself
+                clean_name: rule.clean_source_name || rule.name,
+                raw_name: rule.source_name || rule.raw_name 
             };
-            const { data: sourceData, error: sourceError } = await (supabase as any)
-                .from('source_rules')
-                .update(sourceRuleUpdates)
-                .eq('id', rule.id)
-                .select();
+            
+            const { error } = await (supabase as any)
+                .from('classification_rules')
+                .update(ruleUpdates)
+                .eq('id', rule.id);
 
-            // 2. Fallback to merchant_rules if nothing was updated
-            if ((!sourceData || sourceData.length === 0) && !sourceError) {
-                const merchantRuleUpdates = {
-                    ...baseUpdates,
-                    clean_merchant_name: rule.clean_source_name || rule.name,
-                    merchant_name: rule.source_name || rule.raw_name
-                };
-                const { error: merchantError } = await (supabase as any)
-                    .from('merchant_rules')
-                    .update(merchantRuleUpdates)
-                    .eq('id', rule.id);
-                if (merchantError) throw merchantError;
-            } else if (sourceError && (sourceError.code === '42P01' || sourceError.code === 'PGRST204' || sourceError.message?.includes('not found'))) {
-                // Handle missing table or similar schema errors
-                const merchantRuleUpdates = {
-                    ...baseUpdates,
-                    clean_merchant_name: rule.clean_source_name || rule.name,
-                    merchant_name: rule.source_name || rule.raw_name
-                };
-                const { error: merchantError } = await (supabase as any)
-                    .from('merchant_rules')
-                    .update(merchantRuleUpdates)
-                    .eq('id', rule.id);
-                if (merchantError) throw merchantError;
-            } else if (sourceError) {
-                throw sourceError;
-            }
+            if (error) throw error;
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
-            queryClient.invalidateQueries({ queryKey: ['merchant_rules'] });
-            toast({ title: "Rule Updated", description: "The source rule has been updated successfully." });
+            queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
+            toast({ title: "Rule Updated", description: "The classification rule has been updated successfully." });
             setEditingRule(null);
         },
         onError: (error: any) => {
@@ -349,7 +270,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
     const handleUpdateTransaction = async (updates: Partial<Transaction>) => {
         if (!selectedTransactionForEdit) return;
 
-        const { error } = await supabase
+        const { error } = await (supabase as any)
             .from('transactions')
             .update(updates)
             .eq('id', selectedTransactionForEdit.id);
@@ -359,7 +280,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
             throw error;
         }
 
-        queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+        queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
         queryClient.invalidateQueries({ queryKey: ['transactions-for-scan'] });
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
         setSelectedTransactionForEdit(null);
@@ -367,7 +288,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
     const handleUnlinkTransaction = async (tx: Transaction) => {
         try {
-            const { error } = await supabase
+            const { error } = await (supabase as any)
                 .from('transactions')
                 .update({
                     clean_source: null,
@@ -386,7 +307,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
             });
 
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
-            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
             setConfirmingUnlinkId(null);
         } catch (err: any) {
             toast({
@@ -402,7 +323,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
         setIsBulkUpdating(true);
         try {
-            const { error } = await supabase
+            const { error } = await (supabase as any)
                 .from('transactions')
                 .update(updates)
                 .in('id', Array.from(historySelectedIds));
@@ -416,8 +337,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
             setHistorySelectedIds(new Set());
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
-            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
-            queryClient.invalidateQueries({ queryKey: ['merchant_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
         } catch (err: any) {
             toast({
                 title: "Update Failed",
@@ -453,36 +373,26 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
     const handleSaveSourceMapping = async (cleanName: string, pattern: string, selectedIds: string[]) => {
         try {
             // 1. Create the rule
-            const payload: any = {
+            const payload = {
+                account_id: currentAccountId,
                 user_id: user?.id,
-                source_name: pattern,
-                clean_source_name: cleanName,
-                match_mode: 'fuzzy',
-                skip_triage: false, // Mapping only = requires triage for categorization
-                auto_category: '',  // Default to Always Ask
+                match_type: 'source' as const,
+                raw_name: pattern,
+                clean_name: cleanName,
+                match_mode: 'contains' as const,
+                skip_triage: false,
+                auto_category: '', 
                 auto_sub_category: '',
                 auto_recurring: ''
             };
 
-            let { error: ruleError } = await (supabase as any).from('source_rules').insert([payload]);
-
-            if (ruleError && (ruleError.code === '42P01' || ruleError.code === 'PGRST205' || ruleError.message?.includes('not found'))) {
-                const { source_name, clean_source_name, ...fallbackPayload } = payload;
-                const { error: fallbackError } = await (supabase as any)
-                    .from('merchant_rules')
-                    .insert([{
-                        ...fallbackPayload,
-                        merchant_name: pattern,
-                        clean_merchant_name: cleanName
-                    }]);
-                ruleError = fallbackError;
-            }
+            const { error: ruleError } = await (supabase as any).from('classification_rules').insert([payload]);
 
             if (ruleError) throw ruleError;
 
             // 2. Apply to selected transactions
             if (selectedIds.length > 0) {
-                const { error: updateError } = await supabase
+                const { error: updateError } = await (supabase as any)
                     .from('transactions')
                     .update({
                         clean_source: cleanName,
@@ -499,7 +409,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 description: `Created rule for "${pattern}" and updated ${selectedIds.length} transactions.`,
             });
 
-            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['classification-rules'] });
             queryClient.invalidateQueries({ queryKey: ['transactions-for-scan'] });
             setRefiningSource(null);
         } catch (err: any) {
@@ -518,20 +428,16 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
         }
 
         try {
-            // Update source_rules
+            // Update classification_rules
             const { error: rulesError } = await (supabase as any)
-                .from('source_rules')
-                .update({ clean_source_name: newName })
-                .eq('clean_source_name', oldName);
+                .from('classification_rules')
+                .update({ clean_name: newName })
+                .eq('clean_name', oldName);
 
-            // Update merchant_rules (legacy fallback)
-            await (supabase as any)
-                .from('merchant_rules')
-                .update({ clean_merchant_name: newName })
-                .eq('clean_merchant_name', oldName);
+            if (rulesError) throw rulesError;
 
             // Update transactions
-            const { error: txError } = await supabase
+            const { error: txError } = await (supabase as any)
                 .from('transactions')
                 .update({ clean_source: newName })
                 .eq('clean_source', oldName);
@@ -539,7 +445,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
             if (txError) throw txError;
 
             toast({ title: "Source Renamed", description: `Renamed "${oldName}" to "${newName}" and updated associated transactions.` });
-            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             setRenamingGroup(null);
         } catch (err: any) {
@@ -549,18 +455,12 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
-            let { data, error } = await (supabase as any).from('source_rules').delete().eq('id', id).select();
-
-            // Fallback if no records deleted
-            if (((!data || data.length === 0) && !error) || (error && (error.code === '42P01' || error.code === 'PGRST205' || error.message?.includes('not found')))) {
-                error = (await (supabase as any).from('merchant_rules').delete().eq('id', id)).error;
-            }
-
+            const { error } = await (supabase as any).from('classification_rules').delete().eq('id', id);
             if (error) throw error;
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
-            toast({ title: "Rule Deleted", description: "The source rule has been removed." });
+            queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
+            toast({ title: "Rule Deleted", description: "The classification rule has been removed." });
         },
         onError: (error: any) => {
             toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -569,23 +469,15 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
     const deleteGroupMutation = useMutation({
         mutationFn: async (groupName: string) => {
-            // Delete from source_rules
-            const { error: error1 } = await (supabase as any)
-                .from('source_rules')
+            const { error } = await (supabase as any)
+                .from('classification_rules')
                 .delete()
-                .eq('clean_source_name', groupName);
+                .eq('clean_name', groupName);
 
-            // Delete from merchant_rules (legacy)
-            const { error: error2 } = await (supabase as any)
-                .from('merchant_rules')
-                .delete()
-                .eq('clean_merchant_name', groupName);
-
-            if (error1 && error1.code !== '42P01') throw error1;
-            if (error2 && error2.code !== '42P01') throw error2;
+            if (error) throw error;
         },
         onSuccess: (_, groupName) => {
-            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
             toast({ title: "Source Deleted", description: `All rules for "${groupName}" have been removed.` });
         },
         onError: (error: any) => {
@@ -1538,7 +1430,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                             onSave={handleSaveSourceMapping}
                                             onCancel={() => setRefiningSource(null)}
                                             onUpdateNote={async (id, notes) => {
-                                                const { error } = await supabase.from('transactions').update({ notes }).eq('id', id);
+                                                const { error } = await (supabase as any).from('transactions').update({ notes }).eq('id', id);
                                                 if (error) throw error;
                                                 queryClient.invalidateQueries({ queryKey: ['transactions'] });
                                             }}

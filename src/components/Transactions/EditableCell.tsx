@@ -15,6 +15,7 @@ import { APP_STATUSES, useSettings } from '@/hooks/useSettings';
 import { useCategorySource, useUnifiedCategoryActions } from '@/hooks/useBudgetCategories';
 import { CategorySelector } from '@/components/Budget/CategorySelector';
 import { useProfile } from '@/contexts/ProfileContext';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 import { SmartSelector } from '@/components/ui/smart-selector';
 import { formatCurrency, formatDate, formatBudgetMonth } from '@/lib/formatUtils';
 import { addMonths, startOfMonth, format, parseISO } from 'date-fns';
@@ -46,6 +47,7 @@ export const EditableCell = ({
 }: EditableCellProps) => {
   const { settings } = useSettings();
   const { userProfile } = useProfile();
+  const { currentAccountId } = useAuth();
   const { addCategory, addSubCategory } = useUnifiedCategoryActions();
   const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
   const { transactions } = useTransactionTable();
@@ -56,17 +58,18 @@ export const EditableCell = ({
   const [pendingStatusSelection, setPendingStatusSelection] = useState<string | null>(null);
 
   const { data: sourceRule } = useQuery({
-    queryKey: ['source_rule', transaction.clean_source],
+    queryKey: ['classification_rule', transaction.clean_source, currentAccountId],
     queryFn: async () => {
       if (!transaction.clean_source) return null;
       const { data } = await supabase
-        .from('source_rules')
+        .from('classification_rules')
         .select('*')
-        .eq('clean_source_name', transaction.clean_source)
+        .eq('account_id', currentAccountId)
+        .eq('clean_name', transaction.clean_source)
         .maybeSingle();
       return data;
     },
-    enabled: isEditing && field === 'category' && !!transaction.clean_source
+    enabled: isEditing && field === 'category' && !!transaction.clean_source && !!currentAccountId
   });
 
   // Sync local value when external value changes

@@ -41,7 +41,7 @@ export const SourceApplyDialog = ({
     minimal = true
 }: SourceApplyDialogProps) => {
     const { settings } = useSettings();
-    const { user } = useAuth();
+    const { user, currentAccountId } = useAuth();
     const queryClient = useQueryClient();
     const { categories, subCategories } = useCategorySource();
 
@@ -68,45 +68,18 @@ export const SourceApplyDialog = ({
                 .eq('name', targetSourceName)
                 .maybeSingle();
 
-            // 2. Check New Rule Table
-            const { data: sourceRule, error: sourceError } = await supabase
-                .from('source_rules')
+            // 2. Check classification_rules
+            const { data: classificationRule, error: ruleError } = await (supabase as any)
+                .from('classification_rules')
                 .select('*')
-                .eq('clean_source_name', targetSourceName)
+                .eq('account_id', currentAccountId)
+                .eq('clean_name', targetSourceName)
                 .limit(1)
                 .maybeSingle();
 
-            if (sourceError) throw sourceError;
+            if (ruleError) throw ruleError;
 
-            let finalRule = sourceRule;
-
-            // 3. Check Legacy Table if no new rule
-            if (!finalRule) {
-                const { data: merchantRule, error: merchantError } = await (supabase as any)
-                    .from('merchant_rules')
-                    .select('*')
-                    .eq('clean_merchant_name', targetSourceName)
-                    .limit(1)
-                    .maybeSingle();
-
-                if (merchantError) throw merchantError;
-
-                if (merchantRule) {
-                    finalRule = {
-                        id: merchantRule.id,
-                        clean_source_name: merchantRule.clean_merchant_name,
-                        source_name: merchantRule.merchant_name,
-                        auto_category: merchantRule.auto_category,
-                        auto_sub_category: merchantRule.auto_sub_category,
-                        // Legacy values might still be here, but we prefer 'sources' table
-                        auto_planned: merchantRule.auto_planned,
-                        auto_budget: merchantRule.auto_budget,
-                        match_mode: merchantRule.match_mode || 'fuzzy'
-                    };
-                }
-            }
-
-            return { rule: finalRule, sourceSettings };
+            return { rule: classificationRule, sourceSettings };
         },
         enabled: open && !!targetSourceName
     });
@@ -168,7 +141,7 @@ export const SourceApplyDialog = ({
                 .from('sources')
                 .upsert({
                     user_id: user.id,
-                    name: combinedData?.rule?.clean_source_name || targetSourceName,
+                    name: combinedData?.rule?.clean_name || targetSourceName,
                     recurring: activeRecurring,
                     is_auto_complete: false // FORCE DISABLE: Auto-complete system-wide disable
                 }, { onConflict: 'user_id, name' });
@@ -176,19 +149,30 @@ export const SourceApplyDialog = ({
             if (sourceError) throw sourceError;
 
             // 2. Save Rule
+            const cleanNameValue = combinedData?.rule?.clean_name || targetSourceName;
             const newRulePayload: any = {
-                source_name: cleanSource(transaction.source, settings.noiseFilters),
-                clean_source_name: combinedData?.rule?.clean_source_name || targetSourceName,
-                auto_category: activeCategory,        // Use edited value
-                auto_sub_category: activeSubCategory, // Use edited value
-                auto_planned: !isUnplanned,           // Use edited value
+                account_id: currentAccountId,
                 user_id: user.id,
-                auto_budget: isExcluded ? 'Exclude' : null
+                match_type: 'source',
+                raw_name: cleanSource(transaction.source, settings.noiseFilters),
+                clean_name: cleanNameValue,
+                auto_category: activeCategory,
+                auto_sub_category: activeSubCategory,
+                auto_planned: !isUnplanned,
+                auto_budget: isExcluded ? 'Exclude' : null,
+                match_mode: 'contains'
             };
 
-            const { error: ruleError } = await supabase
-                .from('source_rules')
-                .upsert([newRulePayload], { onConflict: 'user_id, source_name' });
+            let ruleError: any;
+            if (combinedData?.rule?.id) {
+                const { error } = await (supabase as any)
+                    .from('classification_rules').update(newRulePayload).eq('id', combinedData.rule.id);
+                ruleError = error;
+            } else {
+                const { error } = await (supabase as any)
+                    .from('classification_rules').insert([newRulePayload]);
+                ruleError = error;
+            }
 
             if (ruleError) {
                 console.error("Rule creation failed:", ruleError);
@@ -196,9 +180,9 @@ export const SourceApplyDialog = ({
             }
 
             const updates: any = {
-                clean_source: combinedData?.rule?.clean_source_name || targetSourceName,
+                clean_source: combinedData?.rule?.clean_name || targetSourceName,
                 // COMPATIBILITY: Ensure legacy clean_merchant is also set for Pending Action queries
-                clean_merchant: combinedData?.rule?.clean_source_name || targetSourceName,
+                clean_merchant: combinedData?.rule?.clean_name || targetSourceName,
                 category: activeCategory,
                 sub_category: activeSubCategory,
                 recurring: activeRecurring,

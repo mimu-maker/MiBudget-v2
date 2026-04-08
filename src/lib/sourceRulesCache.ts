@@ -1,13 +1,16 @@
-import type { SourceRule } from '@/lib/importBrain';
+import type { ClassificationRule } from '@/lib/importBrain';
 
-const RULES_CACHE_KEY = 'source_rules_cache_v1';
+// Clear stale cache on upgrade
+localStorage.removeItem('source_rules_cache_v1');
+
+const RULES_CACHE_KEY = 'classification_rules_cache_v2';
 
 export interface CachedRulesSnapshot {
     timestamp: number;
-    rules: SourceRule[];
+    rules: ClassificationRule[];
 }
 
-export const saveRulesCache = (rules: SourceRule[]): CachedRulesSnapshot | null => {
+export const saveRulesCache = (rules: ClassificationRule[]): CachedRulesSnapshot | null => {
     try {
         const payload: CachedRulesSnapshot = {
             timestamp: Date.now(),

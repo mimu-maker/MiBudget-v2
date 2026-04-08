@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { processTransaction, SourceRule } from '@/lib/importBrain';
+import { processTransaction, ClassificationRule } from '@/lib/importBrain';
 import { getCachedRules, saveRulesCache } from '@/lib/sourceRulesCache';
 import { parseDate, parseAmount, fuzzyMatchField } from '@/lib/importUtils';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -102,37 +102,18 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
     });
 
     const { data: rulesData, isLoading: isLoadingRules } = useQuery({
-        queryKey: ['source_rules_mapping'],
+        queryKey: ['classification_rules_mapping'],
         queryFn: async () => {
-            // Fetch both source_rules and source_rules (legacy: merchant_rules) in parallel
-            // This ensures we get ALL rules regardless of migration status or RLS issues on one table
-            const [sourceRes, merchantRes] = await Promise.allSettled([
-                (supabase as any).from('source_rules').select('*'),
-                (supabase as any).from('merchant_rules').select('*')
-            ]);
+            const { data, error } = await supabase
+                .from('classification_rules')
+                .select('*');
 
-            let rules: any[] = [];
-
-            // 1. New Rules
-            if (sourceRes.status === 'fulfilled' && sourceRes.value.data) {
-                rules.push(...sourceRes.value.data);
+            if (error) {
+                console.warn("Failed to fetch classification_rules:", error);
+                return [];
             }
 
-            // 2. Legacy Rules (mapped)
-            if (merchantRes.status === 'fulfilled' && merchantRes.value.data) {
-                const legacyRules = merchantRes.value.data.map((r: any) => ({
-                    ...r,
-                    // Map legacy to new schema for the processor
-                    // Handle potential column variations
-                    source_name: r.merchant || r.merchant_name,
-                    clean_source_name: r.clean_merchant_name || r.name,
-                    // Ensure keys match what processTransaction expects
-                    id: r.id
-                }));
-                rules.push(...legacyRules);
-            }
-
-            return rules;
+            return data as ClassificationRule[];
         },
         staleTime: 5 * 60 * 1000
     });
@@ -363,7 +344,7 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                     const processed = processTransaction(
                         identificationString,
                         transaction.date,
-                        rules as SourceRule[],
+                        rules as ClassificationRule[],
                         settings.noiseFilters,
                         sourceSettings
                     );

@@ -49,7 +49,7 @@ interface SelectedRule {
 export const ValidationDashboard = () => {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { user, currentAccountId } = useAuth();
     const { userProfile } = useProfile();
     const { settings } = useSettings();
     const currentYear = new Date().getFullYear();
@@ -347,23 +347,25 @@ export const ValidationDashboard = () => {
             }
 
             // 2. Save Rule
-            let { error } = await supabase
-                .from('source_rules')
-                .upsert([{
+            let { error } = await (supabase as any)
+                .from('classification_rules')
+                .insert([{
+                    account_id: currentAccountId,
                     user_id: user?.id,
-                    source_name: name,
-                    clean_source_name: clean_source || name,
+                    match_type: 'source',
+                    raw_name: name,
+                    clean_name: clean_source || name,
                     auto_category: category,
                     auto_sub_category: sub_category,
                     auto_planned: auto_planned,
                     auto_budget: auto_budget,
-                    match_mode: match_mode || 'fuzzy'
-                }], { onConflict: 'user_id, source_name' });
+                    match_mode: match_mode === 'fuzzy' ? 'contains' : (match_mode || 'contains')
+                }]);
 
             if (error) throw error;
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['classification-rules'] });
             queryClient.invalidateQueries({ queryKey: ['sources'] }); // Invalidate sources
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names-ranked'] });

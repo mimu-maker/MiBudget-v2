@@ -171,13 +171,34 @@ const { data: rules } = await supabase
 
 ---
 
-## Validation Checklist (for Claude to verify after Gemini builds)
+## Validation Checklist
 
-- [ ] Migration ran cleanly; row counts in `classification_rules` = sum of old tables
-- [ ] RLS policy uses `get_my_account_id()` not `auth.uid()`
-- [ ] Import flow correctly applies rules from the unified table
-- [ ] SourceManager CRUD creates/updates/deletes `classification_rules` rows
-- [ ] `match_type` shown in the UI so users can distinguish merchant vs source rules
-- [ ] Old tables (`merchant_rules`, `source_rules`) are dropped in a follow-on migration
-- [ ] No TypeScript errors (`npm run build` clean)
+- [x] Migration ran cleanly (`202604072240_phase3a_create_classification_rules.sql` applied 2026-04-08)
+- [x] RLS policy uses `get_my_account_id()` not `auth.uid()`
+- [x] Import flow correctly applies rules from the unified table (`importBrain.ts` updated)
+- [x] SourceManager CRUD creates/updates/deletes `classification_rules` rows
+- [x] No TypeScript errors (`npm run build` clean)
+- [ ] Old tables (`merchant_rules`, `source_rules`) are dropped — Phase 3b migration ready but not yet applied
 - [ ] Demo account reset seeds include `classification_rules` rows (update `demo_seed_*` tables)
+- [ ] `match_type` shown in the UI so users can distinguish merchant vs source rules
+
+---
+
+## Post-Migration Notes (2026-04-08)
+
+**Data loss incident**: `source_rules` and `merchant_rules` were empty in the DB — rules had been stored exclusively in browser localStorage under `source_rules_cache_v1`. Gemini's cache migration code added `localStorage.removeItem('source_rules_cache_v1')`, which deleted all rules on first page load after deployment.
+
+**Recovery**: 186 rules reconstructed from transaction history by querying the dominant `category/sub_category` per `clean_source` across completed (non-triage) transactions.
+
+**Lesson for future cache migrations**: Never `removeItem` the old key until the new key is confirmed populated. Prefer a lazy migration: read old key → write to new key → remove old.
+
+---
+
+## Remaining Work (Phase 3b)
+
+Apply `202604072241_phase3b_drop_old_rule_tables.sql` once frontend is confirmed stable:
+```sql
+DROP TABLE IF EXISTS merchant_rules;
+DROP TABLE IF EXISTS source_rules;
+```
+Also remove `source_rules` type from `src/integrations/supabase/types.ts`.

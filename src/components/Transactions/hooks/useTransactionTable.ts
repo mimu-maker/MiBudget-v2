@@ -574,35 +574,19 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
   });
 
   const { data: sourceRules = [] } = useQuery({
-    queryKey: ['source-rules-simple'],
+    queryKey: ['classification-rules', currentAccountId],
     queryFn: async () => {
-      // Fetch from both tables in parallel to ensure we get all rules (new + legacy)
-      const [sourceRes, merchantRes] = await Promise.allSettled([
-        (supabase as any).from('source_rules').select('clean_source_name'),
-        (supabase as any).from('merchant_rules').select('clean_merchant_name')
-      ]);
+      const { data, error } = await (supabase as any)
+        .from('classification_rules')
+        .select('clean_name')
+        .eq('account_id', currentAccountId);
 
-      const rules = new Map<string, any>();
-
-      // 1. New Rules (Primary)
-      if (sourceRes.status === 'fulfilled' && sourceRes.value.data) {
-        sourceRes.value.data.forEach((r: any) => {
-          if (r.clean_source_name) {
-            rules.set(r.clean_source_name, { clean_source_name: r.clean_source_name });
-          }
-        });
+      if (error || !data) {
+        console.warn("Classification rules fetch failed:", error?.message);
+        return [];
       }
 
-      // 2. Legacy Rules (Fallback)
-      if (merchantRes.status === 'fulfilled' && merchantRes.value.data) {
-        merchantRes.value.data.forEach((r: any) => {
-          if (r.clean_merchant_name && !rules.has(r.clean_merchant_name)) {
-            rules.set(r.clean_merchant_name, { clean_source_name: r.clean_merchant_name });
-          }
-        });
-      }
-
-      return Array.from(rules.values());
+      return data.map(r => ({ clean_source_name: r.clean_name }));
     },
     staleTime: 1000 * 60 * 60 * 24, // Keep 24h
     gcTime: 1000 * 60 * 60 * 24 // Keep 24h
@@ -1223,8 +1207,11 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       await (supabase as any).from('transactions').delete().eq('user_id', userId);
 
       // 2. Rules
-      await (supabase as any).from('source_rules').delete().eq('user_id', userId);
-      await (supabase as any).from('merchant_rules').delete().eq('user_id', userId);
+      if (currentAccountId) {
+        await (supabase as any).from('classification_rules').delete().eq('account_id', currentAccountId);
+      } else {
+        await (supabase as any).from('classification_rules').delete().eq('user_id', userId);
+      }
 
       // 3. Budgets & Categories (Cascading deletes should handle sub-resources)
       await (supabase as any).from('budget_category_limits').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Clean limits first if possible, or rely on cascade
@@ -1258,20 +1245,17 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
         .update({ planned: true })
         .eq('user_id', userId);
 
-      // 2. Update all source rules
-      await (supabase as any)
-        .from('source_rules')
-        .update({ auto_planned: true })
-        .eq('user_id', userId);
-
-      // 3. Update legacy merchant rules if they exist
-      try {
+      // 2. Update all classification rules
+      if (currentAccountId) {
         await (supabase as any)
-          .from('merchant_rules')
+          .from('classification_rules')
+          .update({ auto_planned: true })
+          .eq('account_id', currentAccountId);
+      } else {
+        await (supabase as any)
+          .from('classification_rules')
           .update({ auto_planned: true })
           .eq('user_id', userId);
-      } catch (e) {
-        // Ignore if Table doesn't exist
       }
 
       await queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });

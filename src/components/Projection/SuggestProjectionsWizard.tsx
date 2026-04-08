@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { useAnnualBudget } from '@/hooks/useAnnualBudget';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 import React, { useMemo } from 'react';
 
 interface Suggestion {
@@ -38,6 +39,7 @@ interface SuggestProjectionsWizardProps {
 
 const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestProjectionsWizardProps) => {
     const { settings } = useSettings();
+    const { currentAccountId, user: authUser } = useAuth();
     const { data: cleanSourcesData = [] } = useSources();
     const { budget } = useAnnualBudget(new Date().getFullYear());
     const [loading, setLoading] = useState(false);
@@ -209,17 +211,20 @@ const SuggestProjectionsWizard = ({ open, onClose, onAddProjections }: SuggestPr
                 // Continue to save rules anyway, but log the error
             }
 
-            // 2b. Save Rules into 'source_rules' table
+            // 2b. Save Rules into classification_rules
             const payload = rulesToSave.map(s => ({
-                source_name: s.rawSource,
-                clean_source_name: s.source || s.rawSource,
+                account_id: currentAccountId,
+                user_id: authUser?.id || userData.user?.id,
+                match_type: 'source',
+                raw_name: s.rawSource,
+                clean_name: s.source || s.rawSource,
                 auto_category: s.category,
                 auto_sub_category: s.subCategory,
                 auto_planned: true,
-                user_id: userData.user?.id
+                match_mode: 'contains'
             }));
 
-            await supabase.from('source_rules').insert(payload);
+            await (supabase as any).from('classification_rules').insert(payload);
         }
 
         onAddProjections(toAdd);

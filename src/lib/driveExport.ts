@@ -18,7 +18,7 @@ export interface BackupData {
 /**
  * Gathers all user data into a single JSON object for backup
  */
-export async function generateBackupData(userId: string): Promise<BackupData> {
+export async function generateBackupData(userId: string, accountId?: string): Promise<BackupData> {
     const backup: BackupData = {
         version: "1.0",
         timestamp: new Date().toISOString(),
@@ -57,8 +57,8 @@ export async function generateBackupData(userId: string): Promise<BackupData> {
         const { data: sources } = await supabase.from('sources').select('*').eq('user_id', userId);
         backup.sources = sources || [];
 
-        const { data: sourceRules } = await supabase.from('source_rules').select('*').eq('user_id', userId);
-        backup.sourceRules = sourceRules || [];
+        const { data: classificationRules } = await (supabase as any).from('classification_rules').select('*').eq('account_id', accountId || userId);
+        backup.sourceRules = classificationRules || [];
 
         // 5. Transactions
         const { data: transactions } = await supabase.from('transactions').select('*').eq('user_id', userId);

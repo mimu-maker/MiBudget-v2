@@ -39,7 +39,7 @@ export const SourceResolveDialog = ({
     const open = isControlled ? controlledOpen : internalOpen;
     const setOpen = isControlled ? setControlledOpen! : setInternalOpen;
 
-    const { user } = useAuth();
+    const { user, currentAccountId } = useAuth();
     const queryClient = useQueryClient();
     const { toast } = useToast();
     const { settings } = useSettings();
@@ -64,7 +64,8 @@ export const SourceResolveDialog = ({
         sub_category: transaction.sub_category && transaction.sub_category !== 'Uncategorized' ? transaction.sub_category : '',
         auto_planned: true, // Auto-planned default (Unplanned OFF)
         auto_exclude: transaction.excluded || false,
-        match_mode: 'fuzzy'
+        match_mode: 'fuzzy',
+        secondary_categories: []
     });
 
     // Separate source-level settings
@@ -82,7 +83,8 @@ export const SourceResolveDialog = ({
                 sub_category: transaction.sub_category && transaction.sub_category !== 'Uncategorized' ? transaction.sub_category : '',
                 auto_planned: true, // Auto-planned default (Unplanned OFF)
                 auto_exclude: transaction.excluded || false,
-                match_mode: 'fuzzy'
+                match_mode: 'fuzzy',
+                secondary_categories: []
             });
             setSourceSettings({
                 recurring: transaction.recurring || 'N/A',
@@ -94,7 +96,7 @@ export const SourceResolveDialog = ({
     const addRuleMutation = useMutation({
         mutationFn: async ({ rule, selectedIds, settings }: { rule: SourceRuleState, selectedIds: string[], settings: { recurring: string, is_auto_complete: boolean } }) => {
             // 1. Save Source Settings (Centralized)
-            const { error: sourceError } = await supabase
+            const { error: sourceError } = await (supabase as any)
                 .from('sources')
                 .upsert({
                     user_id: user?.id,
@@ -106,44 +108,22 @@ export const SourceResolveDialog = ({
             if (sourceError) throw sourceError;
 
             // 2. Create the rule
-            // Unified internal rule representation
-            const sourceRuleData = {
+            const ruleData = {
+                account_id: currentAccountId,
                 user_id: user?.id,
-                source_name: rule.raw_name,
-                clean_source_name: rule.name,
+                match_type: 'source' as const,
+                raw_name: rule.raw_name,
+                clean_name: rule.name,
                 auto_category: rule.category,
                 auto_sub_category: rule.sub_category,
                 auto_planned: rule.auto_planned,
-                match_mode: rule.match_mode || 'fuzzy',
-                // Handle auto_budget correctly
+                match_mode: rule.match_mode || 'contains',
                 auto_budget: rule.auto_exclude ? 'Exclude' : 'Budgeted'
             };
 
-            // Try source_rules first
-            let { error: ruleError } = await (supabase as any)
-                .from('source_rules')
-                .upsert([sourceRuleData], { onConflict: 'user_id, source_name' });
-
-            if (ruleError && (ruleError.code === '42P01' || ruleError.code === 'PGRST205' || ruleError.code === 'PGRST204' || ruleError.message?.includes('not found') || ruleError.message?.includes('column'))) {
-                console.log("source_rules issues, falling back to merchant_rules");
-
-                // Legacy schema mapping
-                const fallbackPayload = {
-                    user_id: user?.id,
-                    merchant_name: rule.raw_name,
-                    clean_merchant_name: rule.name,
-                    auto_category: rule.category,
-                    auto_sub_category: rule.sub_category,
-                    auto_planned: rule.auto_planned,
-                    match_mode: rule.match_mode || 'fuzzy',
-                    auto_budget: rule.auto_exclude ? 'Exclude' : 'Budgeted'
-                };
-
-                const { error: fallbackError } = await (supabase as any)
-                    .from('merchant_rules')
-                    .upsert([fallbackPayload], { onConflict: 'user_id, merchant_name' });
-                ruleError = fallbackError;
-            }
+            const { error: ruleError } = await (supabase as any)
+                .from('classification_rules')
+                .upsert([ruleData], { onConflict: 'account_id, raw_name' });
 
             if (ruleError) throw ruleError;
 
@@ -198,10 +178,9 @@ export const SourceResolveDialog = ({
             }
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['sources'] }); // Invalidate sources too!
-            queryClient.invalidateQueries({ queryKey: ['source_rules'] });
-            queryClient.invalidateQueries({ queryKey: ['merchant_rules'] });
-            queryClient.invalidateQueries({ queryKey: ['source-rules-simple'] });
+            queryClient.invalidateQueries({ queryKey: ['sources'] });
+            queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['classification-rules'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names-ranked'] });
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
