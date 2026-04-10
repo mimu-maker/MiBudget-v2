@@ -4,16 +4,22 @@ import { Button } from '@/components/ui/button';
 import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
-import { Trash2, AlertTriangle, RefreshCcw } from 'lucide-react';
+import { Trash2, AlertTriangle, RefreshCcw, ShieldOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
+
+const DEMO_ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
 
 export const EmergencyDataManagement = () => {
+    const { currentAccountId } = useAuth();
+    const isDemo = currentAccountId === DEMO_ACCOUNT_ID;
     const { clearAllTransactions, factoryReset, fixUnplannedStatus, purgeSoftDeletedTransactions } = useTransactionTable();
     const [confirmText, setConfirmText] = useState('');
     const [isResetting, setIsResetting] = useState(false);
     const { toast } = useToast();
 
     const handleClearTransactions = async () => {
+        if (isDemo) { toast({ title: "Demo Account", description: "Data management is disabled for the demo account.", variant: "destructive" }); return; }
         if (confirm("Are you sure you want to delete ALL transactions? This will keep your rules and categories, but remove all imported data.")) {
             setIsResetting(true);
             try {
@@ -28,6 +34,7 @@ export const EmergencyDataManagement = () => {
     };
 
     const handlePurgeSoftDeleted = async () => {
+        if (isDemo) { toast({ title: "Demo Account", description: "Data management is disabled for the demo account.", variant: "destructive" }); return; }
         if (confirm("Are you sure you want to PERMANENTLY delete all soft-deleted (excluded) transactions? This action cannot be undone.")) {
             setIsResetting(true);
             try {
@@ -42,6 +49,7 @@ export const EmergencyDataManagement = () => {
     };
 
     const handleFactoryReset = async () => {
+        if (isDemo) { toast({ title: "Demo Account", description: "Data management is disabled for the demo account.", variant: "destructive" }); return; }
         if (confirmText !== 'DELETE') return;
 
         if (confirm("FINAL WARNING: This will wipe EVERYTHING. Transactions, rules, categories, budgets. You will start from scratch. Are you sure?")) {
@@ -58,6 +66,15 @@ export const EmergencyDataManagement = () => {
 
     return (
         <div className="space-y-8">
+            {isDemo && (
+                <Alert className="border-blue-200 bg-blue-50">
+                    <ShieldOff className="h-4 w-4 text-blue-600" />
+                    <AlertTitle className="text-blue-800 font-bold">Demo Account</AlertTitle>
+                    <AlertDescription className="text-blue-700">
+                        Data management actions are disabled for the demo account. Data resets automatically on each login.
+                    </AlertDescription>
+                </Alert>
+            )}
             <Card className="border-amber-200 shadow-sm bg-white">
                 <CardHeader className="pb-4 border-b bg-amber-50/50">
                     <CardTitle className="text-lg font-semibold text-amber-800 flex items-center gap-2">

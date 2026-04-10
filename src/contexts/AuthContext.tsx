@@ -189,6 +189,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Demo sign in failed:', error);
       return error.message;
     }
+    // Always reset demo data on login so every session starts clean
+    try {
+      await supabase.rpc('reset_demo_account');
+    } catch (e) {
+      console.warn('Demo reset failed (non-fatal):', e);
+    }
     return null;
   };
 
