@@ -32,7 +32,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/UnifiedAuthContext';
 
 const Projection = () => {
-  const { user, isLocalAuth } = useAuth();
+  const { user, isLocalAuth, currentAccountId } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { settings } = useSettings();
