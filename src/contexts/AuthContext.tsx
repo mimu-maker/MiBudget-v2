@@ -32,6 +32,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [userProfile, setUserProfile] = useState<any | null>(null);
+  const [currentAccount, setCurrentAccount] = useState<any | null>(null);
   const [currentAccountId, setCurrentAccountId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionConflict, setSessionConflict] = useState(false);
@@ -52,12 +53,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await signOut();
   });
 
-  const updateProfileAndAccount = (profile: any) => {
+  const updateProfileAndAccount = async (profile: any) => {
     setUserProfile(profile);
     if (profile?.current_account_id) {
       setCurrentAccountId(profile.current_account_id);
+      // Fetch account details (for currency etc)
+      const { data: account } = await supabase
+        .from('accounts' as any)
+        .select('*')
+        .eq('id', profile.current_account_id)
+        .maybeSingle();
+      setCurrentAccount(account);
     } else {
       setCurrentAccountId(null);
+      setCurrentAccount(null);
     }
   };
 
@@ -85,7 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (session?.user?.email) {
           const profile = await fetchUserProfile(session.user.id, session.user.email);
-          updateProfileAndAccount(profile);
+          await updateProfileAndAccount(profile);
 
           if (session.user.app_metadata?.provider === 'google' && !isEmailAllowed(session.user.email || '')) {
             await supabase.auth.signOut();
@@ -118,7 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             supabase.removeChannel(channel);
           };
         } else {
-          updateProfileAndAccount(null);
+          await updateProfileAndAccount(null);
         }
         setLoading(false);
       }
@@ -129,7 +138,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(session?.user ?? null);
       if (session?.user?.email) {
         const profile = await fetchUserProfile(session.user.id, session.user.email);
-        updateProfileAndAccount(profile);
+        await updateProfileAndAccount(profile);
       }
       setLoading(false);
     });
@@ -203,7 +212,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await supabase.auth.signOut();
       setUser(null);
       setSession(null);
-      updateProfileAndAccount(null);
+      await updateProfileAndAccount(null);
       window.location.href = '/';
     } catch (error) {
       console.error('Sign out failed:', error);
@@ -229,6 +238,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     user,
     session,
     userProfile,
+    currentAccount,
     currentAccountId,
     loading,
     signInWithGoogle,

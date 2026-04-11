@@ -14,7 +14,7 @@ import { useSettings } from '@/hooks/useSettings';
 export const GeneralSettings = () => {
     const { userProfile, updateUserProfile, loading } = useProfile();
     const { settings, saveSettings } = useSettings();
-    const { user, currentAccountId } = useAuth();
+    const { user, currentAccountId, currentAccount } = useAuth();
     const { toast } = useToast();
     const [saving, setSaving] = useState(false);
     const [backingUp, setBackingUp] = useState(false);
@@ -22,7 +22,7 @@ export const GeneralSettings = () => {
     // Local state for tracking changes
     const [formData, setFormData] = useState({
         language: userProfile?.language || 'en-US',
-        currency: userProfile?.currency || 'DKK',
+        currency: currentAccount?.currency || userProfile?.currency || 'DKK',
         date_format: userProfile?.date_format || 'YY/MM/DD',
         amount_format: userProfile?.amount_format || 'comma_decimal',
         show_time: userProfile?.show_time || false
@@ -31,18 +31,31 @@ export const GeneralSettings = () => {
     const handleSave = async () => {
         setSaving(true);
         try {
-            await updateUserProfile({
+            // 1. Update Profile Settings
+            const profilePromise = updateUserProfile({
                 language: formData.language as 'en-US' | 'da-DK',
-                currency: formData.currency,
                 date_format: formData.date_format as any,
                 amount_format: formData.amount_format as any,
                 show_time: formData.show_time
             });
+
+            // 2. Update Account Currency (if applicable)
+            let accountPromise = Promise.resolve();
+            if (currentAccountId) {
+                accountPromise = supabase
+                    .from('accounts' as any)
+                    .update({ currency: formData.currency } as any)
+                    .eq('id', currentAccountId) as any;
+            }
+
+            await Promise.all([profilePromise, accountPromise]);
+
             toast({
                 title: "Settings Saved",
                 description: "Your localization preferences have been updated.",
             });
         } catch (error) {
+            console.error('Save settings error:', error);
             toast({
                 title: "Error",
                 description: "Failed to save settings. Please try again.",

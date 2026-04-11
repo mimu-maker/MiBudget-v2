@@ -32,6 +32,7 @@ interface UnifiedUserProfile {
 interface UnifiedAuthContextType {
   user: UnifiedUser | null;
   userProfile: UnifiedUserProfile | null;
+  currentAccount: any | null;
   currentAccountId: string | null;
   session: any;
   loading: boolean;
@@ -60,6 +61,7 @@ export const UnifiedAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
   const session = isLocalAuth ? localAuth.session : supabaseAuth.session;
   const loading = isLocalAuth ? localAuth.loading : (supabaseAuth.loading || profileContext.loading);
   const currentAccountId = isLocalAuth ? null : (supabaseAuth as any).currentAccountId || null;
+  const currentAccount = isLocalAuth ? null : (supabaseAuth as any).currentAccount || null;
 
   const signIn = isLocalAuth
     ? localAuth.signIn
@@ -88,6 +90,7 @@ export const UnifiedAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
   const value: UnifiedAuthContextType = {
     user: user as any,
     userProfile: userProfile as any,
+    currentAccount,
     currentAccountId,
     session,
     loading,

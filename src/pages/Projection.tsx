@@ -78,7 +78,7 @@ const Projection = () => {
 
   // 1. Fetch ALL Projections (including Master)
   const { data: allProjectionsRaw = [], isLoading: isLoadingProjections } = useQuery<any[]>({
-    queryKey: ['projections', 'all'],
+    queryKey: ['projections', 'all', currentAccountId],
     queryFn: async () => {
       if (isLocalAuth) {
         const stored = localStorage.getItem('local_projections');
@@ -93,6 +93,7 @@ const Projection = () => {
         localStorage.setItem('local_projections', JSON.stringify(SEED_PROJECTIONS));
         return SEED_PROJECTIONS;
       }
+      
       const { data, error } = await supabase
         .from('projections' as any)
         .select('*')
@@ -125,7 +126,7 @@ const Projection = () => {
 
   // 1.1 Fetch Scenarios
   const { data: scenarios = [] } = useQuery<any[]>({
-    queryKey: ['scenarios'],
+    queryKey: ['scenarios', currentAccountId],
     queryFn: async () => {
       if (isLocalAuth) {
         return [
@@ -136,10 +137,12 @@ const Projection = () => {
       const { data, error } = await supabase
         .from('scenarios')
         .select('*')
+        .eq('account_id', currentAccountId) // Explicit filter for shared account scoping
         .order('created_at', { ascending: true });
       if (error) throw error;
       return data || [];
-    }
+    },
+    enabled: !!currentAccountId || isLocalAuth
   });
 
   // 2. Fetch Actual Transactions (Complete only, last 13 months for averages)
@@ -466,6 +469,7 @@ const Projection = () => {
         ...rest,
         merchant: source || rest.merchant,
         user_id: userData.user.id,
+        account_id: currentAccountId,
         scenario_id: activeScenarioId || null
       };
 
@@ -509,6 +513,7 @@ const Projection = () => {
           ...rest,
           merchant: source,
           user_id: userData.user?.id,
+          account_id: currentAccountId,
           scenario_id: activeScenarioId || null
         };
       });

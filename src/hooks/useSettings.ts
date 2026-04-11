@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useProfile } from '@/contexts/ProfileContext';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 
 export interface CategoryConfig {
     description?: string;
@@ -62,12 +62,14 @@ export const APP_STATUSES = ['Pending Triage', 'Pending Reconciliation', 'Reconc
 const STORAGE_KEY = 'financeSettings';
 
 export const useSettings = () => {
-    const { userProfile } = useProfile();
+    const { currentAccount } = useAuth();
     const [rawSettings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
     const [loading, setLoading] = useState(true);
 
-    const isDemo = userProfile?.user_id === '00000000-0000-0000-0000-000000000002';
-    const settings = isDemo ? { ...rawSettings, currency: 'USD' } : rawSettings;
+    const settings = { 
+        ...rawSettings, 
+        currency: currentAccount?.currency || rawSettings.currency || 'DKK' 
+    };
 
     useEffect(() => {
         const stored = localStorage.getItem(STORAGE_KEY);
