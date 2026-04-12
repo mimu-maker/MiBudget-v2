@@ -552,7 +552,7 @@ export const UnifiedCategoryManager = () => {
                             <tr className="text-[11px] uppercase text-slate-500 font-bold tracking-widest">
                                 <th className="py-4 px-6 w-14 text-center"></th>
                                 <th className="py-4 px-6">{customHeader || "Category"}</th>
-                                {showLabels && <th className="py-4 px-4 w-40">Label</th>}
+                                {showLabels && <th className="py-4 px-4 w-40">Expense Type</th>}
                                 {budgets.map(budget => (
                                     <th key={budget.id} className="py-4 px-4 text-center w-32 border-l border-slate-50">
                                         <div className="flex flex-col items-center">
@@ -631,15 +631,15 @@ export const UnifiedCategoryManager = () => {
                                                             if (hasSupabaseCategories && catRecord) {
                                                                 updateCategoryLabel.mutate(
                                                                     { categoryId: catRecord.id, label: val === 'none' ? null : val as any },
-                                                                    { onError: () => toast({ title: "Failed to set label", variant: "destructive" }) }
+                                                                    { onError: () => toast({ title: "Failed to set expense type", variant: "destructive" }) }
                                                                 )
                                                             }
                                                         }}>
                                                             <SelectTrigger className="w-32 h-8 text-[11px] border-slate-200 bg-white">
-                                                                <SelectValue placeholder="No label" />
+                                                                <SelectValue placeholder="No type" />
                                                             </SelectTrigger>
                                                             <SelectContent>
-                                                                <SelectItem value="none" className="text-[11px] text-slate-400">No label</SelectItem>
+                                                                <SelectItem value="none" className="text-[11px] text-slate-400">No type</SelectItem>
                                                                 <SelectItem value="Fixed Committed" className="text-[11px]">Fixed Committed</SelectItem>
                                                                 <SelectItem value="Variable Essential" className="text-[11px]">Variable Essential</SelectItem>
                                                                 <SelectItem value="Discretionary" className="text-[11px]">Discretionary</SelectItem>
@@ -734,15 +734,15 @@ export const UnifiedCategoryManager = () => {
                                                                 if (hasSupabaseCategories && subRecord) {
                                                                     updateSubCategoryLabel.mutate(
                                                                         { subCategoryId: subRecord.id, label: val === 'none' ? null : val as any },
-                                                                        { onError: () => toast({ title: "Failed to set label", variant: "destructive" }) }
+                                                                        { onError: () => toast({ title: "Failed to set expense type", variant: "destructive" }) }
                                                                     )
                                                                 }
                                                             }}>
                                                                 <SelectTrigger className="w-32 h-8 text-[11px] border-slate-200 bg-white">
-                                                                    <SelectValue placeholder="No label" />
+                                                                    <SelectValue placeholder="No type" />
                                                                 </SelectTrigger>
                                                                 <SelectContent>
-                                                                    <SelectItem value="none" className="text-[11px] text-slate-400">No label</SelectItem>
+                                                                    <SelectItem value="none" className="text-[11px] text-slate-400">No type</SelectItem>
                                                                     <SelectItem value="Fixed Committed" className="text-[11px]">Fixed Committed</SelectItem>
                                                                     <SelectItem value="Variable Essential" className="text-[11px]">Variable Essential</SelectItem>
                                                                     <SelectItem value="Discretionary" className="text-[11px]">Discretionary</SelectItem>
