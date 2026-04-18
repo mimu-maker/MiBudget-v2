@@ -5,7 +5,6 @@ import { DeviceTrustDialog } from '@/components/Auth/DeviceTrustDialog';
 import { useDeviceTrust } from '@/hooks/useDeviceTrust';
 import { useSessionTimer } from '@/hooks/useSessionTimer';
 import { isEmailAllowed, getMasterEmail, isHouseholdEmail } from '@/lib/authUtils';
-import { SessionConflictDialog } from '@/components/Auth/SessionConflictDialog';
 
 interface AuthContextType {
   user: User | null;
@@ -35,8 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentAccount, setCurrentAccount] = useState<any | null>(null);
   const [currentAccountId, setCurrentAccountId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [sessionConflict, setSessionConflict] = useState(false);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const initialLoadRef = React.useRef(true);
 
   const {
     showDeviceTrustDialog,
@@ -89,47 +87,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        const isFocusEvent = event === 'TOKEN_REFRESHED' && !initialLoadRef.current;
+        
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user?.email) {
-          const profile = await fetchUserProfile(session.user.id, session.user.email);
-          await updateProfileAndAccount(profile);
+          // Only fetch profile if it's missing or an explicit sign-in event
+          // Avoid re-fetching on every focus-triggered TOKEN_REFRESHED
+          if (!userProfile || event === 'SIGNED_IN') {
+             const profile = await fetchUserProfile(session.user.id, session.user.email);
+             await updateProfileAndAccount(profile);
+          }
 
           if (session.user.app_metadata?.provider === 'google' && !isEmailAllowed(session.user.email || '')) {
             await supabase.auth.signOut();
             return;
           }
-
-          // SESSION RESTRICTION: Update and monitor last_session_id
-          const newSessionId = crypto.randomUUID();
-          setActiveSessionId(newSessionId);
-          await (supabase
-            .from('user_profiles' as any)
-            .update({ last_session_id: newSessionId } as any)
-            .eq('user_id', session.user.id) as any);
-
-          // Listen for session conflicts
-          const channel = supabase
-            .channel(`session-${session.user.id}`)
-            .on(
-              'postgres_changes',
-              { event: 'UPDATE', schema: 'public', table: 'user_profiles', filter: `user_id=eq.${session.user.id}` },
-              (payload) => {
-                if (payload.new.last_session_id !== newSessionId) {
-                  setSessionConflict(true);
-                }
-              }
-            )
-            .subscribe();
-
-          return () => {
-            supabase.removeChannel(channel);
-          };
         } else {
           await updateProfileAndAccount(null);
         }
+        
         setLoading(false);
+        initialLoadRef.current = false;
       }
     );
 
@@ -141,6 +121,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await updateProfileAndAccount(profile);
       }
       setLoading(false);
+      initialLoadRef.current = false;
     });
 
     return () => {
@@ -219,21 +200,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const handleSessionReplace = async () => {
-     if (!user) return;
-     const newSessionId = crypto.randomUUID();
-     setActiveSessionId(newSessionId);
-     await (supabase
-       .from('user_profiles' as any)
-       .update({ last_session_id: newSessionId } as any)
-       .eq('user_id', user.id) as any);
-     setSessionConflict(false);
-  };
-
-  const handleSessionCancel = () => {
-     setSessionConflict(false);
-  };
-
   const value = {
     user,
     session,
@@ -255,12 +221,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           onTrust={() => handleDeviceTrust()}
           onDontTrust={() => handleDeviceDontTrust()}
           onLogout={signOut}
-        />
-      )}
-      {sessionConflict && (
-        <SessionConflictDialog 
-          onConfirm={handleSessionReplace}
-          onCancel={handleSessionCancel}
         />
       )}
     </AuthContext.Provider>

@@ -221,11 +221,11 @@ const SlushFundTransactionsTable = ({
                                                             {isRecurring && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">{transaction.recurring}</span>}
                                                         </div>
                                                     </td>
-                                                    <td className="py-3 px-4 text-right font-bold text-purple-900">
-                                                        DKK {Math.abs(transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    <td className={`py-3 px-4 text-right font-bold ${transaction.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                        {transaction.amount > 0 ? '+' : '-'} DKK {Math.abs(transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </td>
-                                                    <td className="py-3 px-4 text-right font-bold text-emerald-600">
-                                                        {actual !== 0 ? `DKK ${actual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                                                    <td className={`py-3 px-4 text-right font-bold ${(transaction.actual_amount || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                        {actual !== 0 ? `${(transaction.actual_amount || 0) > 0 ? '+' : '-'} DKK ${actual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
                                                     </td>
                                                     <td className={`py-3 px-4 text-right font-bold ${deviation > 0 ? 'text-emerald-600' : deviation < 0 ? 'text-rose-600' : 'text-purple-300'
                                                         }`}>

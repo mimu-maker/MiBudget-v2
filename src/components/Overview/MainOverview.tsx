@@ -12,26 +12,23 @@ import SummaryPane from '@/components/Projection/SummaryPane';
 export const MainOverview = () => {
   const [localIncludeCore, setLocalIncludeCore] = useState(true);
   const [localIncludeSpecial, setLocalIncludeSpecial] = useState(true);
-  const [localIncludeKlintemarken, setLocalIncludeKlintemarken] = useState(true);
   const [flowTab, setFlowTab] = useState<'cashflow' | 'categoryflow'>('cashflow');
 
   const toggleFilter = (type: 'core' | 'special' | 'klintemarken') => {
     const isCore = type === 'core';
     const isSpecial = type === 'special';
-    const isKlintemarken = type === 'klintemarken';
 
     // Current state
-    const current = isCore ? localIncludeCore : (isSpecial ? localIncludeSpecial : localIncludeKlintemarken);
+    const current = isCore ? localIncludeCore : localIncludeSpecial;
 
     // If turning off, check if it's the last one enabled
     if (current) {
-      const activeCount = (localIncludeCore ? 1 : 0) + (localIncludeSpecial ? 1 : 0) + (localIncludeKlintemarken ? 1 : 0);
+      const activeCount = (localIncludeCore ? 1 : 0) + (localIncludeSpecial ? 1 : 0);
       if (activeCount <= 1) return; // Prevent disabling the last one
     }
 
     if (isCore) setLocalIncludeCore(!localIncludeCore);
     if (isSpecial) setLocalIncludeSpecial(!localIncludeSpecial);
-    if (isKlintemarken) setLocalIncludeKlintemarken(!localIncludeKlintemarken);
   };
 
 
@@ -44,13 +41,12 @@ export const MainOverview = () => {
     balanceTrend,
     y2Data,
     lineGradientOffset,
-    radarData, // Still needed for the total budgeted amount in the expense card
+    radarData,
     budgetData,
     flowFiltered,
   } = useOverviewData({
     includeCore: localIncludeCore,
     includeSpecial: localIncludeSpecial,
-    includeKlintemarken: localIncludeKlintemarken
   });
 
   const chartColors = {
@@ -129,7 +125,7 @@ export const MainOverview = () => {
     .filter(cat => {
       if (cat.category_group === 'expenditure' && !localIncludeCore) return false;
       if (cat.category_group === 'special' && !localIncludeSpecial) return false;
-      if (cat.category_group === 'klintemarken' && !localIncludeKlintemarken) return false;
+      if (cat.category_group === 'klintemarken') return false; // Feeder budget removed
       if (cat.category_group !== 'special' && cat.category_group !== 'klintemarken' && cat.category_group !== 'expenditure') return false;
       return true;
     })
@@ -244,22 +240,6 @@ export const MainOverview = () => {
                   <LucideIcons.ShieldCheck className={cn("w-3 h-3", localIncludeCore ? "fill-emerald-500/50" : "")} />
                   CORE
                 </Button>
-                {settings.enableFeederBudgets && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => toggleFilter('klintemarken')}
-                    className={cn(
-                      "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
-                      localIncludeKlintemarken
-                        ? "bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20"
-                        : "bg-background border-border text-muted-foreground hover:bg-accent"
-                    )}
-                  >
-                    <LucideIcons.Wallet className={cn("w-3 h-3", localIncludeKlintemarken ? "fill-blue-500/50" : "")} />
-                    FEEDER
-                  </Button>
-                )}
                 <Button
                   variant="outline"
                   size="sm"
