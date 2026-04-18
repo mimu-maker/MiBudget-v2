@@ -96,12 +96,12 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
     };
 
-    const refreshUserProfile = async () => {
+    const refreshUserProfile = async (silent = false) => {
         if (!user) return;
-        setLoading(true);
+        if (!silent) setLoading(true);
         const profile = await fetchUserProfile(user.id);
         setUserProfile(profile);
-        setLoading(false);
+        if (!silent) setLoading(false);
     };
 
     const updateUserProfile = async (profileUpdate: Partial<UserProfile>) => {
@@ -128,7 +128,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     useEffect(() => {
         if (user) {
-            refreshUserProfile();
+            refreshUserProfile(true);
         } else {
             setUserProfile(null);
             setLoading(false);

@@ -784,31 +784,6 @@ const Projection = () => {
     });
   }, [budget, subCategoryAverages, projections]);
 
-  const klintemarkenDataEnhanced = useMemo(() => {
-    if (!budget?.category_groups?.klintemarken) return [];
-    return budget.category_groups.klintemarken.map(cat => ({
-      ...cat,
-      avg_6m: cat.sub_categories.reduce((sum, sub) => {
-        const matchKey = `${cat.name}-${sub.name}`.toLowerCase();
-        const avgData = subCategoryAverages[matchKey] || { avg6m: 0, avg1y: 0 };
-        return sum + avgData.avg6m;
-      }, 0),
-      avg_1y: cat.sub_categories.reduce((sum, sub) => {
-        const matchKey = `${cat.name}-${sub.name}`.toLowerCase();
-        const avgData = subCategoryAverages[matchKey] || { avg6m: 0, avg1y: 0 };
-        return sum + avgData.avg1y;
-      }, 0),
-      sub_categories: cat.sub_categories.map(sub => {
-        const matchKey = `${cat.name}-${sub.name}`.toLowerCase();
-        const avgData = subCategoryAverages[matchKey] || { avg6m: 0, avg1y: 0 };
-        return {
-          ...sub,
-          avg_6m: avgData.avg6m,
-          avg_1y: avgData.avg1y
-        };
-      })
-    }));
-  }, [budget, subCategoryAverages]);
 
   const unlabeledCategories = useMemo(() => {
     if (!budget?.category_groups?.expenditure) return [];
@@ -839,10 +814,7 @@ const Projection = () => {
       const data: ProjectionData[] = [];
       const yearNum = currentYear;
 
-      const feederMonthlyTotal = klintemarkenData.reduce((sum, item) => {
-        if (disabledExpenses.has(item.name)) return sum;
-        return sum + (item.budget_amount || 0);
-      }, 0);
+      const feederMonthlyTotal = 0;
 
       const expenseLabelBreakdownBase: Record<string, number> = {};
       primaryExpensesByLabel.forEach(labelCat => {
@@ -956,10 +928,10 @@ const Projection = () => {
               // If amount is positive (inflow), subtract from slush sum (to make it an income in net calculation)
               if (amountToUse > 0 || t.category === 'Slush Fund Income') {
                 slush -= absVal;
-                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) - absVal;
+                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
               } else {
                 slush += absVal;
-                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
+                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) - absVal;
               }
             } else if (amountToUse > 0 && !isExpenseCategory) {
               // positive amounts not matching expense categories are income
@@ -988,9 +960,9 @@ const Projection = () => {
         const currentIncomeBreakdown = { ...incomeBreakdown };
         const currentSlushBreakdown = { ...slushBreakdown };
         const currentExpenseBreakdown = { ...expenseLabelBreakdownBase };
-        const currentFeederBreakdown = { 'Feeder Budget': feederMonthlyTotal };
+        const currentFeederBreakdown = {};
 
-        const monthlyNet = income + feederMonthlyTotal - expenseMonthlyTotal - slush;
+        const monthlyNet = income - expenseMonthlyTotal - slush;
         runningBalance += monthlyNet;
 
         data.push({
@@ -999,12 +971,12 @@ const Projection = () => {
           cumulativeBalance: runningBalance,
           date: monthKey,
           income,
-          feeder: feederMonthlyTotal,
+          feeder: 0,
           expense: expenseMonthlyTotal,
           slush,
           breakdown: {
             incomeBreakdown: currentIncomeBreakdown,
-            feederBreakdown: currentFeederBreakdown,
+            feederBreakdown: {},
             expenseBreakdown: currentExpenseBreakdown,
             expenseLabelBreakdown: currentExpenseBreakdown,
             slushBreakdown: currentSlushBreakdown
@@ -1019,18 +991,18 @@ const Projection = () => {
 
   const stats = useMemo(() => {
     const totalIncome = projectionData.reduce((sum, d) => sum + (d.income || 0), 0);
-    const totalFeeder = projectionData.reduce((sum, d) => sum + (d.feeder || 0), 0);
+    const totalFeeder = 0;
     const totalExpenses = projectionData.reduce((sum, d) => sum + (d.expense || 0), 0);
     const totalSlush = projectionData.reduce((sum, d) => sum + (d.slush || 0), 0);
 
     return {
       income: totalIncome,
-      feeder: totalFeeder,
+      feeder: 0,
       expenses: totalExpenses,
       slush: totalSlush,
-      totalIncome: (totalIncome + totalFeeder),
+      totalIncome: totalIncome,
       totalExpenses: (totalExpenses + totalSlush),
-      pl: (totalIncome + totalFeeder) - (totalExpenses + totalSlush)
+      pl: totalIncome - (totalExpenses + totalSlush)
     };
   }, [projectionData]);
 
@@ -1042,7 +1014,7 @@ const Projection = () => {
       const data: ProjectionData[] = [];
       const yearNum = currentYear;
 
-      const feederMonthlyTotal = klintemarkenData.reduce((sum, item) => sum + (item.budget_amount || 0), 0);
+      const feederMonthlyTotal = 0;
 
       const expenseLabelBreakdownBase: Record<string, number> = {};
       primaryExpensesByLabel.forEach(labelCat => {
@@ -1155,10 +1127,10 @@ const Projection = () => {
               
               if (t.category === 'Slush Fund Income') {
                 slush -= absVal;
-                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) - absVal;
+                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
               } else {
                 slush += absVal;
-                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) + absVal;
+                slushBreakdown[uniqueKey] = (slushBreakdown[uniqueKey] || 0) - absVal;
               }
             } else if (amountToUse > 0 && !isExpenseCategory) {
               if (!isKnownIncome) {
@@ -1185,9 +1157,9 @@ const Projection = () => {
         const currentIncomeBreakdown = { ...incomeBreakdown };
         const currentSlushBreakdown = { ...slushBreakdown };
         const currentExpenseBreakdown = { ...expenseLabelBreakdownBase };
-        const currentFeederBreakdown = { 'Feeder Budget': feederMonthlyTotal };
+        const currentFeederBreakdown = {};
 
-        const monthlyNet = income + feederMonthlyTotal - expenseMonthlyTotal - slush;
+        const monthlyNet = income - expenseMonthlyTotal - slush;
         runningBalance += monthlyNet;
 
         data.push({
@@ -1196,12 +1168,12 @@ const Projection = () => {
           cumulativeBalance: runningBalance,
           date: monthKey,
           income,
-          feeder: feederMonthlyTotal,
+          feeder: 0,
           expense: expenseMonthlyTotal,
           slush,
           breakdown: {
             incomeBreakdown: currentIncomeBreakdown,
-            feederBreakdown: currentFeederBreakdown,
+            feederBreakdown: {},
             expenseBreakdown: currentExpenseBreakdown,
             expenseLabelBreakdown: currentExpenseBreakdown,
             slushBreakdown: currentSlushBreakdown
@@ -1760,50 +1732,6 @@ const Projection = () => {
           </div>
         )}
 
-        {/* Feeder Budgets */}
-        {settings.enableFeederBudgets && klintemarkenDataEnhanced.length > 0 && (
-          <div key="klintemarken" className="bg-white/70 backdrop-blur-xl rounded-[2rem] border border-slate-200/60 p-6 shadow-sm animate-in fade-in duration-500 delay-100">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-black text-blue-900 tracking-tight flex items-center gap-2">
-                <div className="p-1.5 bg-blue-50 rounded-lg text-blue-600">
-                  <ArrowDownRight className="w-4 h-4" />
-                </div>
-                Feeders
-              </h2>
-              <div className="flex items-center gap-8">
-                <div className="text-right">
-                  <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Monthly</p>
-                  <p className="text-sm font-black text-slate-900 font-mono">{formatCurrency(projectionData[0]?.feeder || 0, settings.currency)}</p>
-                </div>
-                <div className="text-right border-l border-slate-200 pl-6">
-                  <p className="text-[9px] uppercase font-black text-slate-400 tracking-widest leading-none mb-1">Annual</p>
-                  <p className="text-sm font-black text-slate-900 font-mono">{formatCurrency(stats.feeder, settings.currency)}</p>
-                </div>
-              </div>
-            </div>
-            <div>
-              <BudgetTable
-                data={klintemarkenDataEnhanced as any}
-                type="klintemarken"
-                title="Feeders"
-                hideHeader={false}
-                expandedCategories={expandedCategories}
-                toggleCategory={toggleCategory}
-                editingBudget={editingBudget}
-                setEditingBudget={setEditingBudget}
-                handleUpdateBudget={handleUpdateBudget}
-                totalIncome={stats.totalIncome}
-                currency={settings?.currency || 'DKK'}
-                selectedYear={currentYear}
-                onToggleItem={toggleExpense}
-                disabledItems={disabledExpenses}
-                isScenario={!!activeScenarioId}
-                projectionMode={true}
-                onBatchAdjust={handleBatchAdjust}
-              />
-            </div>
-          </div>
-        )}
 
       </div>
 

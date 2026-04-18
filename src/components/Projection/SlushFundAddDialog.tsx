@@ -60,7 +60,7 @@ const SlushFundAddDialog = ({ open, onOpenChange, onSubmit, editingTransaction }
         onSubmit({
             name: name.trim(),
             date,
-            amount: parsedAmount, // always positive
+            amount: type === 'expense' ? -Math.abs(parsedAmount) : Math.abs(parsedAmount),
             category: type === 'income' ? 'Slush Fund Income' : 'Slush Fund'
         });
 

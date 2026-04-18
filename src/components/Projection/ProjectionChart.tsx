@@ -36,8 +36,8 @@ const ProjectionChart = ({
         Object.keys(d.breakdown.incomeBreakdown).forEach(k => income.add(k));
         Object.keys(d.breakdown.expenseLabelBreakdown).forEach(k => expense.add(k));
         Object.entries(d.breakdown.slushBreakdown).forEach(([k, v]) => {
-          if (v < 0) income.add(k);
-          else expense.add(k);
+          if (v < 0) expense.add(k);
+          else income.add(k);
         });
 
         // Handle Feeder Budget dynamically by sign in combinedData mapping, 
@@ -108,11 +108,11 @@ const ProjectionChart = ({
         Object.entries(d.breakdown.expenseLabelBreakdown).forEach(([k, v]) => row[`out_${k}`] = v || 0);
         Object.entries(d.breakdown.slushBreakdown).forEach(([k, v]) => {
           if (v < 0) {
-            row[`in_${k}`] = Math.abs(v);
-            row[`out_${k}`] = 0;
-          } else {
             row[`in_${k}`] = 0;
-            row[`out_${k}`] = v || 0;
+            row[`out_${k}`] = Math.abs(v);
+          } else {
+            row[`in_${k}`] = v || 0;
+            row[`out_${k}`] = 0;
           }
         });
 
