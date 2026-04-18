@@ -34,7 +34,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentAccount, setCurrentAccount] = useState<any | null>(null);
   const [currentAccountId, setCurrentAccountId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const initialLoadRef = React.useRef(true);
 
   const {
     showDeviceTrustDialog,
@@ -87,18 +86,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        const isFocusEvent = event === 'TOKEN_REFRESHED' && !initialLoadRef.current;
-        
+        // TOKEN_REFRESHED is a silent background token rotation triggered by tab focus.
+        // Updating user/session here creates new object references → ProfileContext
+        // re-fetches on every focus event. Just keep the fresh token and bail.
+        if (event === 'TOKEN_REFRESHED') {
+          setSession(session);
+          return;
+        }
+
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user?.email) {
-          // Only fetch profile if it's missing or an explicit sign-in event
-          // Avoid re-fetching on every focus-triggered TOKEN_REFRESHED
-          if (!userProfile || event === 'SIGNED_IN') {
-             const profile = await fetchUserProfile(session.user.id, session.user.email);
-             await updateProfileAndAccount(profile);
-          }
+          const profile = await fetchUserProfile(session.user.id, session.user.email);
+          await updateProfileAndAccount(profile);
 
           if (session.user.app_metadata?.provider === 'google' && !isEmailAllowed(session.user.email || '')) {
             await supabase.auth.signOut();
@@ -109,7 +110,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         
         setLoading(false);
-        initialLoadRef.current = false;
       }
     );
 
@@ -121,7 +121,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await updateProfileAndAccount(profile);
       }
       setLoading(false);
-      initialLoadRef.current = false;
     });
 
     return () => {

@@ -60,7 +60,12 @@ const ProjectionChart = ({
     };
 
     return {
-      income: Array.from(income).sort(),
+      income: Array.from(income).sort((a, b) => {
+        const rankA = getStackRank(a);
+        const rankB = getStackRank(b);
+        if (rankA !== rankB) return rankA - rankB;
+        return a.localeCompare(b);
+      }),
       expense: Array.from(expense).sort((a, b) => {
         const rankA = getStackRank(a);
         const rankB = getStackRank(b);
@@ -165,8 +170,7 @@ const ProjectionChart = ({
       <div className="bg-white p-3 rounded-xl shadow-xl border border-gray-100 animate-in fade-in zoom-in duration-200">
         <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">{label}</p>
         <div className="flex items-center gap-2">
-          {/* Note: if color is a URL (gradient), fallback to standard neutral or extract it */}
-          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: activeEntry.color?.startsWith('url') ? '#94a3b8' : activeEntry.color }} />
+          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: activeEntry.color?.startsWith('url') ? '#a855f7' : activeEntry.color }} />
           <span className="text-sm font-bold text-gray-800">{name}:</span>
           <span className={cn("text-sm font-black", isExpense ? "text-rose-600" : (name.includes('Balance') ? "text-primary" : "text-emerald-600"))}>
             {displayVal.toLocaleString()} DKK
@@ -217,17 +221,6 @@ const ProjectionChart = ({
         <CardTitle className="text-lg font-black tracking-tight text-gray-800">{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-6">
-        {/* Modern Chart Key */}
-        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4 mb-8 mt-2 animate-in fade-in slide-in-from-top-4 duration-700">
-          <div className="flex items-center gap-2 group cursor-help transition-all hover:scale-105">
-            <div className="w-8 h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-rose-500 shadow-sm" />
-            <div className="flex flex-col">
-              <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest leading-none">Net Balance</span>
-              <span className="text-[9px] font-bold text-slate-400">Total projected trajectory</span>
-            </div>
-          </div>
-        </div>
-
         <ResponsiveContainer width="100%" height={450}>
           <ComposedChart
             data={combinedData}
@@ -250,10 +243,16 @@ const ProjectionChart = ({
                 <stop offset="1" stopColor="#f43f5e" stopOpacity={1} />
               </linearGradient>
 
-              {/* Slush Fund Income Pattern: Green & Light Purple Diagonal Stripes */}
-              <pattern id="slushIncomePattern" patternUnits="userSpaceOnUse" width="16" height="16" patternTransform="rotate(45)">
-                <rect width="8" height="16" fill="#10b981" />
-                <rect x="8" width="8" height="16" fill="#a855f7" />
+              {/* Slush income: purple base + solid green stripes */}
+              <pattern id="slushIncomePattern" patternUnits="userSpaceOnUse" width="12" height="12" patternTransform="rotate(45)">
+                <rect width="12" height="12" fill="#a855f7" />
+                <rect width="5" height="12" fill="#10b981" />
+              </pattern>
+
+              {/* Slush expense: purple base + solid red stripes */}
+              <pattern id="slushExpensePattern" patternUnits="userSpaceOnUse" width="12" height="12" patternTransform="rotate(-45)">
+                <rect width="12" height="12" fill="#a855f7" />
+                <rect width="5" height="12" fill="#ef4444" />
               </pattern>
             </defs>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -294,7 +293,7 @@ const ProjectionChart = ({
                   dataKey={`in_${name}`}
                   name={`in_${name}`}
                   stackId="income"
-                  fill={isSlush ? "url(#slushIncomePattern)" : getIncomeColor(name, idx)}
+                  fill={isSlush ? 'url(#slushIncomePattern)' : getIncomeColor(name, idx)}
                   radius={idx === uniqueSubCats.income.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
                   barSize={32}
                   onMouseEnter={() => setHoveredKey(`in_${name}`)}
@@ -310,9 +309,7 @@ const ProjectionChart = ({
                   dataKey={`out_${name}`}
                   name={`out_${name}`}
                   stackId="expenditure"
-                  fill={getExpenseColor(name, idx)}
-                  stroke={isSlush ? "#fff" : "none"}
-                  strokeWidth={isSlush ? 2 : 0}
+                  fill={isSlush ? 'url(#slushExpensePattern)' : getExpenseColor(name, idx)}
                   radius={idx === uniqueSubCats.expense.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
                   barSize={32}
                   onMouseEnter={() => setHoveredKey(`out_${name}`)}
