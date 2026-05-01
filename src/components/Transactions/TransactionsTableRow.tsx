@@ -249,9 +249,9 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
               />
             </div>
 
-            {(transaction.notes || transaction.description) && (transaction.notes !== transaction.source && transaction.description !== transaction.source) && !transaction.notes?.startsWith('Split from') && (
-              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight italic ml-1 opacity-70">
-                {transaction.notes || transaction.description}
+            {isResolved && transaction.source && transaction.source !== transaction.clean_source && (
+              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight font-mono ml-1 opacity-50 truncate max-w-[220px]" title={transaction.source}>
+                {transaction.source}
               </div>
             )}
           </div>
