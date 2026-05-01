@@ -366,8 +366,9 @@ export const ValidationDashboard = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['classification-rules'] });
-            queryClient.invalidateQueries({ queryKey: ['sources'] }); // Invalidate sources
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['sources'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names-ranked'] });
             setRuleDialogOpen(false);
             setExpandedSource(null);
@@ -1016,7 +1017,8 @@ export const ValidationDashboard = () => {
                         }}
                         transaction={transactionToSplit}
                         onSplitComplete={() => {
-                            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+                            queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+                            queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
                             setSplitModalOpen(false);
                             setTransactionToSplit(null);
                         }}

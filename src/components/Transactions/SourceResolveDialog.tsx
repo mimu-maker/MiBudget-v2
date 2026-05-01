@@ -183,7 +183,8 @@ export const SourceResolveDialog = ({
             queryClient.invalidateQueries({ queryKey: ['classification-rules'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names-ranked'] });
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
 
             toast({
                 title: "Rule Saved",

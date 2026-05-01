@@ -212,7 +212,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
             queryClient.invalidateQueries({ queryKey: ['classification-rules'] }); // Invalidate both keys used
             queryClient.invalidateQueries({ queryKey: ['existing-source-names'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names-ranked'] });
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
             toast({ title: "Rule Created", description: "Source rule created and applied successfully." });
             setScanResults([]);
             setMatchingTransactions([]);
@@ -291,7 +292,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
         queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
         queryClient.invalidateQueries({ queryKey: ['transactions-for-scan'] });
-        queryClient.invalidateQueries({ queryKey: ['transactions'] });
+        queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+        queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
         setSelectedTransactionForEdit(null);
     };
 
@@ -315,7 +317,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 description: "The source association has been removed."
             });
 
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
             queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
             setConfirmingUnlinkId(null);
         } catch (err: any) {
@@ -348,7 +351,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
         onSuccess: (_, { fromName, toName }) => {
             queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
             queryClient.invalidateQueries({ queryKey: ['transactions', 'source-manager', currentAccountId] });
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names-ranked'] });
             toast({ title: "Sources Merged", description: `"${fromName}" merged into "${toName}".` });
@@ -378,7 +382,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
             });
 
             setHistorySelectedIds(new Set());
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
             queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
         } catch (err: any) {
             toast({
@@ -488,7 +493,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
 
             toast({ title: "Source Renamed", description: `Renamed "${oldName}" to "${newName}" and updated associated transactions.` });
             queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
             setRenamingGroup(null);
         } catch (err: any) {
             toast({ title: "Rename Failed", description: err.message, variant: "destructive" });
@@ -1488,7 +1494,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                             onUpdateNote={async (id, notes) => {
                                                 const { error } = await (supabase as any).from('transactions').update({ notes }).eq('id', id);
                                                 if (error) throw error;
-                                                queryClient.invalidateQueries({ queryKey: ['transactions'] });
+                                                queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+                                                queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
                                             }}
                                         />
                                     </div>
