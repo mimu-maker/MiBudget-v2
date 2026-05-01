@@ -412,7 +412,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
         }
     };
 
-    const handleSaveSourceMapping = async (cleanName: string, pattern: string, matchMode: 'exact' | 'contains' | 'fuzzy', selectedIds: string[]) => {
+    const handleSaveSourceMapping = async (cleanName: string, pattern: string, matchMode: 'exact' | 'contains', selectedIds: string[]) => {
         try {
             // 1. Create the rule
             const payload = {
@@ -952,7 +952,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                     auto_planned: res.planned || false,
                                                     auto_exclude: res.excluded || false,
                                                     skip_triage: true,
-                                                    match_mode: 'fuzzy'
+                                                    match_mode: 'contains'
                                                 });
                                             }
                                         }}
@@ -1585,7 +1585,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                 secondary_categories: editingRule.secondary_categories || [],
                                 auto_planned: editingRule.auto_planned ?? true,
                                 auto_exclude: editingRule.auto_budget === 'Exclude',
-                                match_mode: editingRule.match_mode || 'fuzzy'
+                                match_mode: editingRule.match_mode === 'fuzzy' ? 'contains' : (editingRule.match_mode || 'contains')
                             }}
                             transactions={transactions}
                             mode={editingRule.mode}

@@ -41,7 +41,7 @@ interface SelectedRule {
     auto_planned: boolean;
     auto_exclude: boolean;
     skip_triage: boolean;
-    match_mode?: 'exact' | 'fuzzy';
+    match_mode?: 'exact' | 'contains';
     raw_name?: string;
     transactionIds: string[];
 }
@@ -412,7 +412,7 @@ export const ValidationDashboard = () => {
             auto_planned: true, // Default to Planned
             auto_exclude: txs[0]?.excluded || false,
             skip_triage: txs[0]?.status === 'Complete',
-            match_mode: 'fuzzy',
+            match_mode: 'contains',
             transactionIds: txs.map(t => t.id)
         };
 
@@ -456,7 +456,7 @@ export const ValidationDashboard = () => {
                     auto_planned: ruleToUse.auto_planned,
                     auto_budget: ruleToUse.auto_exclude ? 'Exclude' : null,
                     skip_triage: false, // FORCE DISABLE
-                    match_mode: ruleToUse.match_mode || 'fuzzy'
+                    match_mode: ruleToUse.match_mode === 'fuzzy' ? 'contains' : (ruleToUse.match_mode || 'contains')
                 });
             } catch (error) {
                 console.warn("Failed to update source rule, proceeding with transaction updates...", error);
@@ -487,7 +487,7 @@ export const ValidationDashboard = () => {
         setRuleDialogOpen(false);
     };
 
-    const handleSaveSourceMapping = async (cleanName: string, pattern: string, matchMode: 'exact' | 'contains' | 'fuzzy', ids: string[]) => {
+    const handleSaveSourceMapping = async (cleanName: string, pattern: string, matchMode: 'exact' | 'contains', ids: string[]) => {
         // 1. Create the rule (try/catch to allow transaction update even if rule saving fails due to permissions)
         try {
             await createRuleMutation.mutateAsync({
@@ -498,7 +498,7 @@ export const ValidationDashboard = () => {
                 auto_recurring: 'N/A',
                 auto_planned: true,
                 skip_triage: false,
-                match_mode: 'fuzzy'
+                match_mode: matchMode === 'fuzzy' ? 'contains' : (matchMode || 'contains')
             });
         } catch (error) {
             console.warn("Failed to save source rule (likely permission issue), proceeding with transaction update...", error);
@@ -773,14 +773,14 @@ export const ValidationDashboard = () => {
                                 className="flex-1 bg-white h-10 font-mono text-sm border-slate-200/60 shadow-sm"
                             />
                             <Select
-                                value={rule.match_mode || 'fuzzy'}
+                                value={rule.match_mode === 'fuzzy' ? 'contains' : (rule.match_mode || 'contains')}
                                 onValueChange={(v) => setRule((p: any) => p ? { ...p, match_mode: v } : null)}
                             >
                                 <SelectTrigger className="w-32 bg-white h-10 border-slate-200/60 shadow-sm">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="fuzzy">Fuzzy</SelectItem>
+                                    <SelectItem value="contains">Contains</SelectItem>
                                     <SelectItem value="exact">Exact</SelectItem>
                                 </SelectContent>
                             </Select>

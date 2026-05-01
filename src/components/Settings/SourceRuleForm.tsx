@@ -22,7 +22,7 @@ export interface SourceRuleState {
     secondary_categories: string[];
     auto_planned: boolean;
     auto_exclude: boolean;
-    match_mode: 'exact' | 'fuzzy' | 'contains';
+    match_mode: 'exact' | 'contains';
     isGroupDefault?: boolean;
 }
 
@@ -145,7 +145,7 @@ export const SourceRuleForm = ({
                                 Pattern Text
                             </Label>
                             <div className="flex gap-0.5 bg-slate-200/50 p-0.5 rounded-md">
-                                {(['contains', 'fuzzy', 'exact'] as const).map(m => (
+                                {(['contains', 'exact'] as const).map(m => (
                                     <button
                                         key={m}
                                         type="button"

@@ -14,7 +14,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { useProfile } from '@/contexts/ProfileContext';
 import { SKIP_PATTERNS } from '@/lib/importBrain';
 
-type MatchMode = 'exact' | 'contains' | 'fuzzy';
+type MatchMode = 'exact' | 'contains';
 
 interface SourceMappingRefinerProps {
     source: string;
@@ -155,7 +155,6 @@ export const SourceMappingRefiner = ({
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="contains">Contains</SelectItem>
-                                <SelectItem value="fuzzy">Fuzzy</SelectItem>
                                 <SelectItem value="exact">Exact</SelectItem>
                             </SelectContent>
                         </Select>

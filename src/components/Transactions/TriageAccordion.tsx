@@ -64,14 +64,13 @@ const RuleForm = ({ rule, setRule, onSave, onCancel, getSubCategoryList }: any) 
                             className="flex-1 bg-white h-10 font-mono text-sm border-slate-200/60 shadow-sm"
                         />
                         <Select
-                            value={rule.match_mode || 'fuzzy'}
+                            value={rule.match_mode === 'fuzzy' ? 'contains' : (rule.match_mode || 'contains')}
                             onValueChange={(v) => setRule((p: any) => p ? { ...p, match_mode: v } : null)}
                         >
                             <SelectTrigger className="w-32 bg-white h-10 border-slate-200/60 shadow-sm">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="fuzzy">Fuzzy</SelectItem>
                                 <SelectItem value="exact">Exact</SelectItem>
                             </SelectContent>
                         </Select>
@@ -385,7 +384,7 @@ export const TriageAccordion = ({
             name: txs[0]?.clean_source || cleanSource(txs[0]?.source) || sourceName,
             raw_name: txs[0]?.source || sourceName,
             clean_name: txs[0]?.clean_source || '',
-            match_mode: 'fuzzy',
+            match_mode: 'contains',
             category: '',
             sub_category: '',
             auto_recurring: 'N/A',
