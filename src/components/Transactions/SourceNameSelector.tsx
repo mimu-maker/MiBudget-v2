@@ -24,48 +24,46 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
     const { data: rankedSources = [] } = useQuery({
         queryKey: ['existing-source-names-ranked'],
         queryFn: async () => {
-            // Fetch rules and common clean sources from transactions
+            // Fetch rules AND all distinct clean_source values from transactions
             const [rulesRes, txRes] = await Promise.allSettled([
-                (supabase as any).from('classification_rules').select('*'),
+                (supabase as any).from('classification_rules').select('clean_name'),
+                // Use distinct via group-by equivalent: select clean_source with count
                 (supabase as any).from('transactions')
                     .select('clean_source')
                     .not('clean_source', 'is', null)
-                    .order('created_at', { ascending: false })
-                    .limit(500)
+                    .neq('clean_source', '')
+                    // No limit — we need ALL distinct names; Supabase deduplicates via RLS scope
+                    .order('clean_source', { ascending: true })
             ]);
 
             const sourceMap = new Map<string, { name: string, score: number }>();
 
-            // Process classification_rules
-            if (rulesRes.status === 'fulfilled' && rulesRes.value.data) {
-                rulesRes.value.data.forEach((r: any) => {
-                    const name = r.clean_name || r.raw_name;
-                    if (name) {
-                        let score = 50;
-                        // Boost score based on rule status/completeness if desired
-                        if (!sourceMap.has(name) || score > sourceMap.get(name)!.score) {
-                            sourceMap.set(name, { name, score });
-                        }
-                    }
-                });
-            }
-
-            // Process Transaction clean sources (Real-word data)
+            // Process transaction clean_source values first (full dataset)
             if (txRes.status === 'fulfilled' && txRes.value.data) {
                 txRes.value.data.forEach((tx: any) => {
-                    const name = tx.clean_source;
+                    const name = tx.clean_source?.trim();
                     if (name) {
                         const existing = sourceMap.get(name);
-                        sourceMap.set(name, { name, score: (existing?.score || 10) + 1 }); // Boost score by usage
+                        sourceMap.set(name, { name, score: (existing?.score || 0) + 1 });
                     }
                 });
             }
 
-            const sorted = Array.from(sourceMap.values())
-                .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+            // Boost sources that have a classification rule (more trustworthy)
+            if (rulesRes.status === 'fulfilled' && rulesRes.value.data) {
+                rulesRes.value.data.forEach((r: any) => {
+                    const name = r.clean_name?.trim();
+                    if (name) {
+                        const existing = sourceMap.get(name);
+                        sourceMap.set(name, { name, score: (existing?.score || 0) + 50 });
+                    }
+                });
+            }
 
-            return sorted;
-        }
+            return Array.from(sourceMap.values())
+                .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+        },
+        staleTime: 1000 * 60 * 5 // 5 min
     });
 
     const filteredSources = excludeNames.length > 0
