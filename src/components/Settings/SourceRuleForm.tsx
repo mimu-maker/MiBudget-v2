@@ -10,7 +10,6 @@ import { useCategorySource, useUnifiedCategoryActions } from '@/hooks/useBudgetC
 import { Badge } from '@/components/ui/badge';
 import { formatCurrency } from '@/lib/formatUtils';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/hooks/useSettings';
 import { findSimilarTransactions } from '@/lib/sourceUtils';
@@ -23,7 +22,7 @@ export interface SourceRuleState {
     secondary_categories: string[];
     auto_planned: boolean;
     auto_exclude: boolean;
-    match_mode: 'exact' | 'fuzzy';
+    match_mode: 'exact' | 'fuzzy' | 'contains';
     isGroupDefault?: boolean;
 }
 
@@ -145,42 +144,36 @@ export const SourceRuleForm = ({
                             <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
                                 Pattern Text
                             </Label>
-                            {isPatternMode && (
-                                <div className="flex gap-0.5 bg-slate-200/50 p-0.5 rounded-md">
+                            <div className="flex gap-0.5 bg-slate-200/50 p-0.5 rounded-md">
+                                {(['contains', 'fuzzy', 'exact'] as const).map(m => (
                                     <button
-                                        onClick={() => setRule({ ...rule, match_mode: 'fuzzy' })}
-                                        className={cn("px-1.5 py-0.5 text-[9px] font-bold rounded uppercase transition-all", rule.match_mode === 'fuzzy' ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600")}
+                                        key={m}
+                                        type="button"
+                                        onClick={() => setRule({ ...rule, match_mode: m })}
+                                        className={cn(
+                                            "px-1.5 py-0.5 text-[9px] font-bold rounded uppercase transition-all",
+                                            rule.match_mode === m
+                                                ? "bg-white shadow-sm text-blue-600"
+                                                : "text-slate-400 hover:text-slate-600"
+                                        )}
                                     >
-                                        Fuzzy
+                                        {m}
                                     </button>
-                                    <button
-                                        onClick={() => setRule({ ...rule, match_mode: 'exact' })}
-                                        className={cn("px-1.5 py-0.5 text-[9px] font-bold rounded uppercase transition-all", rule.match_mode === 'exact' ? "bg-white shadow-sm text-indigo-600" : "text-slate-400 hover:text-slate-600")}
-                                    >
-                                        Exact
-                                    </button>
-                                </div>
-                            )}
+                                ))}
+                            </div>
                         </div>
 
-                        {isPatternMode ? (
-                            <div className="relative group/input">
-                                <Textarea
-                                    value={rule.raw_name}
-                                    onChange={(e) => setRule({ ...rule, raw_name: e.target.value })}
-                                    className={cn(
-                                        "min-h-[38px] py-2 text-sm font-mono font-bold bg-white border-slate-200 focus-visible:ring-blue-500 resize-y",
-                                        errors.raw_name && "border-red-500 ring-1 ring-red-500"
-                                    )}
-                                    placeholder="Keyword..."
-                                    rows={1}
-                                />
-                            </div>
-                        ) : (
-                            <div className="h-9 px-3 flex items-center bg-slate-100 border border-slate-200 rounded-md text-slate-500 font-bold text-sm truncate select-none">
-                                {rule.raw_name || rule.name}
-                            </div>
-                        )}
+                        <div className="relative group/input">
+                            <Input
+                                value={rule.raw_name}
+                                onChange={(e) => setRule({ ...rule, raw_name: e.target.value })}
+                                className={cn(
+                                    "h-9 text-sm font-mono bg-white border-slate-200 focus-visible:ring-blue-500",
+                                    errors.raw_name && "border-red-500 ring-1 ring-red-500"
+                                )}
+                                placeholder="Keyword to match (e.g. SPAR)..."
+                            />
+                        </div>
                     </div>
 
                     {/* MIDDLE: Arrow */}

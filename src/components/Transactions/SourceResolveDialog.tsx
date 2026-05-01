@@ -64,7 +64,7 @@ export const SourceResolveDialog = ({
         sub_category: transaction.sub_category && transaction.sub_category !== 'Uncategorized' ? transaction.sub_category : '',
         auto_planned: true, // Auto-planned default (Unplanned OFF)
         auto_exclude: transaction.excluded || false,
-        match_mode: 'fuzzy',
+        match_mode: 'contains',
         secondary_categories: []
     });
 
@@ -83,7 +83,7 @@ export const SourceResolveDialog = ({
                 sub_category: transaction.sub_category && transaction.sub_category !== 'Uncategorized' ? transaction.sub_category : '',
                 auto_planned: true, // Auto-planned default (Unplanned OFF)
                 auto_exclude: transaction.excluded || false,
-                match_mode: 'fuzzy',
+                match_mode: 'contains',
                 secondary_categories: []
             });
             setSourceSettings({
@@ -121,9 +121,27 @@ export const SourceResolveDialog = ({
                 auto_budget: rule.auto_exclude ? 'Exclude' : 'Budgeted'
             };
 
-            const { error: ruleError } = await (supabase as any)
+            // Upsert: check for existing rule first (no unique constraint on table yet)
+            const { data: existingRule } = await (supabase as any)
                 .from('classification_rules')
-                .upsert([ruleData], { onConflict: 'account_id, raw_name' });
+                .select('id')
+                .eq('account_id', currentAccountId)
+                .eq('raw_name', ruleData.raw_name)
+                .maybeSingle();
+
+            let ruleError: any = null;
+            if (existingRule?.id) {
+                const { error } = await (supabase as any)
+                    .from('classification_rules')
+                    .update(ruleData)
+                    .eq('id', existingRule.id);
+                ruleError = error;
+            } else {
+                const { error } = await (supabase as any)
+                    .from('classification_rules')
+                    .insert([ruleData]);
+                ruleError = error;
+            }
 
             if (ruleError) throw ruleError;
 

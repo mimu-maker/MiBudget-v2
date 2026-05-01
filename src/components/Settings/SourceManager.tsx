@@ -169,9 +169,27 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 auto_budget: rule.auto_exclude ? 'Exclude' : 'Budgeted'
             };
 
-            const { error: ruleError } = await (supabase as any)
+            // Upsert: check for existing rule first (no unique constraint on table yet)
+            const { data: existingRule } = await (supabase as any)
                 .from('classification_rules')
-                .upsert([ruleData], { onConflict: 'account_id, raw_name' });
+                .select('id')
+                .eq('account_id', currentAccountId)
+                .eq('raw_name', ruleData.raw_name)
+                .maybeSingle();
+
+            let ruleError: any = null;
+            if (existingRule?.id) {
+                const { error } = await (supabase as any)
+                    .from('classification_rules')
+                    .update(ruleData)
+                    .eq('id', existingRule.id);
+                ruleError = error;
+            } else {
+                const { error } = await (supabase as any)
+                    .from('classification_rules')
+                    .insert([ruleData]);
+                ruleError = error;
+            }
 
             if (ruleError) throw ruleError;
 
