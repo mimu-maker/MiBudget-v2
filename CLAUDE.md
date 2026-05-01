@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ CRITICAL: DATA SAFETY — READ BEFORE ANY DB OPERATION
+
+**NEVER modify, delete, or alter any data in the Michael & Tanja production account.**
+
+- The production account ID is `92325837-1cf0-4157-82c6-82a233389b1a`
+- **ALL database writes, migrations, deletes, and updates are PROHIBITED** on this account's data
+- The only account where data changes are permitted is the **demo account** (`00000000-...-0001`)
+- Schema changes (DDL: CREATE TABLE, ALTER TABLE, etc.) must be reviewed with the user before executing
+- When in doubt: **read only**. Ask the user before touching anything in production data.
+
+This applies to every tool, script, MCP call, SQL execution, and Supabase operation.
+
 ## Commands
 
 ```bash

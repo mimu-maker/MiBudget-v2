@@ -16,7 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, Trash2, Zap, RefreshCw, Calendar, EyeOff, Save, Check, Store, Sparkles, ArrowRight, Info, AlertCircle, Pencil, X, List, Target, History as HistoryIcon, ChevronDown, Settings as SettingsIcon, Clock, Link2Off, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Trash2, Zap, RefreshCw, Calendar, EyeOff, Save, Check, Store, Sparkles, ArrowRight, Info, AlertCircle, Pencil, X, List, Target, History as HistoryIcon, ChevronDown, Settings as SettingsIcon, Clock, Link2Off, AlertTriangle, GitMerge } from 'lucide-react';
 import { cleanSource } from '@/lib/importBrain';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -60,10 +60,12 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
     const [showExcluded, setShowExcluded] = useState(false);
     const [isBulkUpdating, setIsBulkUpdating] = useState(false);
     const [confirmingUnlinkId, setConfirmingUnlinkId] = useState<string | null>(null);
+    const [mergeDialogGroup, setMergeDialogGroup] = useState<string | null>(null);
+    const [mergeTargetName, setMergeTargetName] = useState('');
 
     // Fetch Source-level Settings
     const { data: sourceSettings = [] } = useQuery({
-        queryKey: ['sources'],
+        queryKey: ['sources', user?.id],
         queryFn: async () => {
             const { data, error } = await (supabase as any)
                 .from('sources')
@@ -73,7 +75,8 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 return [];
             }
             return data || [];
-        }
+        },
+        enabled: !!user?.id,
     });
 
     const updateSourceMutation = useMutation({
@@ -98,11 +101,12 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
     });
 
     const { data: rules = [], isLoading } = useQuery({
-        queryKey: ['classification_rules'],
+        queryKey: ['classification_rules', currentAccountId],
         queryFn: async () => {
             const { data, error } = await (supabase as any)
                 .from('classification_rules')
                 .select('*')
+                .eq('account_id', currentAccountId)
                 .order('clean_name');
 
             if (error) {
@@ -116,13 +120,17 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 source_name: r.raw_name,
                 clean_source_name: r.clean_name
             }));
-        }
+        },
+        enabled: !!currentAccountId,
     });
 
     const { data: transactions = [] } = useQuery({
-        queryKey: ['transactions'],
+        queryKey: ['transactions', 'source-manager', currentAccountId],
         queryFn: async () => {
-            const { data, error } = await (supabase as any).from('transactions').select('*');
+            const { data, error } = await (supabase as any)
+                .from('transactions')
+                .select('id, date, merchant, amount, category, sub_category, status, excluded, recurring, planned, clean_source, clean_merchant, merchant_description, confidence')
+                .eq('account_id', currentAccountId);
             if (error) {
                 console.error("Transactions Fetch Error:", error);
                 return [];
@@ -131,11 +139,12 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
             // Map legacy 'merchant' fields to 'source' fields for consistent UI logic
             return (data || []).map((t: any) => ({
                 ...t,
-                source: t.source || t.merchant || 'Unknown',
+                source: t.merchant || 'Unknown',
                 clean_source: t.clean_source || t.clean_merchant || null,
-                source_description: t.source_description || t.merchant_description || null
+                source_description: t.merchant_description || null
             }));
-        }
+        },
+        enabled: !!currentAccountId,
     });
 
     const unprocessedCount = useMemo(() => {
@@ -318,6 +327,39 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
         }
     };
 
+    const mergeMutation = useMutation({
+        mutationFn: async ({ fromName, toName }: { fromName: string, toName: string }) => {
+            // Update all classification_rules: clean_name from → to
+            const { error: rulesError } = await (supabase as any)
+                .from('classification_rules')
+                .update({ clean_name: toName })
+                .eq('clean_name', fromName)
+                .eq('account_id', currentAccountId);
+            if (rulesError) throw rulesError;
+
+            // Update all transactions: clean_source + clean_merchant from → to
+            const { error: txError } = await (supabase as any)
+                .from('transactions')
+                .update({ clean_source: toName, clean_merchant: toName })
+                .eq('clean_source', fromName)
+                .eq('account_id', currentAccountId);
+            if (txError) throw txError;
+        },
+        onSuccess: (_, { fromName, toName }) => {
+            queryClient.invalidateQueries({ queryKey: ['classification_rules'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions', 'source-manager', currentAccountId] });
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['existing-source-names'] });
+            queryClient.invalidateQueries({ queryKey: ['existing-source-names-ranked'] });
+            toast({ title: "Sources Merged", description: `"${fromName}" merged into "${toName}".` });
+            setMergeDialogGroup(null);
+            setMergeTargetName('');
+        },
+        onError: (error: any) => {
+            toast({ title: "Merge Failed", description: error.message, variant: "destructive" });
+        }
+    });
+
     const handleBulkUpdate = async (updates: Partial<Transaction>) => {
         if (historySelectedIds.size === 0) return;
 
@@ -370,7 +412,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
         }
     };
 
-    const handleSaveSourceMapping = async (cleanName: string, pattern: string, selectedIds: string[]) => {
+    const handleSaveSourceMapping = async (cleanName: string, pattern: string, matchMode: 'exact' | 'contains' | 'fuzzy', selectedIds: string[]) => {
         try {
             // 1. Create the rule
             const payload = {
@@ -379,7 +421,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 match_type: 'source' as const,
                 raw_name: pattern,
                 clean_name: cleanName,
-                match_mode: 'contains' as const,
+                match_mode: matchMode,
                 skip_triage: false,
                 auto_category: '', 
                 auto_sub_category: '',
@@ -738,7 +780,7 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 }
                 return a.name.localeCompare(b.name) * modifier;
             });
-    }, [rules, transactions, search, filterAuto, filterExcluded, filterRecurring, sortBy, sortOrder, settings.noiseFilters]);
+    }, [rules, transactions, search, filterAuto, filterExcluded, filterRecurring, filterOrphans, sortBy, sortOrder, settings.noiseFilters]);
 
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
@@ -1398,6 +1440,20 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                                                 <SettingsIcon className="w-4 h-4" />
                                             </Button>
 
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                title="Merge into another source"
+                                                className="h-8 w-8 p-0 text-slate-400 hover:text-purple-600 hover:bg-purple-50"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMergeDialogGroup(group.name);
+                                                    setMergeTargetName('');
+                                                }}
+                                            >
+                                                <GitMerge className="w-4 h-4" />
+                                            </Button>
+
                                             {group.transactionCount === 0 && (
                                                 <Button
                                                     variant="ghost"
@@ -1859,15 +1915,74 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 </DialogContent>
             </Dialog>
 
-            {
-                selectedTransactionForEdit && (
-                    <TransactionDetailDialog
-                        transaction={selectedTransactionForEdit}
-                        open={!!selectedTransactionForEdit}
-                        onOpenChange={(o) => !o && setSelectedTransactionForEdit(null)}
-                        onSave={handleUpdateTransaction}
-                    />
-                )}
+            {selectedTransactionForEdit && (
+                <TransactionDetailDialog
+                    transaction={selectedTransactionForEdit}
+                    open={!!selectedTransactionForEdit}
+                    onOpenChange={(o) => !o && setSelectedTransactionForEdit(null)}
+                    onSave={handleUpdateTransaction}
+                />
+            )}
+
+            {/* Merge Source Dialog */}
+            <Dialog open={!!mergeDialogGroup} onOpenChange={(o) => { if (!o) { setMergeDialogGroup(null); setMergeTargetName(''); } }}>
+                <DialogContent className="max-w-md bg-white rounded-2xl shadow-2xl border-none p-0 overflow-hidden">
+                    <div className="p-6 pb-0">
+                        <DialogHeader>
+                            <DialogTitle className="text-xl font-black text-slate-900 flex items-center gap-2">
+                                <GitMerge className="w-5 h-5 text-purple-600" />
+                                Merge Source
+                            </DialogTitle>
+                            <DialogDescription className="text-sm text-slate-500">
+                                All rules and transactions tagged <span className="font-bold text-slate-700">"{mergeDialogGroup}"</span> will be reassigned to the target source.
+                            </DialogDescription>
+                        </DialogHeader>
+                    </div>
+
+                    <div className="p-6 space-y-4">
+                        <div className="space-y-2">
+                            <Label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Merge Into</Label>
+                            <SourceNameSelector
+                                value={mergeTargetName}
+                                onChange={setMergeTargetName}
+                                hideAddNew={true}
+                                placeholder="Select target source..."
+                                excludeNames={mergeDialogGroup ? [mergeDialogGroup] : []}
+                            />
+                        </div>
+
+                        {mergeTargetName && (
+                            <div className="p-3 bg-purple-50 rounded-xl border border-purple-100 text-sm text-purple-800">
+                                <span className="font-bold">"{mergeDialogGroup}"</span>
+                                <span className="mx-2 text-purple-400">→</span>
+                                <span className="font-bold">"{mergeTargetName}"</span>
+                                <p className="text-xs text-purple-600 mt-1">This will update all classification rules and transactions. This cannot be undone.</p>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="px-6 pb-6 flex gap-3">
+                        <Button
+                            variant="outline"
+                            className="flex-1 font-bold"
+                            onClick={() => { setMergeDialogGroup(null); setMergeTargetName(''); }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-black"
+                            disabled={!mergeTargetName || mergeTargetName === mergeDialogGroup || mergeMutation.isPending}
+                            onClick={() => {
+                                if (mergeDialogGroup && mergeTargetName) {
+                                    mergeMutation.mutate({ fromName: mergeDialogGroup, toName: mergeTargetName });
+                                }
+                            }}
+                        >
+                            {mergeMutation.isPending ? 'Merging...' : 'Merge Sources'}
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </Card>
     );
 };

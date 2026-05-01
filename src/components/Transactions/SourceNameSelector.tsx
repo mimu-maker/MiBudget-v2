@@ -13,9 +13,11 @@ interface SourceNameSelectorProps {
     className?: string;
     hideAddNew?: boolean;
     disabled?: boolean;
+    placeholder?: string;
+    excludeNames?: string[];
 }
 
-export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, onChange, className, hideAddNew, disabled }) => {
+export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, onChange, className, hideAddNew, disabled, placeholder, excludeNames = [] }) => {
     const [open, setOpen] = useState(false);
     const [searchValue, setSearchValue] = useState("");
 
@@ -66,11 +68,15 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
         }
     });
 
-    const displayedSources = searchValue
-        ? rankedSources
-        : rankedSources.slice(0, 10);
+    const filteredSources = excludeNames.length > 0
+        ? rankedSources.filter(s => !excludeNames.some(e => e.toLowerCase() === s.name.toLowerCase()))
+        : rankedSources;
 
-    const hasMore = !searchValue && rankedSources.length > 10;
+    const displayedSources = searchValue
+        ? filteredSources
+        : filteredSources.slice(0, 10);
+
+    const hasMore = !searchValue && filteredSources.length > 10;
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -83,7 +89,7 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
                     className={cn("w-full justify-between bg-white font-bold text-blue-600 h-10 border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all", className)}
                 >
                     <span className="truncate">
-                        {value || "Select or search resolved source..."}
+                        {value || placeholder || "Select or search resolved source..."}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
@@ -181,7 +187,7 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
                                 {hasMore && (
                                     <div className="px-2 py-3 text-center border-t border-slate-50">
                                         <p className="text-[10px] text-slate-400 italic">
-                                            Showing top 10. Type to search {rankedSources.length - 10} more...
+                                            Showing top 10. Type to search {filteredSources.length - 10} more...
                                         </p>
                                     </div>
                                 )}

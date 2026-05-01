@@ -487,7 +487,7 @@ export const ValidationDashboard = () => {
         setRuleDialogOpen(false);
     };
 
-    const handleSaveSourceMapping = async (cleanName: string, pattern: string, ids: string[]) => {
+    const handleSaveSourceMapping = async (cleanName: string, pattern: string, matchMode: 'exact' | 'contains' | 'fuzzy', ids: string[]) => {
         // 1. Create the rule (try/catch to allow transaction update even if rule saving fails due to permissions)
         try {
             await createRuleMutation.mutateAsync({

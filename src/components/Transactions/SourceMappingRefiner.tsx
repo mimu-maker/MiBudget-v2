@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Search, ArrowRight, Info, Zap, ChevronDown, ChevronUp } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { SourceNameSelector } from './SourceNameSelector';
@@ -13,11 +14,13 @@ import { useSettings } from '@/hooks/useSettings';
 import { useProfile } from '@/contexts/ProfileContext';
 import { SKIP_PATTERNS } from '@/lib/importBrain';
 
+type MatchMode = 'exact' | 'contains' | 'fuzzy';
+
 interface SourceMappingRefinerProps {
     source: string;
     txs: any[];
     allPendingTxs: any[];
-    onSave: (cleanName: string, pattern: string, selectedIds: string[]) => void;
+    onSave: (cleanName: string, pattern: string, matchMode: MatchMode, selectedIds: string[]) => void;
     onCancel: () => void;
     onUpdateNote: (id: string, note: string) => void;
 }
@@ -39,6 +42,8 @@ export const SourceMappingRefiner = ({
         // Combine and deduplicate
         return Array.from(new Set([...userFilters, ...SKIP_PATTERNS]));
     }, [settings.noiseFilters]);
+
+    const [matchMode, setMatchMode] = useState<MatchMode>('contains');
 
     const [cleanName, setCleanName] = useState(() => {
         const words = source.split(' ').filter(w => w.length > 0);
@@ -133,15 +138,27 @@ export const SourceMappingRefiner = ({
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row items-center gap-4 p-6 bg-slate-50/50 rounded-2xl border border-slate-100/80 shadow-inner relative">
                 <div className="flex-1 space-y-2 w-full">
-                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Input Name (Bank Reference)</Label>
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <Input
-                            value={pattern}
-                            onChange={(e) => setPattern(e.target.value)}
-                            placeholder="Enter keyword to match..."
-                            className="h-10 pl-9 font-mono text-sm bg-white rounded-xl border-slate-200/60 shadow-sm"
-                        />
+                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Pattern Text (Bank Reference)</Label>
+                    <div className="flex gap-2">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <Input
+                                value={pattern}
+                                onChange={(e) => setPattern(e.target.value)}
+                                placeholder="Enter keyword to match..."
+                                className="h-10 pl-9 font-mono text-sm bg-white rounded-xl border-slate-200/60 shadow-sm"
+                            />
+                        </div>
+                        <Select value={matchMode} onValueChange={(v) => setMatchMode(v as MatchMode)}>
+                            <SelectTrigger className="w-32 bg-white h-10 border-slate-200/60 shadow-sm rounded-xl shrink-0">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="contains">Contains</SelectItem>
+                                <SelectItem value="fuzzy">Fuzzy</SelectItem>
+                                <SelectItem value="exact">Exact</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                 </div>
 
@@ -155,7 +172,7 @@ export const SourceMappingRefiner = ({
                 </div>
 
                 <div className="flex-1 space-y-2 w-full">
-                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Display Name (Clean Product/Service)</Label>
+                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Mapped Source</Label>
                     <SourceNameSelector
                         value={cleanName}
                         hideAddNew={false}
@@ -248,7 +265,7 @@ export const SourceMappingRefiner = ({
                 <Button variant="ghost" className="flex-1 font-bold text-slate-500" onClick={onCancel}>Cancel</Button>
                 <Button
                     className="flex-2 bg-blue-600 hover:bg-blue-700 text-white font-black px-12 shadow-xl shadow-blue-100 h-11 text-base group"
-                    onClick={() => onSave(cleanName, pattern, Array.from(selectedIds))}
+                    onClick={() => onSave(cleanName, pattern, matchMode, Array.from(selectedIds))}
                     disabled={!cleanName || selectedIds.size === 0}
                 >
                     Map {selectedIds.size} Transaction{selectedIds.size !== 1 ? 's' : ''}
