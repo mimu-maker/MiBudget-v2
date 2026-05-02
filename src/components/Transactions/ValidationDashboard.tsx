@@ -773,18 +773,26 @@ export const ValidationDashboard = () => {
                                 onChange={(e) => setRule((p: any) => p ? { ...p, name: e.target.value } : null)}
                                 className="flex-1 bg-white h-10 font-mono text-sm border-slate-200/60 shadow-sm"
                             />
-                            <Select
-                                value={rule.match_mode === 'fuzzy' ? 'contains' : (rule.match_mode || 'contains')}
-                                onValueChange={(v) => setRule((p: any) => p ? { ...p, match_mode: v } : null)}
-                            >
-                                <SelectTrigger className="w-32 bg-white h-10 border-slate-200/60 shadow-sm">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="contains">Contains</SelectItem>
-                                    <SelectItem value="exact">Exact</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <div className="flex rounded-lg border border-slate-200/60 bg-white shadow-sm overflow-hidden shrink-0">
+                                {(['contains', 'exact'] as const).map((mode) => {
+                                    const current = rule.match_mode === 'fuzzy' ? 'contains' : (rule.match_mode || 'contains');
+                                    return (
+                                        <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() => setRule((p: any) => p ? { ...p, match_mode: mode } : null)}
+                                            className={cn(
+                                                'px-3 h-10 text-xs font-bold capitalize transition-colors',
+                                                current === mode
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'text-slate-500 hover:bg-slate-50'
+                                            )}
+                                        >
+                                            {mode}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
                     </div>
 

@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Search, ArrowRight, Info, Zap, ChevronDown, ChevronUp } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { SourceNameSelector } from './SourceNameSelector';
@@ -149,15 +148,23 @@ export const SourceMappingRefiner = ({
                                 className="h-10 pl-9 font-mono text-sm bg-white rounded-xl border-slate-200/60 shadow-sm"
                             />
                         </div>
-                        <Select value={matchMode} onValueChange={(v) => setMatchMode(v as MatchMode)}>
-                            <SelectTrigger className="w-32 bg-white h-10 border-slate-200/60 shadow-sm rounded-xl shrink-0">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="contains">Contains</SelectItem>
-                                <SelectItem value="exact">Exact</SelectItem>
-                            </SelectContent>
-                        </Select>
+                        <div className="flex rounded-xl border border-slate-200/60 bg-white shadow-sm overflow-hidden shrink-0">
+                            {(['contains', 'exact'] as const).map((mode) => (
+                                <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => setMatchMode(mode)}
+                                    className={cn(
+                                        'px-3 h-10 text-xs font-bold capitalize transition-colors',
+                                        matchMode === mode
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-slate-500 hover:bg-slate-50'
+                                    )}
+                                >
+                                    {mode}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
