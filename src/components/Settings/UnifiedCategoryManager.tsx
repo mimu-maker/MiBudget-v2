@@ -12,7 +12,8 @@ import { Plus, Trash2, ArrowUp, ArrowDown, CheckCircle2, Circle, ArrowRightLeft,
 import { useAuth } from '@/contexts/UnifiedAuthContext';
 import { useMultiYearBudgets, useBudgetGroups, BudgetGroupRecord } from '@/hooks/useBudgetCategories';
 import { SubcategoryTransactionsDialog } from './SubcategoryTransactionsDialog';
-import { useTransactionTable } from '@/components/Transactions/hooks/useTransactionTable';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { useSettings } from '@/hooks/useSettings';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -119,7 +120,21 @@ export const UnifiedCategoryManager = () => {
         deleteGroup
     } = useBudgetGroups();
 
-    const { transactions } = useTransactionTable();
+    // Lightweight query — only the fields needed to check category activity per year
+    const { data: categoryActivity = [] } = useQuery({
+        queryKey: ['category-activity', currentAccountId],
+        queryFn: async () => {
+            const { data, error } = await (supabase as any)
+                .from('transactions')
+                .select('category, sub_category, date')
+                .eq('account_id', currentAccountId)
+                .not('date', 'is', null);
+            if (error) throw error;
+            return (data || []) as { category: string | null; sub_category: string | null; date: string }[];
+        },
+        enabled: !!currentAccountId,
+        staleTime: 1000 * 60 * 5
+    });
     const {
         settings,
         addItem,
@@ -258,11 +273,15 @@ export const UnifiedCategoryManager = () => {
     const collapseAll = () => setExpandedCategories(new Set());
 
     const hasTransactions = (subCategoryName: string, year: number) => {
-        return transactions.some(t =>
-            (t.sub_category?.toLowerCase() === subCategoryName.toLowerCase() ||
-                (t as any).subCategory?.toLowerCase() === subCategoryName.toLowerCase()) &&
-            new Date(t.date).getFullYear() === year
-        );
+        const lower = subCategoryName.toLowerCase();
+        return categoryActivity.some(t => {
+            if (!t.date) return false;
+            if (new Date(t.date).getFullYear() !== year) return false;
+            return (
+                t.sub_category?.toLowerCase() === lower ||
+                t.category?.toLowerCase() === lower
+            );
+        });
     };
 
     const handleToggleActive = async (categoryName: string, subName: string, budgetId: string, active: boolean) => {
