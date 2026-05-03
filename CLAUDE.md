@@ -24,6 +24,10 @@ npm run test       # Vitest unit tests
 npm run test:ui    # Vitest with UI
 ```
 
+## Active Branch
+
+`Claude_0.1` — all work goes here. Never push directly to main.
+
 ## Architecture
 
 **Stack**: React 18 + TypeScript, Vite, Tailwind CSS, shadcn/ui (Radix UI), React Router v6, TanStack Query v5, Supabase (PostgreSQL backend + auth).
@@ -62,7 +66,11 @@ TanStack Query with custom hooks in `src/hooks/`. Common pattern:
 const { budget, loading, refreshBudget } = useAnnualBudget(selectedYear);
 ```
 
+Query keys **must** include `currentAccountId` and use `enabled: !!currentAccountId` — missing this causes empty cache before auth resolves.
+
 Query keys typically include `[resource, year, accountId]`. Stale time is usually 5 minutes.
+
+**Invalidation:** always use the exact query key prefix. The transaction list uses `['transactions-infinite']` and `['transactions-all']` — invalidating `['transactions']` does nothing.
 
 ### Category & Sub-category Selections
 
@@ -70,12 +78,33 @@ Always use `useGroupedCategories` hook and `CategorySelectContent` component for
 
 Transactions store category/sub-category *names* (not IDs) for resilience.
 
+The `Special` category group = Slush Fund. `useCategorySource` only filters out `'General'` (internal feeder) — `'Special'` must remain visible in all dropdowns.
+
+### Source / Classification Rules
+
+- `classification_rules` table: stores pattern rules with `raw_name`, `clean_name`, `match_mode`, `account_id`
+- Unique constraint: `(account_id, raw_name)` — required for upsert
+- `match_mode` is `'exact' | 'contains'` — fuzzy was removed, migration guard: `=== 'fuzzy' ? 'contains'`
+- `is_resolved` on a transaction = `!!clean_source` (non-empty) — does NOT require a classification rule to exist
+- `SourceNameSelector` queries all distinct `clean_source` values from transactions (no row limit) + rule names
+
+### Transaction Status Flow
+
+```
+Pending Triage → Pending Categorisation → Pending Validation → Complete
+                                                              → Excluded
+Pending Reconciliation → Reconciled  (never show in Pending views)
+```
+
+**Settled statuses** (hidden from all Pending views): `Complete`, `Excluded`, `Pending Reconciliation`, `Reconciled`
+
 ### Missing Data Debugging
 
 If data appears missing in the UI:
 1. Check RLS policies join through `user_profiles`
 2. Verify `user_id` in data table matches `id` in `user_profiles` (not auth UID)
 3. Verify a default budget exists for the profile (many queries scope to a `budgetId`)
+4. Check TanStack Query keys include `currentAccountId` with `enabled` guard
 
 ## Key Files
 
@@ -84,4 +113,21 @@ If data appears missing in the UI:
 - `src/integrations/supabase/types.ts` — auto-generated DB types
 - `src/contexts/UnifiedAuthContext.tsx` — auth interface used by all components
 - `src/hooks/useAnnualBudget.ts` — primary budget data hook
+- `src/hooks/useValidationStats.ts` — sidebar badge counts (keep in sync with ValidationDashboard filters)
+- `src/components/Transactions/hooks/useTransactionTable.ts` — core transaction data + `is_resolved` logic
+- `src/components/Transactions/ValidationDashboard.tsx` — Pending Action hub
+- `src/components/Settings/SourceManager.tsx` — source rule management
 - `docs/FE_ARCHITECTURE.md` — architecture decisions and RLS patterns
+- `vercel.json` — SPA rewrite rule (all routes → index.html)
+
+## Decisions Log
+
+| Date | Decision |
+|------|----------|
+| 2026-05-02 | Removed `fuzzy` match mode — only `contains` and `exact` remain |
+| 2026-05-02 | Added `UNIQUE (account_id, raw_name)` constraint to `classification_rules` |
+| 2026-05-02 | `is_resolved` = `!!clean_source` — no longer requires a rule to exist |
+| 2026-05-02 | Transaction sub-label shows raw bank string, not notes field |
+| 2026-05-02 | `Reconciled` status excluded from all Pending views |
+| 2026-05-02 | `Special` category (Slush Fund) must not be filtered out of dropdowns |
+| 2026-05-02 | `vercel.json` added for SPA routing (fixes 404 on page refresh) |
