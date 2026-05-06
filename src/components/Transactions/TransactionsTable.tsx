@@ -3,10 +3,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { usePersistentState } from '@/hooks/usePersistentState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Search, ChevronDown, Clock, Zap, History, Calculator, FilterX, Download } from 'lucide-react';
+import { Plus, Search, ChevronDown, Clock, Zap, History, Calculator, FilterX, Download, X, FileText, FileSpreadsheet, File } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { exportTransactions, ExportFormat } from '@/utils/exportUtils';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
+import { exportTransactions } from '@/utils/exportUtils';
 import { UnifiedAddTransactionsDialog } from './UnifiedAddTransactionsDialog';
 import { TransactionSplitModal } from './TransactionSplitModal';
 import { TransactionEditDrawer } from './TransactionEditDrawer';
@@ -34,6 +34,15 @@ import { useGroupedCategories } from '@/hooks/useBudgetCategories'; // Import th
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { formatCurrency } from '@/lib/formatUtils';
 import { cn } from '@/lib/utils';
+
+const FilterChip = ({ label, onClear }: { label: string; onClear: () => void }) => (
+  <span className="inline-flex items-center gap-1 bg-white border border-indigo-200 text-slate-700 text-[11px] font-medium px-2 py-0.5 rounded-full shadow-sm">
+    {label}
+    <button onClick={onClear} className="text-slate-400 hover:text-red-500 transition-colors ml-0.5">
+      <X className="w-3 h-3" />
+    </button>
+  </span>
+);
 
 export const TransactionsTable = () => {
   const {
@@ -266,14 +275,15 @@ export const TransactionsTable = () => {
 
       <Card className="flex flex-col flex-1 min-h-0 border-slate-200 shadow-sm bg-white overflow-hidden">
         <CardHeader className="py-6 px-6 shrink-0 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-slate-50 border-b space-y-0">
-          <CardTitle className="text-xl font-bold text-slate-800">
-            Transactions ({hasActiveFilters ? `${filteredCount} of ${totalCount}` : totalCount})
-            {hasActiveFilters && (
-              <span className="ml-2 text-slate-500 font-medium text-base">
-                → {formatCurrency(filteredSum, settings.currency)}
-              </span>
-            )}
-          </CardTitle>
+          <div className="flex flex-col gap-0.5">
+            <CardTitle className="text-xl font-bold text-slate-800">Transactions</CardTitle>
+            <p className="text-sm font-medium text-slate-500">
+              {hasActiveFilters
+                ? <><span className="text-slate-800 font-semibold">{filteredCount.toLocaleString()}</span> filtered of <span className="text-slate-600">{totalCount.toLocaleString()} total</span> · <span className="text-indigo-600 font-semibold">{formatCurrency(filteredSum, settings.currency)}</span></>
+                : <><span className="text-slate-600">{totalCount.toLocaleString()} transactions</span></>
+              }
+            </p>
+          </div>
           <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
             <div className="flex bg-white border border-slate-200 p-0.5 rounded-lg">
               {[
@@ -316,10 +326,48 @@ export const TransactionsTable = () => {
                 }}
               />
             </div>
-            <Button variant="outline" size="sm" className="h-9 gap-2" onClick={() => setExportDialogOpen(true)}>
-              <Download className="w-4 h-4" />
-              <span>Export</span>
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 gap-1.5">
+                  <Download className="w-4 h-4" />
+                  <span>Export</span>
+                  <ChevronDown className="w-3.5 h-3.5 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {([
+                  { fmt: 'pdf' as const, label: 'PDF Document', Icon: File },
+                  { fmt: 'excel' as const, label: 'Excel Workbook', Icon: FileSpreadsheet },
+                  { fmt: 'csv' as const, label: 'CSV', Icon: FileText },
+                ] as const).map(({ fmt, label, Icon }, i) => (
+                  <div key={fmt}>
+                    {i > 0 && <DropdownMenuSeparator />}
+                    <DropdownMenuLabel className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest py-1.5">
+                      <Icon className="w-3 h-3" />{label}
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem
+                      className="pl-5 text-sm cursor-pointer"
+                      onClick={() => exportTransactions(
+                        filteredAndSortedTransactions, fmt,
+                        `Transactions_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`
+                      )}
+                    >
+                      All Transactions
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className={cn("pl-5 text-sm cursor-pointer", !hasActiveFilters && "text-slate-300 cursor-not-allowed")}
+                      disabled={!hasActiveFilters}
+                      onClick={() => hasActiveFilters && exportTransactions(
+                        filteredAndSortedTransactions, fmt,
+                        `Transactions_Filtered_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`
+                      )}
+                    >
+                      Filtered Transactions
+                    </DropdownMenuItem>
+                  </div>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </CardHeader>
 
@@ -444,6 +492,48 @@ export const TransactionsTable = () => {
             </Button>
           )}
         </div>
+
+        {hasActiveFilters && (
+          <div className="px-6 py-2 bg-indigo-50/50 border-b border-indigo-100 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mr-1">Filters:</span>
+            {Array.isArray(filters.status) && filters.status.length > 0 && (
+              <FilterChip label={`Status: ${filters.status.length === 1 ? filters.status[0] : `${filters.status.length} selected`}`} onClear={() => clearFilter('status')} />
+            )}
+            {filters.date && (
+              <FilterChip
+                label={filters.date.label === 'last30' ? 'Last 30 days' : filters.date.label === 'last90' ? 'Last 90 days' : 'Date range'}
+                onClear={() => clearFilter('date')}
+              />
+            )}
+            {Array.isArray(filters.category) && filters.category.length > 0 && (
+              <FilterChip label={`Category: ${filters.category.length === 1 ? filters.category[0] : `${filters.category.length} selected`}`} onClear={() => clearFilter('category')} />
+            )}
+            {Array.isArray(filters.sub_category) && filters.sub_category.length > 0 && (
+              <FilterChip label={`Sub-cat: ${filters.sub_category.length === 1 ? filters.sub_category[0] : `${filters.sub_category.length} selected`}`} onClear={() => clearFilter('sub_category')} />
+            )}
+            {filters.source && (
+              <FilterChip
+                label={Array.isArray(filters.source)
+                  ? `Source: ${filters.source.length === 1 ? filters.source[0] : `${filters.source.length} selected`}`
+                  : `Search: "${filters.source}"`}
+                onClear={() => clearFilter('source')}
+              />
+            )}
+            {filters.amount && (
+              <FilterChip label="Amount filter" onClear={() => clearFilter('amount')} />
+            )}
+            {filters.excluded !== undefined && filters.excluded !== null && (
+              <FilterChip label={filters.excluded ? 'Excluded only' : 'Not excluded'} onClear={() => clearFilter('excluded')} />
+            )}
+            <button
+              onClick={emergencyClearAll}
+              className="ml-auto text-[11px] text-indigo-400 hover:text-red-500 font-semibold flex items-center gap-1 transition-colors"
+            >
+              <FilterX className="w-3 h-3" />
+              Clear all filters
+            </button>
+          </div>
+        )}
 
         <CardContent className="flex-1 overflow-hidden p-0 relative">
           <div

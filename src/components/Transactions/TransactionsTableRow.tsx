@@ -1,5 +1,5 @@
 
-import { Trash2, Store, Sparkles, Split, Edit2, Check, Calendar, Search } from 'lucide-react';
+import { Trash2, Store, Sparkles, Split, Edit2, Check, Calendar, Search, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { EditableCell } from './EditableCell';
@@ -10,6 +10,8 @@ import { SourceResolveDialog } from './SourceResolveDialog';
 import { SourceApplyDialog } from './SourceApplyDialog';
 import { TransactionNote } from './TransactionNote';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { addMonths, startOfMonth, format, parseISO } from 'date-fns';
@@ -97,7 +99,7 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
       <tr
         ref={ref}
         {...props}
-        className={`border-b border-border/50 hover:bg-accent/30 transition-colors row-pazazz cursor-pointer ${transaction.excluded ? 'opacity-40 bg-muted/20' : ''
+        className={`group border-b border-border/50 hover:bg-accent/30 transition-colors row-pazazz cursor-pointer ${transaction.excluded ? 'opacity-40 bg-muted/20' : ''
           } ${isSelected ? 'bg-primary/10' : ''} ${transaction.parent_id ? 'bg-amber-50/20' : ''} ${transaction.is_split ? 'bg-blue-50/10 font-medium' : ''}`}
         onClick={() => onRowClick(transaction)}
       >
@@ -256,16 +258,32 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
             )}
           </div>
         </td>
-        <td className="py-3 px-2 text-right whitespace-nowrap font-medium">
+        <td className="py-3 px-2 text-left whitespace-nowrap font-medium">
           <span className={transaction.amount > 0 ? 'text-emerald-600' : ''}>
             {new Intl.NumberFormat('da-DK', { style: 'currency', currency: 'DKK' }).format(transaction.amount)}
           </span>
         </td>
 
         <td className="py-3 px-1 w-[1%] whitespace-nowrap">
-          <Badge variant={transaction.status === 'Completed' || transaction.status === 'Reconciled' || (isReconItem && transaction.status === 'Complete') ? 'outline' : 'secondary'} className="text-[10px] uppercase font-bold text-slate-500">
-            {isReconItem && (transaction.status === 'Complete' || transaction.status === 'Completed') ? 'Reconciled' : transaction.status}
-          </Badge>
+          {(() => {
+            const displayStatus = isReconItem && (transaction.status === 'Complete' || transaction.status === 'Completed')
+              ? 'Reconciled'
+              : transaction.status;
+            const colorClass = displayStatus === 'Pending Triage'
+              ? 'bg-amber-50 text-amber-700 border-amber-200'
+              : displayStatus === 'Pending Reconciliation'
+              ? 'bg-blue-50 text-blue-700 border-blue-200'
+              : displayStatus === 'Completed' || displayStatus === 'Complete'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : displayStatus === 'Reconciled'
+              ? 'bg-slate-100 text-slate-600 border-slate-300'
+              : 'bg-slate-50 text-slate-500 border-slate-200';
+            return (
+              <Badge variant="outline" className={cn("text-[10px] uppercase font-bold border", colorClass)}>
+                {displayStatus}
+              </Badge>
+            );
+          })()}
         </td>
         <td className="py-3 px-2">
           {isReconItem ? (
@@ -288,29 +306,40 @@ export const TransactionsTableRow = memo(forwardRef<HTMLTableRowElement, Transac
           </div>
         </td>
         <td className="py-3 px-2 text-center" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center justify-center gap-1">
-
-            {!transaction.parent_id && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => onSplit(transaction)}
-                className="text-muted-foreground hover:text-blue-600 transition-colors h-8 w-8 p-0"
-                title="Split / Itemize Transaction"
+                className="h-8 w-8 p-0 text-muted-foreground hover:text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <Split className="w-4 h-4" />
+                <MoreHorizontal className="w-4 h-4" />
               </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onCellEdit(transaction.id, 'status', isReconItem ? 'Reconciled' : 'Complete')}
-              className="text-muted-foreground hover:text-emerald-600 transition-colors h-8 w-8 p-0"
-              title="Confirm / Mark Complete"
-            >
-              <Check className="w-4 h-4" />
-            </Button>
-          </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem
+                onClick={() => onCellEdit(transaction.id, 'status', isReconItem ? 'Reconciled' : 'Complete')}
+                className="gap-2 cursor-pointer"
+              >
+                <Check className="w-4 h-4 text-emerald-600" />
+                Mark Complete
+              </DropdownMenuItem>
+              {!transaction.parent_id && (
+                <DropdownMenuItem onClick={() => onSplit(transaction)} className="gap-2 cursor-pointer">
+                  <Split className="w-4 h-4 text-blue-600" />
+                  Split Transaction
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => onDelete(transaction.id)}
+                className="gap-2 cursor-pointer text-red-600 focus:text-red-600"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </td>
       </tr >
     </>

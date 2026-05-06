@@ -441,8 +441,8 @@ export const TransactionsTableHeader = ({
             />
           </div>
         </SortableHeader>
-        <SortableHeader field="amount" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} className="whitespace-nowrap text-right">
-          <div className="flex items-center justify-end space-x-1">
+        <SortableHeader field="amount" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} className="whitespace-nowrap">
+          <div className="flex items-center space-x-1">
             <span>Amount</span>
             <FilterableHeader field="amount" onFilter={onFilter} onClearFilter={onClearFilter} currentFilter={filters.amount} />
           </div>
@@ -481,9 +481,7 @@ export const TransactionsTableHeader = ({
             <FilterableHeader field="excluded" onFilter={onFilter} onClearFilter={onClearFilter} currentFilter={filters.excluded} />
           </div>
         </SortableHeader>
-        <th className="py-3 px-2 text-center text-muted-foreground font-semibold">
-          Actions
-        </th>
+        <th className="py-3 px-2 text-center text-muted-foreground font-semibold w-10" />
       </tr>
     </thead>
   );

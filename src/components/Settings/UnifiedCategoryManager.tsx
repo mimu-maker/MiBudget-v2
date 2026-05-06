@@ -94,6 +94,7 @@ const ICON_SECTIONS = [
 
 export const UnifiedCategoryManager = () => {
     const { userProfile } = useAuth();
+    const currentAccountId = userProfile?.id;
     const {
         budgets,
         categories: dbCategories,

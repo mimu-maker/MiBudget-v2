@@ -195,6 +195,9 @@ export const TriageAccordion = ({
     const [expandedValidationSource, setExpandedValidationSource] = useState<string | null>(null);
     const [expandedCategorisationSource, setExpandedCategorisationSource] = useState<string | null>(null);
     const [editingRowId, setEditingRowId] = useState<string | null>(null);
+    const [oneOffSource, setOneOffSource] = useState<{ sourceKey: string; name: string } | null>(null);
+    const [editingTxId, setEditingTxId] = useState<string | null>(null);
+    const [editingTxName, setEditingTxName] = useState<string>('');
     const [editingState, setEditingState] = useState<{ category: string, sub_category: string, excluded: boolean, planned: boolean, pending_recon: boolean }>({ category: '', sub_category: '', excluded: false, planned: true, pending_recon: false });
     const [confirmingExcludeId, setConfirmingExcludeId] = useState<string | null>(null);
     const [pendingReconTx, setPendingReconTx] = useState<any | null>(null);
@@ -276,7 +279,7 @@ export const TriageAccordion = ({
             source,
             txs,
             count: txs.length,
-            total: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+            total: txs.reduce((sum, tx) => sum + tx.amount, 0)
         })).sort((a, b) => {
             const factor = auditSort.order === 'asc' ? 1 : -1;
             if (auditSort.field === 'source') return factor * a.source.localeCompare(b.source);
@@ -296,8 +299,8 @@ export const TriageAccordion = ({
             source,
             txs,
             count: txs.length,
-            total: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0),
-            avgAmount: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0) / txs.length,
+            total: txs.reduce((sum, tx) => sum + tx.amount, 0),
+            avgAmount: txs.reduce((sum, tx) => sum + tx.amount, 0) / txs.length,
             isPendingRecon: txs.some(tx => tx.status === 'Pending Reconciliation')
         })).sort((a, b) => {
             if (a.isPendingRecon !== b.isPendingRecon) return a.isPendingRecon ? 1 : -1;
@@ -307,6 +310,16 @@ export const TriageAccordion = ({
             return factor * (a.total - b.total);
         });
     }, [pendingSourceMapping, mappingSort]);
+
+    // Auto-expand the first non-recon group on load
+    useEffect(() => {
+        if (groupedSourceMapping.length > 0 && expandedSource === null) {
+            const first = groupedSourceMapping.find(g => !g.isPendingRecon) ?? groupedSourceMapping[0];
+            setExpandedSource(first.txs[0]?.id ?? null);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [groupedSourceMapping.length === 0]);
+
 
     const groupedCategorisation = useMemo(() => {
         const groups: Record<string, any[]> = {};
@@ -319,8 +332,8 @@ export const TriageAccordion = ({
             source,
             txs,
             count: txs.length,
-            total: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0),
-            avgAmount: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0) / txs.length,
+            total: txs.reduce((sum, tx) => sum + tx.amount, 0),
+            avgAmount: txs.reduce((sum, tx) => sum + tx.amount, 0) / txs.length,
             isPendingRecon: txs.some(tx => tx.status === 'Pending Reconciliation')
         })).sort((a, b) => {
             if (a.isPendingRecon !== b.isPendingRecon) return a.isPendingRecon ? 1 : -1;
@@ -337,12 +350,12 @@ export const TriageAccordion = ({
             const m = tx.clean_source || tx.source;
             if (!sources[m]) sources[m] = { sourceName: m, total: 0, count: 0, categories: {} };
             const mObj = sources[m];
-            mObj.total += Math.abs(tx.amount);
+            mObj.total += tx.amount;
             mObj.count++;
 
             if (!mObj.categories[tx.category]) mObj.categories[tx.category] = { catName: tx.category, total: 0, subCategories: {} };
             const cObj = mObj.categories[tx.category];
-            cObj.total += Math.abs(tx.amount);
+            cObj.total += tx.amount;
 
             if (!cObj.subCategories[tx.sub_category]) cObj.subCategories[tx.sub_category] = { subCatName: tx.sub_category, txs: [] };
             cObj.subCategories[tx.sub_category].txs.push(tx);
@@ -486,7 +499,7 @@ export const TriageAccordion = ({
                                     {isPendingRecon && <Badge className="bg-amber-100 text-amber-700 border-amber-200 font-bold text-[10px] uppercase">Pending Recon</Badge>}
                                 </div>
                                 <div className="flex items-center gap-4">
-                                    <span className="font-mono text-[15px] font-black text-slate-700">{formatCurrency(total, settings.currency)}</span>
+                                    <span className={cn("font-mono text-[15px] font-black", total < 0 ? "text-red-600" : "text-emerald-600")}>{formatCurrency(total, settings.currency)}</span>
 
                                     <div className="flex items-center gap-1">
                                         {!isPendingRecon && (
@@ -530,11 +543,7 @@ export const TriageAccordion = ({
                                             variant="ghost"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                if (expandedSource === txs[0]?.id) {
-                                                    setExpandedSource(null);
-                                                } else {
-                                                    openRuleDialog(source, txs, true);
-                                                }
+                                                setExpandedSource(prev => prev === txs[0]?.id ? null : (txs[0]?.id ?? null));
                                             }}
                                             className="h-9 px-3 text-[12px] font-black uppercase tracking-tighter text-slate-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg flex items-center gap-1"
                                         >
@@ -544,32 +553,159 @@ export const TriageAccordion = ({
                                 </div>
                             </div>
                             {expandedSource === txs[0]?.id && (
-                                <div className="border-t border-slate-100 bg-slate-50/10">
-                                    <div className="divide-y divide-slate-50 border-b border-slate-100">
+                                <div className="border-t border-slate-100">
+                                    {/* Per-transaction rows */}
+                                    <div className="divide-y divide-slate-100">
                                         {txs.map((tx: any) => (
-                                            <div key={tx.id} className="flex items-center h-12 px-6 hover:bg-white/50 transition-colors">
-                                                <div className="flex-1 flex items-center gap-6">
-                                                    <span className="text-[10px] font-black uppercase text-slate-400 tabular-nums">{formatDate(tx.date)}</span>
-                                                    <div className="flex flex-col flex-1 min-w-0">
-                                                        <span className="text-xs text-slate-600 font-medium truncate">{tx.description || tx.source}</span>
-                                                        {(tx.raw_source_name && tx.raw_source_name !== (tx.description || tx.source)) && (
-                                                            <span className="text-[10px] text-slate-400 truncate mt-0.5">{tx.raw_source_name}</span>
+                                            <div key={tx.id} className={cn(
+                                                "group/txrow flex items-center min-h-[48px] px-6 py-2 transition-colors",
+                                                editingTxId === tx.id ? "bg-blue-50/60" : "hover:bg-slate-50/60"
+                                            )}>
+                                                <span className="text-[10px] font-black uppercase text-slate-400 tabular-nums shrink-0 w-16">{formatDate(tx.date)}</span>
+
+                                                {editingTxId === tx.id ? (
+                                                    <div className="flex flex-1 items-center gap-2 ml-4">
+                                                        <div className="flex-1">
+                                                            <SourceNameSelector
+                                                                value={editingTxName}
+                                                                hideAddNew={false}
+                                                                onChange={(v) => setEditingTxName(v)}
+                                                            />
+                                                        </div>
+                                                        <Button
+                                                            size="sm"
+                                                            disabled={!editingTxName}
+                                                            onClick={() => {
+                                                                onBulkUpdate([tx.id], { clean_source: editingTxName, confidence: 1 });
+                                                                setEditingTxId(null);
+                                                            }}
+                                                            className="h-8 bg-blue-600 hover:bg-blue-700 text-white font-bold gap-1.5 shrink-0"
+                                                        >
+                                                            <Check className="w-3 h-3" /> Save
+                                                        </Button>
+                                                        {txs.length > 1 && (
+                                                            <Button
+                                                                size="sm"
+                                                                disabled={!editingTxName}
+                                                                variant="outline"
+                                                                onClick={() => {
+                                                                    onBulkUpdate(txs.map((t: any) => t.id), { clean_source: editingTxName, confidence: 1 });
+                                                                    setEditingTxId(null);
+                                                                    setExpandedSource(null);
+                                                                }}
+                                                                className="h-8 font-bold gap-1.5 text-blue-700 border-blue-200 hover:bg-blue-50 shrink-0"
+                                                            >
+                                                                Apply to all {txs.length}
+                                                            </Button>
                                                         )}
+                                                        <Button size="sm" variant="ghost" onClick={() => setEditingTxId(null)} className="h-8 w-8 p-0 text-slate-400 shrink-0">
+                                                            <X className="w-3.5 h-3.5" />
+                                                        </Button>
                                                     </div>
-                                                </div>
-                                                <span className="font-mono text-xs font-black text-slate-900">{formatCurrency(tx.amount, settings.currency)}</span>
+                                                ) : (
+                                                    <>
+                                                        <div className="flex flex-col flex-1 min-w-0 ml-4">
+                                                            <span className="text-xs text-slate-700 font-medium truncate">{tx.description || tx.source}</span>
+                                                            {tx.raw_source_name && tx.raw_source_name !== (tx.description || tx.source) && (
+                                                                <span className="text-[10px] text-slate-400 truncate">{tx.raw_source_name}</span>
+                                                            )}
+                                                        </div>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={() => { setEditingTxId(tx.id); setEditingTxName(tx.clean_source || ''); }}
+                                                            className="h-7 w-7 p-0 text-slate-300 hover:text-blue-600 hover:bg-blue-50 mx-2 shrink-0 transition-colors"
+                                                            title="Rename this transaction's source"
+                                                        >
+                                                            <Edit2 className="w-3 h-3" />
+                                                        </Button>
+                                                        <span className={cn("font-mono text-xs font-black shrink-0", tx.amount < 0 ? "text-red-600" : "text-emerald-600")}>{formatCurrency(tx.amount, settings.currency)}</span>
+                                                    </>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
-                                    <div className="p-6 bg-slate-50/30">
-                                        <div className="mb-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Advanced Rule Mapping</div>
-                                        <RuleForm
-                                            rule={selectedSourceRule}
-                                            setRule={setSelectedSourceRule}
-                                            onSave={handleSaveRuleInternal}
-                                            onCancel={() => setExpandedSource(null)}
-                                            getSubCategoryList={getSubCategoryList}
-                                        />
+
+                                    {/* Group-level actions */}
+                                    <div className="p-4 grid grid-cols-2 gap-3 bg-slate-50 border-t border-slate-200">
+                                        {/* One-off card — collapses into validation panel in-place */}
+                                        {oneOffSource?.sourceKey === source ? (
+                                            <div className="col-span-2 flex flex-col gap-3 p-4 rounded-xl border-2 border-amber-300 bg-amber-50">
+                                                <div className="flex items-center gap-2">
+                                                    <X className="w-4 h-4 text-amber-600 shrink-0" />
+                                                    <span className="font-black text-amber-700 text-sm">Mark as One-off — Review</span>
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="text-[10px] font-black uppercase text-amber-600 tracking-widest">Raw source</span>
+                                                    <span className="text-sm font-mono text-slate-700 bg-white border border-amber-200 rounded-lg px-3 py-1.5">{txs[0]?.source || source}</span>
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="text-[10px] font-black uppercase text-amber-600 tracking-widest">Name these {txs.length > 1 ? `${txs.length} transactions` : 'transaction'} as</span>
+                                                    <SourceNameSelector
+                                                        value={oneOffSource.name}
+                                                        hideAddNew={false}
+                                                        onChange={(v) => setOneOffSource(prev => prev ? { ...prev, name: v } : null)}
+                                                    />
+                                                </div>
+                                                <p className="text-xs text-amber-700/80 bg-amber-100 rounded-lg px-3 py-2">
+                                                    No rule will be saved. The next import of this raw source will appear here again.
+                                                </p>
+                                                <div className="flex justify-end gap-2 pt-1">
+                                                    <Button variant="ghost" onClick={() => setOneOffSource(null)} className="text-slate-500 hover:text-slate-700">
+                                                        Cancel
+                                                    </Button>
+                                                    <Button
+                                                        disabled={!oneOffSource.name}
+                                                        onClick={() => {
+                                                            onBulkUpdate(txs.map((t: any) => t.id), { clean_source: oneOffSource.name, confidence: 1 });
+                                                            setOneOffSource(null);
+                                                            setExpandedSource(null);
+                                                        }}
+                                                        className="bg-amber-500 hover:bg-amber-600 text-white font-bold gap-2"
+                                                    >
+                                                        <Check className="w-4 h-4" /> Confirm One-off
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                onClick={() => setOneOffSource({ sourceKey: source, name: txs[0]?.clean_source || '' })}
+                                                className="flex flex-col gap-1 p-4 rounded-xl border-2 border-amber-200 bg-white hover:bg-amber-50 hover:border-amber-300 transition-all text-left"
+                                            >
+                                                <span className="font-black text-amber-700 text-sm flex items-center gap-2">
+                                                    <X className="w-4 h-4" /> Mark as One-off
+                                                </span>
+                                                <span className="text-xs text-slate-500 font-medium leading-snug">
+                                                    Set a name on {txs.length > 1 ? `these ${txs.length} transactions` : 'this transaction'} only. No rule saved — next import will ask again.
+                                                </span>
+                                            </button>
+                                        )}
+
+                                        {/* Map to Source card — always visible unless one-off review is open */}
+                                        {oneOffSource?.sourceKey !== source && (
+                                            <button
+                                                onClick={() => onSaveRule({
+                                                    name: txs[0]?.clean_source || cleanSource(txs[0]?.source) || source,
+                                                    raw_name: txs[0]?.source || source,
+                                                    clean_name: txs[0]?.clean_source || '',
+                                                    match_mode: 'contains',
+                                                    category: '',
+                                                    sub_category: '',
+                                                    auto_recurring: 'N/A',
+                                                    auto_planned: true,
+                                                    auto_exclude: txs[0]?.excluded || false,
+                                                    transactionIds: txs.map((t: any) => t.id)
+                                                })}
+                                                className="flex flex-col gap-1 p-4 rounded-xl border-2 border-blue-200 bg-white hover:bg-blue-50 hover:border-blue-300 transition-all text-left"
+                                            >
+                                                <span className="font-black text-blue-700 text-sm flex items-center gap-2">
+                                                    <Tag className="w-4 h-4" /> Map to Source
+                                                </span>
+                                                <span className="text-xs text-slate-500 font-medium leading-snug">
+                                                    Create an automation rule — future imports will be mapped automatically.
+                                                </span>
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -772,7 +908,7 @@ export const TriageAccordion = ({
                                                 </Button>
                                             </div>
 
-                                            <div className="ml-4 tabular-nums font-black text-slate-900 text-[16px] shrink-0 border-l border-slate-100 pl-4 min-w-[120px] text-right">{formatCurrency(total, settings.currency)}</div>
+                                            <div className={cn("ml-4 tabular-nums font-black text-[16px] shrink-0 border-l border-slate-100 pl-4 min-w-[120px] text-right", total < 0 ? "text-red-600" : "text-emerald-600")}>{formatCurrency(total, settings.currency)}</div>
 
                                         </div>
                                     </div>
@@ -922,7 +1058,7 @@ export const TriageAccordion = ({
                                                                 </Button>
                                                             </div>
 
-                                                            <div className="ml-4 tabular-nums font-black text-slate-900 text-[15px] shrink-0 border-l border-slate-100 pl-4 min-w-[120px] text-right">
+                                                            <div className={cn("ml-4 tabular-nums font-black text-[15px] shrink-0 border-l border-slate-100 pl-4 min-w-[120px] text-right", tx.amount < 0 ? "text-red-600" : "text-emerald-600")}>
                                                                 {formatCurrency(tx.amount, settings.currency)}
                                                             </div>
                                                         </div>
@@ -1137,7 +1273,7 @@ export const TriageAccordion = ({
 
                                                     <div className="w-px h-6 bg-slate-200 mx-1" />
 
-                                                    <span className="font-black text-slate-900 text-[16px] font-mono tabular-nums border-r border-slate-100 pr-4">{formatCurrency(group.total, settings.currency)}</span>
+                                                    <span className={cn("font-black text-[16px] font-mono tabular-nums border-r border-slate-100 pr-4", group.total < 0 ? "text-red-600" : "text-emerald-600")}>{formatCurrency(group.total, settings.currency)}</span>
 
                                                     <div className="flex items-center gap-1">
                                                         <Button
@@ -1401,7 +1537,7 @@ export const TriageAccordion = ({
                                                                                                         <div className="flex-1 text-right border-l border-slate-100 pl-6">
                                                                                                             <span className={cn(
                                                                                                                 "font-mono tabular-nums text-[16px] font-black tracking-tighter",
-                                                                                                                tx.amount < 0 ? "text-slate-900" : "text-emerald-600"
+                                                                                                                tx.amount < 0 ? "text-red-600" : "text-emerald-600"
                                                                                                             )}>
                                                                                                                 {formatCurrency(tx.amount, settings.currency)}
                                                                                                             </span>
@@ -1550,7 +1686,7 @@ export const TriageAccordion = ({
                                     <div className="flex-1 text-right">
                                         <span className={cn(
                                             "font-mono tabular-nums text-sm font-black tracking-tight",
-                                            tx.amount < 0 ? "text-slate-900" : "text-emerald-600"
+                                            tx.amount < 0 ? "text-red-600" : "text-emerald-600"
                                         )}>
                                             {formatCurrency(tx.amount, settings.currency)}
                                         </span>
@@ -1623,7 +1759,7 @@ export const TriageAccordion = ({
                             <div className="flex items-center gap-4">
                                 <h3 className="font-black text-slate-900 text-[15px] truncate tracking-tight uppercase leading-none">{source}</h3>
                                 <Badge variant="outline" className="text-[12px] h-7 bg-white border-slate-200 text-slate-500 font-bold px-3">{txs.length} {txs.length === 1 ? 'item' : 'items'}</Badge>
-                                <span className="font-black text-emerald-600 text-[15px] font-mono leading-none">{formatCurrency(total, settings.currency)}</span>
+                                <span className={cn("font-black text-[15px] font-mono leading-none", total < 0 ? "text-red-600" : "text-emerald-600")}>{formatCurrency(total, settings.currency)}</span>
                             </div>
                             <Button
                                 size="sm"
@@ -1669,7 +1805,7 @@ export const TriageAccordion = ({
                                             </Badge>
                                             <span className={cn(
                                                 "font-mono tabular-nums text-[14px] font-black tracking-tight w-24 text-right",
-                                                tx.amount < 0 ? "text-slate-900" : "text-emerald-600"
+                                                tx.amount < 0 ? "text-red-600" : "text-emerald-600"
                                             )}>
                                                 {formatCurrency(tx.amount, settings.currency)}
                                             </span>
@@ -1895,7 +2031,7 @@ export const TriageAccordion = ({
                         <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                             <div className="flex justify-between items-center mb-1">
                                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest leading-none truncate max-w-[200px]">{pendingReconTx?.clean_source || pendingReconTx?.source}</span>
-                                <span className="font-mono font-black text-slate-900 leading-none">{formatCurrency(pendingReconTx?.amount || 0, settings.currency)}</span>
+                                <span className={cn("font-mono font-black leading-none", (pendingReconTx?.amount || 0) < 0 ? "text-red-600" : "text-emerald-600")}>{formatCurrency(pendingReconTx?.amount || 0, settings.currency)}</span>
                             </div>
                             <div className="text-[10px] text-slate-400 font-bold uppercase">{pendingReconTx?.date && formatDate(pendingReconTx.date)}</div>
                         </div>
