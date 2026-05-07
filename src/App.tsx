@@ -27,7 +27,13 @@ import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import { ConnectionStatus } from "./components/ConnectionStatus";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const AppLayout = () => {
   const { user } = useUnifiedAuth();

@@ -41,7 +41,7 @@ interface SelectedRule {
     auto_planned: boolean;
     auto_exclude: boolean;
     skip_triage: boolean;
-    match_mode?: 'exact' | 'fuzzy';
+    match_mode?: 'exact' | 'contains';
     raw_name?: string;
     transactionIds: string[];
 }
@@ -108,16 +108,20 @@ export const ValidationDashboard = () => {
         transactions.filter(tx => tx.status === 'Complete' && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
+    // Statuses that are fully settled — never show in any pending view
+    const SETTLED_STATUSES = ['Complete', 'Excluded', 'Pending Reconciliation', 'Reconciled'];
+    const isSettled = (tx: any) => SETTLED_STATUSES.includes(tx.status) || duplicateIds.has(tx.id);
+
     const pendingSourceMapping = useMemo(() =>
-        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && tx.status !== 'Complete' && tx.status !== 'Excluded' && tx.status !== 'Pending Reconciliation' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && !isSettled(tx)),
         [transactions, duplicateIds]);
 
     const pendingCategorisation = useMemo(() =>
-        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && tx.status !== 'Complete' && tx.status !== 'Excluded' && tx.status !== 'Pending Reconciliation' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && !isSettled(tx)),
         [transactions, duplicateIds]);
 
     const pendingValidation = useMemo(() =>
-        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && tx.status !== 'Complete' && tx.status !== 'Excluded' && tx.status !== 'Pending Reconciliation' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && !isSettled(tx)),
         [transactions, duplicateIds]);
 
     // Group items for rule configuration - SORTED by total amount
@@ -366,8 +370,9 @@ export const ValidationDashboard = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['classification-rules'] });
-            queryClient.invalidateQueries({ queryKey: ['sources'] }); // Invalidate sources
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['sources'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names-ranked'] });
             setRuleDialogOpen(false);
             setExpandedSource(null);
@@ -412,7 +417,7 @@ export const ValidationDashboard = () => {
             auto_planned: true, // Default to Planned
             auto_exclude: txs[0]?.excluded || false,
             skip_triage: txs[0]?.status === 'Complete',
-            match_mode: 'fuzzy',
+            match_mode: 'contains',
             transactionIds: txs.map(t => t.id)
         };
 
@@ -456,7 +461,7 @@ export const ValidationDashboard = () => {
                     auto_planned: ruleToUse.auto_planned,
                     auto_budget: ruleToUse.auto_exclude ? 'Exclude' : null,
                     skip_triage: false, // FORCE DISABLE
-                    match_mode: ruleToUse.match_mode || 'fuzzy'
+                    match_mode: ruleToUse.match_mode === 'fuzzy' ? 'contains' : (ruleToUse.match_mode || 'contains')
                 });
             } catch (error) {
                 console.warn("Failed to update source rule, proceeding with transaction updates...", error);
@@ -487,7 +492,7 @@ export const ValidationDashboard = () => {
         setRuleDialogOpen(false);
     };
 
-    const handleSaveSourceMapping = async (cleanName: string, pattern: string, ids: string[]) => {
+    const handleSaveSourceMapping = async (cleanName: string, pattern: string, matchMode: 'exact' | 'contains', ids: string[]) => {
         // 1. Create the rule (try/catch to allow transaction update even if rule saving fails due to permissions)
         try {
             await createRuleMutation.mutateAsync({
@@ -498,7 +503,7 @@ export const ValidationDashboard = () => {
                 auto_recurring: 'N/A',
                 auto_planned: true,
                 skip_triage: false,
-                match_mode: 'fuzzy'
+                match_mode: matchMode === 'fuzzy' ? 'contains' : (matchMode || 'contains')
             });
         } catch (error) {
             console.warn("Failed to save source rule (likely permission issue), proceeding with transaction update...", error);
@@ -772,18 +777,26 @@ export const ValidationDashboard = () => {
                                 onChange={(e) => setRule((p: any) => p ? { ...p, name: e.target.value } : null)}
                                 className="flex-1 bg-white h-10 font-mono text-sm border-slate-200/60 shadow-sm"
                             />
-                            <Select
-                                value={rule.match_mode || 'fuzzy'}
-                                onValueChange={(v) => setRule((p: any) => p ? { ...p, match_mode: v } : null)}
-                            >
-                                <SelectTrigger className="w-32 bg-white h-10 border-slate-200/60 shadow-sm">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="fuzzy">Fuzzy</SelectItem>
-                                    <SelectItem value="exact">Exact</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <div className="flex rounded-lg border border-slate-200/60 bg-white shadow-sm overflow-hidden shrink-0">
+                                {(['contains', 'exact'] as const).map((mode) => {
+                                    const current = rule.match_mode === 'fuzzy' ? 'contains' : (rule.match_mode || 'contains');
+                                    return (
+                                        <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() => setRule((p: any) => p ? { ...p, match_mode: mode } : null)}
+                                            className={cn(
+                                                'px-3 h-10 text-xs font-bold capitalize transition-colors',
+                                                current === mode
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'text-slate-500 hover:bg-slate-50'
+                                            )}
+                                        >
+                                            {mode}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
                     </div>
 
@@ -1016,7 +1029,8 @@ export const ValidationDashboard = () => {
                         }}
                         transaction={transactionToSplit}
                         onSplitComplete={() => {
-                            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+                            queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+                            queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
                             setSplitModalOpen(false);
                             setTransactionToSplit(null);
                         }}

@@ -655,11 +655,11 @@ export const useCategorySource = () => {
   const categories = useMemo(() => {
     if (isDbMode) {
       return (dbCategories || [])
-        .filter(c => c.name !== 'General' && c.name !== 'Special') // SAFETY: Hide General/Special from main Expense lists
+        .filter(c => c.name !== 'General') // Hide internal feeder group only; Special (Slush) is valid for transaction categorisation
         .map(c => c.name)
         .sort((a, b) => a.localeCompare(b));
     }
-    return (settings.categories || []).filter(c => c !== 'General' && c !== 'Special').sort((a, b) => a.localeCompare(b));
+    return (settings.categories || []).filter(c => c !== 'General').sort((a, b) => a.localeCompare(b));
   }, [isDbMode, dbCategories, settings.categories]);
 
   const subCategories = useMemo(() => {

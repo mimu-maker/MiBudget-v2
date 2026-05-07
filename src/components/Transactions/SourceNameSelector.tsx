@@ -13,64 +13,68 @@ interface SourceNameSelectorProps {
     className?: string;
     hideAddNew?: boolean;
     disabled?: boolean;
+    placeholder?: string;
+    excludeNames?: string[];
 }
 
-export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, onChange, className, hideAddNew, disabled }) => {
+export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, onChange, className, hideAddNew, disabled, placeholder, excludeNames = [] }) => {
     const [open, setOpen] = useState(false);
     const [searchValue, setSearchValue] = useState("");
 
     const { data: rankedSources = [] } = useQuery({
         queryKey: ['existing-source-names-ranked'],
         queryFn: async () => {
-            // Fetch rules and common clean sources from transactions
+            // Fetch rules AND all distinct clean_source values from transactions
             const [rulesRes, txRes] = await Promise.allSettled([
-                (supabase as any).from('classification_rules').select('*'),
+                (supabase as any).from('classification_rules').select('clean_name'),
+                // Use distinct via group-by equivalent: select clean_source with count
                 (supabase as any).from('transactions')
                     .select('clean_source')
                     .not('clean_source', 'is', null)
-                    .order('created_at', { ascending: false })
-                    .limit(500)
+                    .neq('clean_source', '')
+                    // No limit — we need ALL distinct names; Supabase deduplicates via RLS scope
+                    .order('clean_source', { ascending: true })
             ]);
 
             const sourceMap = new Map<string, { name: string, score: number }>();
 
-            // Process classification_rules
-            if (rulesRes.status === 'fulfilled' && rulesRes.value.data) {
-                rulesRes.value.data.forEach((r: any) => {
-                    const name = r.clean_name || r.raw_name;
-                    if (name) {
-                        let score = 50;
-                        // Boost score based on rule status/completeness if desired
-                        if (!sourceMap.has(name) || score > sourceMap.get(name)!.score) {
-                            sourceMap.set(name, { name, score });
-                        }
-                    }
-                });
-            }
-
-            // Process Transaction clean sources (Real-word data)
+            // Process transaction clean_source values first (full dataset)
             if (txRes.status === 'fulfilled' && txRes.value.data) {
                 txRes.value.data.forEach((tx: any) => {
-                    const name = tx.clean_source;
+                    const name = tx.clean_source?.trim();
                     if (name) {
                         const existing = sourceMap.get(name);
-                        sourceMap.set(name, { name, score: (existing?.score || 10) + 1 }); // Boost score by usage
+                        sourceMap.set(name, { name, score: (existing?.score || 0) + 1 });
                     }
                 });
             }
 
-            const sorted = Array.from(sourceMap.values())
-                .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+            // Boost sources that have a classification rule (more trustworthy)
+            if (rulesRes.status === 'fulfilled' && rulesRes.value.data) {
+                rulesRes.value.data.forEach((r: any) => {
+                    const name = r.clean_name?.trim();
+                    if (name) {
+                        const existing = sourceMap.get(name);
+                        sourceMap.set(name, { name, score: (existing?.score || 0) + 50 });
+                    }
+                });
+            }
 
-            return sorted;
-        }
+            return Array.from(sourceMap.values())
+                .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+        },
+        staleTime: 1000 * 60 * 5 // 5 min
     });
 
-    const displayedSources = searchValue
-        ? rankedSources
-        : rankedSources.slice(0, 10);
+    const filteredSources = excludeNames.length > 0
+        ? rankedSources.filter(s => !excludeNames.some(e => e.toLowerCase() === s.name.toLowerCase()))
+        : rankedSources;
 
-    const hasMore = !searchValue && rankedSources.length > 10;
+    const displayedSources = searchValue
+        ? filteredSources
+        : filteredSources.slice(0, 10);
+
+    const hasMore = !searchValue && filteredSources.length > 10;
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -83,7 +87,7 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
                     className={cn("w-full justify-between bg-white font-bold text-blue-600 h-10 border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all", className)}
                 >
                     <span className="truncate">
-                        {value || "Select or search resolved source..."}
+                        {value || placeholder || "Select or search resolved source..."}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
@@ -181,7 +185,7 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
                                 {hasMore && (
                                     <div className="px-2 py-3 text-center border-t border-slate-50">
                                         <p className="text-[10px] text-slate-400 italic">
-                                            Showing top 10. Type to search {rankedSources.length - 10} more...
+                                            Showing top 10. Type to search {filteredSources.length - 10} more...
                                         </p>
                                     </div>
                                 )}

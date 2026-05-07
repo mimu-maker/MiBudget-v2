@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { useCategorySource } from '@/hooks/useBudgetCategories';
 import { CategorySelector } from '@/components/Budget/CategorySelector';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from "@/components/ui/select";
+import { Input } from '@/components/ui/input';
 
 interface SourceApplyDialogProps {
     open: boolean;
@@ -49,6 +50,10 @@ export const SourceApplyDialog = ({
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [showSimilarPreview, setShowSimilarPreview] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
+
+    // Pattern & match mode (editable by user)
+    const [pattern, setPattern] = useState(transaction.source);
+    const [matchMode, setMatchMode] = useState<'contains' | 'exact'>('contains');
 
     // Form State (Initialized from Rule, but editable)
     const [activeCategory, setActiveCategory] = useState<string>('');
@@ -83,6 +88,14 @@ export const SourceApplyDialog = ({
         },
         enabled: open && !!targetSourceName
     });
+
+    // Reset pattern & match mode when dialog opens with a new transaction
+    useEffect(() => {
+        if (open) {
+            setPattern(transaction.source);
+            setMatchMode('contains');
+        }
+    }, [open, transaction.source]);
 
     // Initialize Form State
     useEffect(() => {
@@ -154,13 +167,13 @@ export const SourceApplyDialog = ({
                 account_id: currentAccountId,
                 user_id: user.id,
                 match_type: 'source',
-                raw_name: cleanSource(transaction.source, settings.noiseFilters),
+                raw_name: pattern,
                 clean_name: cleanNameValue,
                 auto_category: activeCategory,
                 auto_sub_category: activeSubCategory,
                 auto_planned: !isUnplanned,
                 auto_budget: isExcluded ? 'Exclude' : null,
-                match_mode: 'contains'
+                match_mode: matchMode
             };
 
             let ruleError: any;
@@ -207,8 +220,9 @@ export const SourceApplyDialog = ({
         onSuccess: async () => {
             toast.success(`Mapped rule and updated ${1 + selectedIds.size} transactions`);
             await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-                queryClient.invalidateQueries({ queryKey: ['sources'] }), // Invalidate sources
+                queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] }),
+                queryClient.invalidateQueries({ queryKey: ['transactions-all'] }),
+                queryClient.invalidateQueries({ queryKey: ['sources'] }),
                 queryClient.invalidateQueries({ queryKey: ['source-rules-simple'] }),
                 queryClient.invalidateQueries({ queryKey: ['existing-source-names'] })
             ]);
@@ -221,7 +235,7 @@ export const SourceApplyDialog = ({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className={`bg-white transition-[max-width] duration-300 overflow-hidden rounded-3xl border-none shadow-2xl p-0 ${showSimilarPreview ? 'max-w-3xl' : 'max-w-lg'}`}>
+            <DialogContent className={`bg-white transition-[max-width] duration-300 overflow-hidden rounded-3xl border-none shadow-2xl p-0 ${showSimilarPreview ? 'max-w-3xl' : 'max-w-2xl'}`}>
                 <div className="p-8 pb-4">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-slate-900 text-3xl font-black tracking-tight">
@@ -244,19 +258,35 @@ export const SourceApplyDialog = ({
                         </div>
                     ) : (
                         <>
-                            {/* 1. Identification Summary  */}
-                            <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100 flex flex-col md:flex-row gap-6 md:items-center justify-between">
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Source Selection</Label>
-                                    <div className="flex items-center gap-2 text-xl font-black text-blue-900">
-                                        <Zap className="w-5 h-5 text-blue-600" />
-                                        {targetSourceName}
+                            {/* 1. Identification Summary */}
+                            <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100 space-y-4">
+                                {/* Mapping target */}
+                                <div className="flex items-center gap-3">
+                                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest shrink-0 w-20">Mapping To</Label>
+                                    <div className="flex items-center gap-2 font-black text-blue-900 min-w-0">
+                                        <Zap className="w-4 h-4 text-blue-600 shrink-0" />
+                                        <span className="text-base leading-tight truncate">{targetSourceName}</span>
                                     </div>
                                 </div>
-                                <div className="md:text-right space-y-1">
-                                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Current Transaction</Label>
-                                    <div className="font-mono text-xs text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm inline-block">
-                                        {transaction.source}
+                                {/* Editable pattern + match mode */}
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Pattern (Bank Reference)</Label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            value={pattern}
+                                            onChange={(e) => setPattern(e.target.value)}
+                                            className="flex-1 font-mono text-xs h-10 bg-white border-slate-200"
+                                            placeholder="Bank reference string..."
+                                        />
+                                        <Select value={matchMode} onValueChange={(v) => setMatchMode(v as 'contains' | 'exact')}>
+                                            <SelectTrigger className="w-32 h-10 bg-white border-slate-200 shrink-0">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="contains">Contains</SelectItem>
+                                                <SelectItem value="exact">Exact</SelectItem>
+                                            </SelectContent>
+                                        </Select>
                                     </div>
                                 </div>
                             </div>

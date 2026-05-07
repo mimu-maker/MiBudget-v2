@@ -630,7 +630,10 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
 
     return raw.map(t => ({
       ...t,
-      is_resolved: !!(t.clean_source && knownSources.has(t.clean_source))
+      // A transaction is resolved if it has a clean_source set — regardless of
+      // whether a classification rule exists. knownSources is still used in the
+      // row for the "is this a known source" inline-edit check (line 125).
+      is_resolved: !!(t.clean_source && t.clean_source.trim() !== '')
     }));
   }, [infiniteData, allData, knownSources, options.mode]);
 

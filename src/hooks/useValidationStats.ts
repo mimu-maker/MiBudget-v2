@@ -24,16 +24,19 @@ export const useValidationStats = () => {
         return ids;
     }, [duplicateGroups]);
 
+    const SETTLED_STATUSES = ['Complete', 'Excluded', 'Pending Reconciliation', 'Reconciled'];
+    const isSettled = (tx: any) => SETTLED_STATUSES.includes(tx.status) || duplicateIds.has(tx.id);
+
     const pendingSourceMapping = useMemo(() =>
-        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && tx.status !== 'Complete' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && !isSettled(tx)),
         [transactions, duplicateIds]);
 
     const pendingCategorisation = useMemo(() =>
-        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && tx.status !== 'Complete' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && !isSettled(tx)),
         [transactions, duplicateIds]);
 
     const pendingValidation = useMemo(() =>
-        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && tx.status !== 'Complete' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && !isSettled(tx)),
         [transactions, duplicateIds]);
 
     // We are not using pendingValidation for the badges as per user request (only Mapping, Category, Duplicate)

@@ -64,7 +64,7 @@ export const SourceResolveDialog = ({
         sub_category: transaction.sub_category && transaction.sub_category !== 'Uncategorized' ? transaction.sub_category : '',
         auto_planned: true, // Auto-planned default (Unplanned OFF)
         auto_exclude: transaction.excluded || false,
-        match_mode: 'fuzzy',
+        match_mode: 'contains',
         secondary_categories: []
     });
 
@@ -83,7 +83,7 @@ export const SourceResolveDialog = ({
                 sub_category: transaction.sub_category && transaction.sub_category !== 'Uncategorized' ? transaction.sub_category : '',
                 auto_planned: true, // Auto-planned default (Unplanned OFF)
                 auto_exclude: transaction.excluded || false,
-                match_mode: 'fuzzy',
+                match_mode: 'contains',
                 secondary_categories: []
             });
             setSourceSettings({
@@ -183,7 +183,8 @@ export const SourceResolveDialog = ({
             queryClient.invalidateQueries({ queryKey: ['classification-rules'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names'] });
             queryClient.invalidateQueries({ queryKey: ['existing-source-names-ranked'] });
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-infinite'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions-all'] });
 
             toast({
                 title: "Rule Saved",

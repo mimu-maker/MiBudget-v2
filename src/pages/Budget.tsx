@@ -150,7 +150,6 @@ const Budget = () => {
 
   const incomeData = budget?.category_groups?.income || [];
   const expenditureData = budget?.category_groups?.expenditure || [];
-  const klintemarkenData = budget?.category_groups?.klintemarken || [];
   const specialData = budget?.category_groups?.special || [];
 
   const today = new Date();
@@ -178,7 +177,6 @@ const Budget = () => {
   const incomeTotalAnnual = incomeData.reduce((sum, item) => sum + item.budget_amount, 0) * 12;
   const expenseTotalAnnual = expenditureData.reduce((sum, item) => sum + item.budget_amount, 0) * 12;
   const slushTotalAnnual = specialData.reduce((sum, item) => sum + item.budget_amount, 0) * 12;
-  const feederTotalAnnual = klintemarkenData.reduce((sum, item) => sum + item.budget_amount, 0) * 12;
 
   const expandAll = (categories: string[]) => setExpandedCategories(new Set(categories));
   const collapseAll = () => setExpandedCategories(new Set());
@@ -198,7 +196,6 @@ const Budget = () => {
           income={incomeTotalAnnual}
           expenses={expenseTotalAnnual}
           slush={slushTotalAnnual}
-          feeder={feederTotalAnnual}
         />
 
         <div className="space-y-6 mt-0 animate-in fade-in duration-500">

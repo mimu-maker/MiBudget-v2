@@ -11,11 +11,10 @@ import { useProfile } from '@/contexts/ProfileContext';
 interface UseOverviewDataProps {
     includeCore: boolean;
     includeSpecial: boolean;
-    includeKlintemarken: boolean;
+    includeKlintemarken?: boolean;
 }
 
-
-export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemarken }: UseOverviewDataProps) => {
+export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemarken = false }: UseOverviewDataProps) => {
     const { data: transactions = [] } = useAllTransactions();
     const { settings } = useSettings();
     const { userProfile } = useProfile();
@@ -84,22 +83,15 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
             filtered = filtered.filter(t => t.budget !== 'Special' && t.category?.toLowerCase() !== 'slush fund' && getGroup(t.category) !== 'special');
         }
 
-        // Klintemarken transactions are always included in cash flow unless the user explicitly hides them.
-        // The enableFeederBudgets flag only controls the FEEDER toggle button visibility, not cash flow inclusion.
-        const effectivelyIncludeKlintemarken = includeKlintemarken;
+        // Core filtering
+        if (!includeCore) {
+            filtered = filtered.filter(t => getGroup(t.category) !== 'expenditure');
+        }
 
-        if (!effectivelyIncludeKlintemarken) {
+        // Klintemarken transactions - respect toggle if passed, otherwise hide (relic removal)
+        if (!includeKlintemarken) {
             filtered = filtered.filter(t => t.budget !== 'Klintemarken' && getGroup(t.category) !== 'klintemarken');
         }
-        if (!includeCore) {
-            filtered = filtered.filter(t => {
-                const isSpecial = t.budget === 'Special' || t.category?.toLowerCase() === 'slush fund' || getGroup(t.category) === 'special';
-                const isKlintemarken = effectivelyIncludeKlintemarken && (t.budget === 'Klintemarken' || getGroup(t.category) === 'klintemarken');
-                // Keep only if it is one of the non-core types
-                return isSpecial || isKlintemarken;
-            });
-        }
-
 
         filtered = filtered.filter(t => t.budget !== 'Exclude' && !t.excluded && t.status !== 'Pending Reconciliation' && !t.status?.startsWith('Pending: '));
         return filtered;
@@ -214,7 +206,7 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
         const expenseCategories = budgetData?.categories.filter(cat => {
             if (cat.category_group === 'expenditure') return includeCore;
             if (cat.category_group === 'special') return includeSpecial;
-            if (cat.category_group === 'klintemarken') return includeKlintemarken && settings.enableFeederBudgets;
+            if (cat.category_group === 'klintemarken') return false; // Feeder budget removed
             return false;
         }) || [];
         const expenseCategoryNames = new Set(expenseCategories.map(c => c.name));
@@ -254,7 +246,7 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
             color: vals.color
         })).filter(d => d.budgeted > 0 || d.actual > 0)
             .sort((a, b) => b.budgeted - a.budgeted);
-    }, [budgetData, flowFiltered, effectiveInterval, includeCore, includeSpecial, includeKlintemarken]);
+    }, [budgetData, flowFiltered, effectiveInterval, includeCore, includeSpecial]);
 
     // Y-Axis scaling for Cash Flow chart
     const y2Data = useMemo(() => {
