@@ -98,13 +98,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(session?.user ?? null);
 
         if (session?.user?.email) {
-          const profile = await fetchUserProfile(session.user.id, session.user.email);
-          await updateProfileAndAccount(profile);
-
-          if (session.user.app_metadata?.provider === 'google' && !isEmailAllowed(session.user.email || '')) {
+          if (!isEmailAllowed(session.user.email)) {
             await supabase.auth.signOut();
             return;
           }
+          const profile = await fetchUserProfile(session.user.id, session.user.email);
+          await updateProfileAndAccount(profile);
         } else {
           await updateProfileAndAccount(null);
         }
@@ -117,6 +116,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user?.email) {
+        if (!isEmailAllowed(session.user.email)) {
+          await supabase.auth.signOut();
+          setLoading(false);
+          return;
+        }
         const profile = await fetchUserProfile(session.user.id, session.user.email);
         await updateProfileAndAccount(profile);
       }

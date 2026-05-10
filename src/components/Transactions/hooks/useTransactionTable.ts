@@ -449,7 +449,7 @@ const useTransactionCounts = (userId: string | undefined, currentAccountId: stri
       const { count: totalCount, error: totalError } = await (supabase as any)
         .from('transactions')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId)
+        .eq(currentAccountId ? 'account_id' : 'user_id', currentAccountId ?? userId)
         .neq('status', 'Excluded');
 
       if (totalError) throw totalError;
@@ -458,7 +458,7 @@ const useTransactionCounts = (userId: string | undefined, currentAccountId: stri
       let filteredQuery = (supabase as any)
         .from('transactions')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId);
+        .eq(currentAccountId ? 'account_id' : 'user_id', currentAccountId ?? userId);
 
       // Apply Filters (matching useInfiniteTransactions logic)
       Object.entries(filters).forEach(([field, filterValue]) => {
@@ -876,11 +876,12 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       const CHUNK_SIZE = 100;
       for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE);
-        const { error } = await (supabase as any)
+        let deleteQuery = (supabase as any)
           .from('transactions')
           .delete()
-          .in('id', chunk)
-          .eq('user_id', userId);
+          .in('id', chunk);
+        if (!currentAccountId) deleteQuery = deleteQuery.eq('user_id', userId);
+        const { error } = await deleteQuery;
 
         if (error) {
           console.error(`Validating chunk ${i} failed:`, error);
@@ -1023,11 +1024,12 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       // Always update the updated_at timestamp so history and sessions are tracked correctly
       dbUpdates.updated_at = new Date().toISOString();
 
-      let { error } = await (supabase as any)
+      let updateQuery = (supabase as any)
         .from('transactions')
         .update(dbUpdates)
-        .in('id', ids)
-        .eq('user_id', userId);
+        .in('id', ids);
+      if (!currentAccountId) updateQuery = updateQuery.eq('user_id', userId);
+      let { error } = await updateQuery;
 
       if (error && (error.code === '42703' || error.message?.includes('column') || error.message?.includes('does not exist'))) {
         const { source, clean_source, source_description, ...safeUpdates } = dbUpdates;
@@ -1036,11 +1038,12 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
         if (updates.clean_source) safeUpdates.clean_merchant = updates.clean_source;
         if (updates.source_description) safeUpdates.merchant_description = updates.source_description;
 
-        const { error: retryError } = await (supabase as any)
+        let retryQuery = (supabase as any)
           .from('transactions')
           .update(safeUpdates)
-          .in('id', ids)
-          .eq('user_id', userId);
+          .in('id', ids);
+        if (!currentAccountId) retryQuery = retryQuery.eq('user_id', userId);
+        const { error: retryError } = await retryQuery;
         error = retryError;
       }
 
@@ -1167,14 +1170,16 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
 
       await bulkUpdateMutation.mutateAsync({
         ids: [id],
-        updates: { amount: amount1 }
+        updates: { amount: amount1, is_split: true }
       });
 
       const { id: _, created_at: cat, updated_at: uat, ...newData } = tx;
       await addTransactionMutation.mutateAsync({
         ...newData,
         amount: amount2,
-        notes: `Split from original ${previousAmount}`
+        notes: `Split from original ${previousAmount}`,
+        parent_id: tx.id,
+        is_split: false
       });
     },
     emergencyClearAll: async () => {
