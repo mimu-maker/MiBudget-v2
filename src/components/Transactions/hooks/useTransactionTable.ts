@@ -215,6 +215,73 @@ export const useAllTransactions = (options?: { enabled?: boolean }) => {
 };
 
 /**
+ * Applies all per-field filter branches to a Supabase query builder and returns it.
+ * Shared between useInfiniteTransactions and useTransactionCounts to keep logic in one place.
+ */
+const applyTransactionFilters = (query: any, filters: Record<string, any>): any => {
+  Object.entries(filters).forEach(([field, filterValue]) => {
+    if (filterValue === undefined || filterValue === null || filterValue === '' || filterValue === 'all') return;
+    if (Array.isArray(filterValue) && filterValue.length === 0) return;
+
+    let dbField = field;
+    if (field === 'source') dbField = 'merchant';
+
+    // Custom Status Filter for Pending Reconciliation + Entity
+    if (field === 'status' && Array.isArray(filterValue)) {
+      const hasPendingRecon = filterValue.includes('Pending Reconciliation');
+      if (hasPendingRecon) {
+        const safeValues = filterValue.map(v => `"${v}"`).join(',');
+        query = query.or(`status.in.(${safeValues}),status.ilike.Pending %`);
+        return;
+      }
+    }
+
+    if (field === 'date' && filterValue.type) {
+      if (filterValue.type === 'range' && filterValue.value?.from) {
+        query = query.gte('date', new Date(filterValue.value.from).toISOString());
+        if (filterValue.value.to) {
+          query = query.lte('date', new Date(filterValue.value.to).toISOString());
+        }
+      } else if (filterValue.type === 'year') {
+        query = query.gte('date', `${filterValue.value}-01-01`).lte('date', `${filterValue.value}-12-31`);
+      } else if (filterValue.type === 'month') {
+        // Use active year filter if present, otherwise fall back to current year
+        const year = (filters.date?.type === 'year' && filters.date?.value)
+          ? filters.date.value
+          : new Date().getFullYear();
+        const month = String(filterValue.value).padStart(2, '0');
+        query = query.gte('date', `${year}-${month}-01`).lte('date', `${year}-${month}-31`);
+      }
+    } else if (field === 'amount' && filterValue.type === 'number') {
+      const val = parseFloat(filterValue.value);
+      if (!isNaN(val)) {
+        switch (filterValue.operator) {
+          case '=': query = query.eq('amount', val); break;
+          case '!=': query = query.neq('amount', val); break;
+          case '>': query = query.gt('amount', val); break;
+          case '>=': query = query.gte('amount', val); break;
+          case '<': query = query.lt('amount', val); break;
+          case '<=': query = query.lte('amount', val); break;
+        }
+      }
+    } else if (Array.isArray(filterValue)) {
+      query = query.in(dbField, filterValue);
+    } else if (field === 'resolution') {
+      if (filterValue === 'unresolved') {
+        query = query.neq('status', 'Complete');
+      } else if (filterValue === 'resolved') {
+        query = query.eq('status', 'Complete');
+      }
+    } else if (typeof filterValue === 'string') {
+      query = query.ilike(dbField, `%${filterValue}%`);
+    } else if (typeof filterValue === 'boolean') {
+      query = query.eq(dbField, filterValue);
+    }
+  });
+  return query;
+};
+
+/**
  * Hook for INFINITE transactions with server-side sorting/filtering
  */
 const useInfiniteTransactions = (userId: string | undefined, currentAccountId: string | null, sortBy: keyof Transaction, sortOrder: 'asc' | 'desc', filters: Record<string, any>, options?: { enabled?: boolean }) => {
@@ -311,65 +378,7 @@ const useInfiniteTransactions = (userId: string | undefined, currentAccountId: s
       }
 
       // Apply Filters
-      Object.entries(filters).forEach(([field, filterValue]) => {
-        if (filterValue === undefined || filterValue === null || filterValue === '' || filterValue === 'all') return;
-        if (Array.isArray(filterValue) && filterValue.length === 0) return;
-
-        // Map field names if they differ from DB columns
-        let dbField = field;
-        if (field === 'source') dbField = 'merchant';
-
-        // Custom Status Filter for Pending Reconciliation + Entity
-        if (field === 'status' && Array.isArray(filterValue)) {
-          const hasPendingRecon = filterValue.includes('Pending Reconciliation');
-          if (hasPendingRecon) {
-            const safeValues = filterValue.map(v => `"${v}"`).join(',');
-            query = query.or(`status.in.(${safeValues}),status.ilike.Pending %`);
-            return;
-          }
-        }
-
-        if (field === 'date' && filterValue.type) {
-          if (filterValue.type === 'range' && filterValue.value?.from) {
-            query = query.gte('date', new Date(filterValue.value.from).toISOString());
-            if (filterValue.value.to) {
-              query = query.lte('date', new Date(filterValue.value.to).toISOString());
-            }
-          } else if (filterValue.type === 'year') {
-            query = query.gte('date', `${filterValue.value}-01-01`).lte('date', `${filterValue.value}-12-31`);
-          } else if (filterValue.type === 'month') {
-            // Month filter is trickier server-side without raw SQL, for now let's use current year
-            const year = new Date().getFullYear();
-            const month = String(filterValue.value).padStart(2, '0');
-            query = query.gte('date', `${year}-${month}-01`).lte('date', `${year}-${month}-31`);
-          }
-        } else if (field === 'amount' && filterValue.type === 'number') {
-          const val = parseFloat(filterValue.value);
-          if (!isNaN(val)) {
-            switch (filterValue.operator) {
-              case '=': query = query.eq('amount', val); break;
-              case '!=': query = query.neq('amount', val); break;
-              case '>': query = query.gt('amount', val); break;
-              case '>=': query = query.gte('amount', val); break;
-              case '<': query = query.lt('amount', val); break;
-              case '<=': query = query.lte('amount', val); break;
-            }
-          }
-        } else if (Array.isArray(filterValue)) {
-          query = query.in(dbField, filterValue);
-        } else if (field === 'resolution') {
-          if (filterValue === 'unresolved') {
-            query = query.neq('status', 'Complete');
-            // clean_source check is hard without local join, ignoring for now as status is primary resolved indicator
-          } else if (filterValue === 'resolved') {
-            query = query.eq('status', 'Complete');
-          }
-        } else if (typeof filterValue === 'string') {
-          query = query.ilike(dbField, `%${filterValue}%`);
-        } else if (typeof filterValue === 'boolean') {
-          query = query.eq(dbField, filterValue);
-        }
-      });
+      query = applyTransactionFilters(query, filters);
 
       // Default Filter Optimization:
       // We only hide 'Excluded' by default. Everything else (Pending Triage, etc) stays visible.
@@ -460,63 +469,8 @@ const useTransactionCounts = (userId: string | undefined, currentAccountId: stri
         .select('*', { count: 'exact', head: true })
         .eq(currentAccountId ? 'account_id' : 'user_id', currentAccountId ?? userId);
 
-      // Apply Filters (matching useInfiniteTransactions logic)
-      Object.entries(filters).forEach(([field, filterValue]) => {
-        if (filterValue === undefined || filterValue === null || filterValue === '' || filterValue === 'all') return;
-        if (Array.isArray(filterValue) && filterValue.length === 0) return;
-
-        let dbField = field;
-        if (field === 'source') dbField = 'merchant';
-
-        // Custom Status Filter for Pending Reconciliation + Entity
-        if (field === 'status' && Array.isArray(filterValue)) {
-          const hasPendingRecon = filterValue.includes('Pending Reconciliation');
-          if (hasPendingRecon) {
-            const safeValues = filterValue.map(v => `"${v}"`).join(',');
-            filteredQuery = filteredQuery.or(`status.in.(${safeValues}),status.ilike.Pending %`);
-            return;
-          }
-        }
-
-        if (field === 'date' && filterValue.type) {
-          if (filterValue.type === 'range' && filterValue.value?.from) {
-            filteredQuery = filteredQuery.gte('date', new Date(filterValue.value.from).toISOString());
-            if (filterValue.value.to) {
-              filteredQuery = filteredQuery.lte('date', new Date(filterValue.value.to).toISOString());
-            }
-          } else if (filterValue.type === 'year') {
-            filteredQuery = filteredQuery.gte('date', `${filterValue.value}-01-01`).lte('date', `${filterValue.value}-12-31`);
-          } else if (filterValue.type === 'month') {
-            const year = new Date().getFullYear();
-            const month = String(filterValue.value).padStart(2, '0');
-            filteredQuery = filteredQuery.gte('date', `${year}-${month}-01`).lte('date', `${year}-${month}-31`);
-          }
-        } else if (field === 'amount' && filterValue.type === 'number') {
-          const val = parseFloat(filterValue.value);
-          if (!isNaN(val)) {
-            switch (filterValue.operator) {
-              case '=': filteredQuery = filteredQuery.eq('amount', val); break;
-              case '!=': filteredQuery = filteredQuery.neq('amount', val); break;
-              case '>': filteredQuery = filteredQuery.gt('amount', val); break;
-              case '>=': filteredQuery = filteredQuery.gte('amount', val); break;
-              case '<': filteredQuery = filteredQuery.lt('amount', val); break;
-              case '<=': filteredQuery = filteredQuery.lte('amount', val); break;
-            }
-          }
-        } else if (Array.isArray(filterValue)) {
-          filteredQuery = filteredQuery.in(dbField, filterValue);
-        } else if (field === 'resolution') {
-          if (filterValue === 'unresolved') {
-            filteredQuery = filteredQuery.neq('status', 'Complete');
-          } else if (filterValue === 'resolved') {
-            filteredQuery = filteredQuery.eq('status', 'Complete');
-          }
-        } else if (typeof filterValue === 'string') {
-          filteredQuery = filteredQuery.ilike(dbField, `%${filterValue}%`);
-        } else if (typeof filterValue === 'boolean') {
-          filteredQuery = filteredQuery.eq(dbField, filterValue);
-        }
-      });
+      // Apply Filters (shared with useInfiniteTransactions)
+      filteredQuery = applyTransactionFilters(filteredQuery, filters);
 
       // Default: Hide Excluded if no status filter
       if (!filters.status || (Array.isArray(filters.status) && filters.status.length === 0)) {
@@ -1182,12 +1136,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
         is_split: false
       });
     },
-    emergencyClearAll: async () => {
-      // Deprecated in favor of specific actions, but kept for legacy calls just in case
-      await clearLocalTransactions();
-      localStorage.removeItem('mibudget_transactions');
-      queryClient.clear();
-    },
+    emergencyClearAll,
     clearAllTransactions: async () => {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData.user?.id;
@@ -1224,7 +1173,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       // 3. Budgets & Categories (Cascading deletes should handle sub-resources)
       await (supabase as any).from('budget_category_limits').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Clean limits first if possible, or rely on cascade
       // Note: Delete categories carefully. Using a separate query to avoid blocking if tables don't exist
-      try { await (supabase as any).from('sub_categories').delete().userIdIsIrrelevantHereAsWeNeedCascade ? null : null; } catch (e) { /* ignore */ }
+      // sub_categories are removed via cascade from categories delete below
 
       // We assume user_id is on categories. If not, this might fail or do nothing.
       await (supabase as any).from('categories').delete().eq('user_id', userId);
