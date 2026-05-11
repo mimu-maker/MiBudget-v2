@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useAllTransactions } from '@/components/Transactions/hooks/useTransactionTable';
+import { isSettled } from '@/lib/transactionConstants';
 
 export const useValidationStats = () => {
     const { data: transactions = [] } = useAllTransactions();
@@ -24,19 +25,18 @@ export const useValidationStats = () => {
         return ids;
     }, [duplicateGroups]);
 
-    const SETTLED_STATUSES = ['Complete', 'Excluded', 'Pending Reconciliation', 'Reconciled'];
-    const isSettled = (tx: any) => SETTLED_STATUSES.includes(tx.status) || duplicateIds.has(tx.id);
+    // isSettled imported from src/lib/transactionConstants.ts
 
     const pendingSourceMapping = useMemo(() =>
-        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && !isSettled(tx)),
+        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && !isSettled(tx, duplicateIds)),
         [transactions, duplicateIds]);
 
     const pendingCategorisation = useMemo(() =>
-        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && !isSettled(tx)),
+        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && !isSettled(tx, duplicateIds)),
         [transactions, duplicateIds]);
 
     const pendingValidation = useMemo(() =>
-        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && !isSettled(tx)),
+        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && !isSettled(tx, duplicateIds)),
         [transactions, duplicateIds]);
 
     // We are not using pendingValidation for the badges as per user request (only Mapping, Category, Duplicate)

@@ -13,7 +13,6 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import ProtectedRoute from "./components/Auth/ProtectedRoute";
 import { AuthSwitcher } from "./components/Auth/AuthSwitcher";
 import { LocalLogin } from "./components/Auth/LocalLogin";
-import { useState, useEffect } from "react";
 import { useUnifiedAuth } from "./contexts/UnifiedAuthContext";
 
 import { Sidebar } from "./components/Sidebar";
@@ -26,6 +25,7 @@ import Projection from "./pages/Projection";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import { ConnectionStatus } from "./components/ConnectionStatus";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -101,48 +101,25 @@ const AppLayout = () => {
   );
 };
 
-const AuthWrapper = () => {
-  const [authMode, setAuthMode] = useState<'switcher' | 'local' | 'supabase'>('supabase');
-  const [useLocal, setUseLocal] = useState(false);
-
-  useEffect(() => {
-    // Default to Supabase auth (Google) for production
-    // Local auth is disabled for now
-    setAuthMode('supabase');
-    setUseLocal(false);
-  }, []);
-
-  const handleLocalAuth = () => {
-    setAuthMode('local');
-    setUseLocal(true);
-    localStorage.setItem('authMode', 'local');
-  };
-
-  const handleSupabaseAuth = () => {
-    setAuthMode('supabase');
-    setUseLocal(false);
-    localStorage.setItem('authMode', 'supabase');
-  };
-
-  // Always use Supabase auth (local auth disabled)
-  return (
-    <AuthProvider>
-      <LocalAuthProvider>
-        <ProfileProvider>
-          <UnifiedAuthProvider>
-            <PeriodProvider>
-              <ThemeProvider>
-                <BrowserRouter>
+const AuthWrapper = () => (
+  <AuthProvider>
+    <LocalAuthProvider>
+      <ProfileProvider>
+        <UnifiedAuthProvider>
+          <PeriodProvider>
+            <ThemeProvider>
+              <BrowserRouter>
+                <ErrorBoundary>
                   <AppLayout />
-                </BrowserRouter>
-              </ThemeProvider>
-            </PeriodProvider>
-          </UnifiedAuthProvider>
-        </ProfileProvider>
-      </LocalAuthProvider>
-    </AuthProvider>
-  );
-};
+                </ErrorBoundary>
+              </BrowserRouter>
+            </ThemeProvider>
+          </PeriodProvider>
+        </UnifiedAuthProvider>
+      </ProfileProvider>
+    </LocalAuthProvider>
+  </AuthProvider>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

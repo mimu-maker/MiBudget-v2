@@ -13,6 +13,7 @@ import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
 import { cleanSource, SKIP_PATTERNS } from '@/lib/importBrain';
 import { SourceMappingRefiner } from './SourceMappingRefiner';
+import { SETTLED_STATUSES, isSettled } from '@/lib/transactionConstants';
 import { SourceNameSelector } from './SourceNameSelector';
 import { TransactionNote } from './TransactionNote';
 import { useAuth } from '@/contexts/UnifiedAuthContext';
@@ -108,20 +109,18 @@ export const ValidationDashboard = () => {
         transactions.filter(tx => tx.status === 'Complete' && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
-    // Statuses that are fully settled — never show in any pending view
-    const SETTLED_STATUSES = ['Complete', 'Excluded', 'Pending Reconciliation', 'Reconciled'];
-    const isSettled = (tx: any) => SETTLED_STATUSES.includes(tx.status) || duplicateIds.has(tx.id);
+    // Statuses that are fully settled — never show in any pending view (defined in src/lib/transactionConstants.ts)
 
     const pendingSourceMapping = useMemo(() =>
-        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && !isSettled(tx)),
+        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && !isSettled(tx, duplicateIds)),
         [transactions, duplicateIds]);
 
     const pendingCategorisation = useMemo(() =>
-        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && !isSettled(tx)),
+        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && !isSettled(tx, duplicateIds)),
         [transactions, duplicateIds]);
 
     const pendingValidation = useMemo(() =>
-        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && !isSettled(tx)),
+        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && !isSettled(tx, duplicateIds)),
         [transactions, duplicateIds]);
 
     // Group items for rule configuration - SORTED by total amount
