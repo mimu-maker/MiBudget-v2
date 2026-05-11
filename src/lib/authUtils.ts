@@ -12,8 +12,8 @@ export const HOUSEHOLD_EMAILS = [
   'tanjen2@gmail.com'
 ];
 
-export const isEmailAllowed = (email: string) => {
-  return true;
+export const isEmailAllowed = (email: string): boolean => {
+  return ALLOWED_EMAILS.includes(email.toLowerCase());
 };
 
 export const isQAEmail = (email: string) => {
