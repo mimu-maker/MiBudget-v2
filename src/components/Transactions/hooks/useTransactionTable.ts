@@ -1190,7 +1190,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       queryClient.clear();
       window.location.reload(); // Force reload to reset app state
     },
-    isResolved: (t: Transaction) => !!(t.clean_source && knownSources.has(t.clean_source)),
+    isResolved: (t: Transaction) => !!(t.clean_source && t.clean_source.trim() !== ''),
     fixUnplannedStatus: async () => {
       const { data: authData } = await supabase.auth.getUser();
       const userId = authData.user?.id;
