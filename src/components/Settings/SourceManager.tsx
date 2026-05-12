@@ -100,23 +100,24 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
         }
     });
 
-    const { data: rules = [], isLoading } = useQuery({
+    const { data: rules = [], isLoading, error: rulesError } = useQuery({
         queryKey: ['classification_rules', currentAccountId],
         queryFn: async () => {
+            // RLS policy (account_id = get_my_account_id()) handles account isolation.
+            // Do NOT add .eq('account_id', ...) here — it's redundant and can silently
+            // return empty if currentAccountId diverges from the DB value for any reason.
             const { data, error } = await (supabase as any)
                 .from('classification_rules')
                 .select('*')
-                .eq('account_id', currentAccountId)
                 .order('clean_name');
 
             if (error) {
                 console.error("Classification Rules Fetch Error:", error);
-                return [];
+                throw error; // Surface to TanStack Query error state instead of silently returning []
             }
 
             return data.map((r: any) => ({
                 ...r,
-                // Map to UI-friendly names if needed, though we should prefer new schema
                 source_name: r.raw_name,
                 clean_source_name: r.clean_name
             }));
@@ -127,10 +128,10 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
     const { data: transactions = [] } = useQuery({
         queryKey: ['transactions', 'source-manager', currentAccountId],
         queryFn: async () => {
+            // RLS handles account isolation — no .eq('account_id') needed
             const { data, error } = await (supabase as any)
                 .from('transactions')
-                .select('id, date, merchant, amount, category, sub_category, status, excluded, recurring, planned, clean_source, clean_merchant, merchant_description, confidence')
-                .eq('account_id', currentAccountId);
+                .select('id, date, merchant, amount, category, sub_category, status, excluded, recurring, planned, clean_source, clean_merchant, merchant_description, confidence');
             if (error) {
                 console.error("Transactions Fetch Error:", error);
                 return [];
@@ -1275,7 +1276,12 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
             </Dialog>
 
             <div className="p-4 space-y-4">
-                {groupedRules.length === 0 ? (
+                {rulesError ? (
+                    <div className="text-center py-12 bg-red-50 rounded-xl border border-dashed border-red-200">
+                        <Label className="text-red-600 font-semibold">Failed to load source rules</Label>
+                        <p className="text-xs text-red-400 mt-1">{(rulesError as any)?.message || 'Unknown error — check browser console'}</p>
+                    </div>
+                ) : groupedRules.length === 0 ? (
                     <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                         <Label className="text-slate-400 italic">No source rules found matching your search.</Label>
                     </div>
