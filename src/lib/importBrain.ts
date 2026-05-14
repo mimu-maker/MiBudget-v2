@@ -25,8 +25,14 @@ export const cleanSource = (source: string, noiseFilters: string[] = []): string
         }
     });
 
-    // 3. Fallback Hardcoded Legacy Noise Prefixes
-    cleaned = cleaned.replace(/^(PAYPAL \*|SUMUP \*|IZ \*|GOOGLE \*)/i, '');
+    // 3. Hardcoded noise prefixes — payment wrappers and Danish bank reference patterns
+    // Keep this list for unambiguous multi-char prefixes only (avoid short tokens like 'DK', 'K')
+    cleaned = cleaned.replace(/^(PAYPAL \*?|SUMUP \*?|IZ \*?|GOOGLE \*?)/i, '');
+    cleaned = cleaned.replace(/^Forretning:\s*/i, '');          // "Forretning: Ni Hao" → "Ni Hao"
+    cleaned = cleaned.replace(/^DK-[A-Z]+\d+\s*/i, '');        // "DK-NOTAC3886 BILKA ..." → "BILKA ..."
+    cleaned = cleaned.replace(/^-[A-Z]+\d+\s*/i, '');          // "-NOTAC3886 BILKA ..." → "BILKA ..."
+    cleaned = cleaned.replace(/^BS\s+/i, '');                   // "BS " prefix (Betalingsservice)
+    cleaned = cleaned.trim();
 
     // 4. Remove trailing/leading digits and reference numbers (e.g. "Amazon 12345", "12345 SUNSET")
     cleaned = cleaned.replace(/^[#\s]*\d+[\s-]/, '').trim(); // Start
@@ -71,9 +77,15 @@ export const processTransaction = (
  
     const cleanLower = clean.toLowerCase();
     const rawLower = rawSource.toLowerCase();
- 
+
+    // Sort rules longest-raw_name first so more specific patterns take priority
+    // (prevents a broad "BILKA" contains-rule from shadowing "BILKA SØNDERBORG" exact-rule)
+    const sortedRules = [...rules].sort((a, b) =>
+        (b.raw_name?.length || 0) - (a.raw_name?.length || 0)
+    );
+
     // 1. Try Exact Match (on Raw name first, then cleaned)
-    let match = rules.find(rule =>
+    let match = sortedRules.find(rule =>
         (rule.raw_name && rule.raw_name.toLowerCase() === rawLower) ||
         (rule.clean_name && rule.clean_name.toLowerCase() === cleanLower)
     );
@@ -81,7 +93,7 @@ export const processTransaction = (
  
     // 2. Try Prefix/Substring Match if no exact match AND rule is fuzzy
     if (!match) {
-        match = rules.find(rule => {
+        match = sortedRules.find(rule => {
             if (rule.match_mode === 'exact') return false;
 
             const ruleRawLower = (rule.raw_name || "").toLowerCase().trim();

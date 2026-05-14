@@ -137,6 +137,10 @@ export const SourceResolveDialog = ({
                     clean_source: rule.name,
                     clean_merchant: rule.name,
 
+                    // Mark as mapped — moves transaction out of Pending Source Mapping
+                    // (pendingSourceMapping filter requires confidence > 0)
+                    confidence: 1,
+
                     // Apply recurring/planned settings even if not skipping triage
                     recurring: settings.recurring,
                     planned: rule.auto_planned,

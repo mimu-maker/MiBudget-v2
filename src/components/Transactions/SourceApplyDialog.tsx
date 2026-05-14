@@ -196,6 +196,8 @@ export const SourceApplyDialog = ({
                 clean_source: combinedData?.rule?.clean_name || targetSourceName,
                 // COMPATIBILITY: Ensure legacy clean_merchant is also set for Pending Action queries
                 clean_merchant: combinedData?.rule?.clean_name || targetSourceName,
+                // Mark as mapped — moves transaction out of Pending Source Mapping
+                confidence: 1,
                 category: activeCategory,
                 sub_category: activeSubCategory,
                 recurring: activeRecurring,
