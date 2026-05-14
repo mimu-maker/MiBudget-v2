@@ -253,19 +253,24 @@ export const TriageAccordion = ({
         transactions.filter(tx => tx.status === 'Complete' && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
+    // Settled statuses are hidden from ALL pending views: Complete, Excluded, Pending Reconciliation, Reconciled
+    const isSettled = (tx: any) =>
+        tx.status === 'Complete' || tx.status === 'Excluded' ||
+        tx.status === 'Pending Reconciliation' || tx.status === 'Reconciled';
+
     const pendingSourceMapping = useMemo(() =>
         // confidence <= 0 means source unknown
-        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && tx.status !== 'Complete' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => (!tx.confidence || tx.confidence <= 0) && !isSettled(tx) && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
     const pendingCategorisation = useMemo(() =>
         // confidence > 0 but missing cat/subcat
-        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && tx.status !== 'Complete' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
+        transactions.filter(tx => tx.confidence > 0 && (!tx.category || !tx.sub_category) && !isSettled(tx) && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
     const pendingValidation = useMemo(() =>
-        // confidence > 0 and has cat/subcat - hidden if 'Pending Reconciliation' or 'Complete'
-        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && tx.status !== 'Complete' && tx.status !== 'Pending Reconciliation' && tx.status !== 'Excluded' && !duplicateIds.has(tx.id)),
+        // confidence > 0 and has cat/subcat
+        transactions.filter(tx => tx.confidence > 0 && tx.category && tx.sub_category && !isSettled(tx) && !duplicateIds.has(tx.id)),
         [transactions, duplicateIds]);
 
     const groupedAuditLog = useMemo(() => {
