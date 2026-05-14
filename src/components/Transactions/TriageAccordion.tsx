@@ -399,7 +399,7 @@ export const TriageAccordion = ({
 
     const openRuleDialog = (sourceName: string, txs: any[], inline: boolean = false) => {
         setSelectedSourceRule({
-            name: txs[0]?.clean_source || cleanSource(txs[0]?.source) || sourceName,
+            name: txs[0]?.clean_source || cleanSource(txs[0]?.source, settings.noiseFilters || []) || sourceName,
             raw_name: txs[0]?.source || sourceName,
             clean_name: txs[0]?.clean_source || '',
             match_mode: 'contains',

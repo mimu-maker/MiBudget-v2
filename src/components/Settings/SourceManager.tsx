@@ -254,19 +254,31 @@ export const SourceManager = ({ initialSearch = '' }: { initialSearch?: string }
                 return;
             }
 
-            // Single Rule Update
-            const ruleUpdates = {
+            // Single Rule Update — use upsert so saving a source with 0 patterns
+            // (no existing rule) creates the rule instead of updating nothing.
+            const rulePayload = {
                 ...baseUpdates,
+                account_id: currentAccountId,
+                user_id: user?.id,
                 clean_name: rule.clean_source_name || rule.name,
-                raw_name: rule.source_name || rule.raw_name 
+                raw_name: rule.source_name || rule.raw_name,
+                match_type: 'source' as const,
             };
-            
-            const { error } = await (supabase as any)
-                .from('classification_rules')
-                .update(ruleUpdates)
-                .eq('id', rule.id);
 
-            if (error) throw error;
+            if (rule.id) {
+                // Existing rule — update in place
+                const { error } = await (supabase as any)
+                    .from('classification_rules')
+                    .update(rulePayload)
+                    .eq('id', rule.id);
+                if (error) throw error;
+            } else {
+                // No rule yet (0 patterns group) — insert via upsert
+                const { error } = await (supabase as any)
+                    .from('classification_rules')
+                    .upsert([rulePayload], { onConflict: 'account_id, raw_name' });
+                if (error) throw error;
+            }
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['classification_rules'] });

@@ -6,6 +6,7 @@ import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
 
 interface SourceNameSelectorProps {
     value: string;
@@ -20,19 +21,21 @@ interface SourceNameSelectorProps {
 export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, onChange, className, hideAddNew, disabled, placeholder, excludeNames = [] }) => {
     const [open, setOpen] = useState(false);
     const [searchValue, setSearchValue] = useState("");
+    const { currentAccountId } = useAuth();
 
     const { data: rankedSources = [] } = useQuery({
-        queryKey: ['existing-source-names-ranked'],
+        // Include currentAccountId in key so the query refires after auth resolves
+        // (prevents caching empty results from a pre-auth fire)
+        queryKey: ['existing-source-names-ranked', currentAccountId],
         queryFn: async () => {
             // Fetch rules AND all distinct clean_source values from transactions
+            // RLS handles account isolation — no explicit account filter needed
             const [rulesRes, txRes] = await Promise.allSettled([
                 (supabase as any).from('classification_rules').select('clean_name'),
-                // Use distinct via group-by equivalent: select clean_source with count
                 (supabase as any).from('transactions')
                     .select('clean_source')
                     .not('clean_source', 'is', null)
                     .neq('clean_source', '')
-                    // No limit — we need ALL distinct names; Supabase deduplicates via RLS scope
                     .order('clean_source', { ascending: true })
             ]);
 
@@ -63,7 +66,8 @@ export const SourceNameSelector: React.FC<SourceNameSelectorProps> = ({ value, o
             return Array.from(sourceMap.values())
                 .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
         },
-        staleTime: 1000 * 60 * 5 // 5 min
+        staleTime: 1000 * 60 * 5, // 5 min
+        enabled: !!currentAccountId,
     });
 
     const filteredSources = excludeNames.length > 0
