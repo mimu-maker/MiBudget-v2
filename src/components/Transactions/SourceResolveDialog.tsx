@@ -58,7 +58,7 @@ export const SourceResolveDialog = ({
     };
 
     const [initialRule, setInitialRule] = useState<SourceRuleState>({
-        raw_name: transaction.source,
+        raw_name: cleanSource(transaction.source, noiseFilters) || transaction.source,
         name: baseName,
         category: getInitialCategory(),
         sub_category: transaction.sub_category && transaction.sub_category !== 'Uncategorized' ? transaction.sub_category : '',
@@ -77,7 +77,7 @@ export const SourceResolveDialog = ({
     useEffect(() => {
         if (open) {
             setInitialRule({
-                raw_name: transaction.source,
+                raw_name: cleanSource(transaction.source, noiseFilters) || transaction.source,
                 name: initialName !== undefined ? initialName : (transaction.clean_source || cleanSource(transaction.source, noiseFilters)),
                 category: getInitialCategory(),
                 sub_category: transaction.sub_category && transaction.sub_category !== 'Uncategorized' ? transaction.sub_category : '',
