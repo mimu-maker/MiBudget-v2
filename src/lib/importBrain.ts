@@ -4,11 +4,35 @@ export type ClassificationRule = Tables<"classification_rules">;
 
 export const SKIP_PATTERNS = ['MC/VISA', 'VISA/DANKORT', 'DANKORT', 'NETBANK', 'VISA', 'MASTERCARD', 'OVERFØRSEL', 'DEPOT', 'DK', 'K', 'CARD', 'KØB', 'AUT.', 'ONLINE', 'WWW.', 'PAYPAL', 'SUMUP', 'IZATTLE', 'GOOGLE', 'APPLE.COM', 'BILL', 'PAY', 'FORRETNING:', 'BS', 'BS '];
 
+// Payment wrappers where the entity is AFTER the *, not before.
+// "MOBILEPAY *TOVE BOJESEN 294" → entity is "TOVE BOJESEN", not "MOBILEPAY"
+const WRAPPER_PREFIXES = ['MOBILEPAY', 'PAYPAL', 'SUMUP', 'IZ', 'GOOGLE', 'APPLE.COM/BILL', 'APPLE.COM'];
+
 export const cleanSource = (source: string, noiseFilters: string[] = []): string => {
     if (!source) return "";
 
-    // 1. Remove common statement separators
-    let cleaned = source.split('*')[0].split('  ')[0].trim();
+    // 1. Handle * separator — direction depends on whether this is a wrapper transaction
+    //    Wrappers: entity is AFTER *  (MOBILEPAY *TOVE BOJESEN → "TOVE BOJESEN")
+    //    Others:   entity is BEFORE * (AMAZON *REF12345 → "AMAZON")
+    let cleaned: string;
+    // Strip "Forretning: " prefix before wrapper detection so
+    // "Forretning: SumUp *DanShop" is correctly identified as a wrapper
+    const strippedForWrapper = source.replace(/^Forretning:\s*/i, '').trim();
+    const upperSource = strippedForWrapper.toUpperCase();
+    const isWrapper = WRAPPER_PREFIXES.some(p => upperSource.startsWith(p));
+
+    if (isWrapper && strippedForWrapper.includes('*')) {
+        // Take everything after the first *
+        cleaned = strippedForWrapper.split('*').slice(1).join('*').trim();
+        // Strip trailing amounts: "TOVE BOJESEN 294" → "TOVE BOJESEN"
+        // Handles integers (294), decimals (294.00), and Danish comma format (294,00)
+        cleaned = cleaned.replace(/\s+\d+([.,]\d{1,2})?$/, '').trim();
+    } else {
+        cleaned = source.split('*')[0].trim();
+    }
+
+    // Strip double-space separators (bank statement artifact)
+    cleaned = cleaned.split('  ')[0].trim();
 
     // 2. Apply Custom Noise Filters (Anti-rules)
     // We strip these out wherever they appear, case-insensitively
@@ -25,9 +49,9 @@ export const cleanSource = (source: string, noiseFilters: string[] = []): string
         }
     });
 
-    // 3. Hardcoded noise prefixes — payment wrappers and Danish bank reference patterns
-    // Keep this list for unambiguous multi-char prefixes only (avoid short tokens like 'DK', 'K')
-    cleaned = cleaned.replace(/^(PAYPAL \*?|SUMUP \*?|IZ \*?|GOOGLE \*?)/i, '');
+    // 3. Hardcoded noise prefixes — Danish bank reference patterns and remaining wrappers
+    // Note: MOBILEPAY/PAYPAL/SUMUP/GOOGLE wrapper cases are already handled in step 1
+    // These handle cases where the wrapper had no * (e.g. "Forretning: Ni Hao" direct)
     cleaned = cleaned.replace(/^Forretning:\s*/i, '');          // "Forretning: Ni Hao" → "Ni Hao"
     cleaned = cleaned.replace(/^DK-[A-Z]+\d+\s*/i, '');        // "DK-NOTAC3886 BILKA ..." → "BILKA ..."
     cleaned = cleaned.replace(/^-[A-Z]+\d+\s*/i, '');          // "-NOTAC3886 BILKA ..." → "BILKA ..."
