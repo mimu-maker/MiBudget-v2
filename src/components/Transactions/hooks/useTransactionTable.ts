@@ -463,10 +463,10 @@ const useTransactionCounts = (userId: string | undefined, currentAccountId: stri
 
       if (totalError) throw totalError;
 
-      // 2. Filtered Count
+      // 2. Filtered Count + Sum (single query — fetch amounts, derive count from result)
       let filteredQuery = (supabase as any)
         .from('transactions')
-        .select('*', { count: 'exact', head: true })
+        .select('amount')
         .eq(currentAccountId ? 'account_id' : 'user_id', currentAccountId ?? userId);
 
       // Apply Filters (shared with useInfiniteTransactions)
@@ -477,24 +477,16 @@ const useTransactionCounts = (userId: string | undefined, currentAccountId: stri
         filteredQuery = filteredQuery.neq('status', 'Excluded');
       }
 
-      const { count: filteredCount, error: filteredError } = await filteredQuery;
+      const { data: amounts, error: filteredError } = await filteredQuery;
 
       if (filteredError) throw filteredError;
 
-      // 3. Filtered Sum (Optimized for reliability)
-      let finalSum = 0;
-      // We select only the amount column to keep it light
-      const { data: amounts, error: sumError } = await filteredQuery.select('amount');
-      
-      if (sumError) {
-        console.warn("Sum query failed:", sumError.message);
-      } else {
-        finalSum = (amounts || []).reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
-      }
+      const filteredCount = (amounts || []).length;
+      const finalSum = (amounts || []).reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
 
       return {
         total: totalCount || 0,
-        filtered: filteredCount || 0,
+        filtered: filteredCount,
         filteredSum: finalSum
       };
     },
@@ -510,12 +502,18 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
 
   const { data: projections = [] } = useQuery({
-    queryKey: ['projections-list'],
+    queryKey: ['projections-list', currentAccountId],
     queryFn: async () => {
       // Use query with fallback to handle potential column naming differences
-      const { data, error } = await supabase
-        .from('projections' as any)
-        .select('*'); // Select all to avoid column naming issues (source vs merchant)
+      let query = (supabase as any)
+        .from('projections')
+        .select('*');
+
+      if (currentAccountId) {
+        query = query.eq('account_id', currentAccountId);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.warn("Projections fetch failed:", error.message);
@@ -524,7 +522,8 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       return data || [];
     },
     staleTime: 1000 * 60 * 60 * 24, // Keep 24h
-    gcTime: 1000 * 60 * 60 * 24 // Keep 24h
+    gcTime: 1000 * 60 * 60 * 24, // Keep 24h
+    enabled: !!currentAccountId,
   });
 
   const { data: sourceRules = [] } = useQuery({
@@ -746,6 +745,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
         budget_year: budgetYear,
         fingerprint: generateFingerprint(newTransaction),
         user_id: userId,
+        account_id: currentAccountId || null,
         id: crypto.randomUUID()
       };
 
