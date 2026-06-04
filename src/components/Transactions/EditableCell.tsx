@@ -9,7 +9,7 @@ import { CategorySelectContent } from '@/components/Budget/CategorySelectContent
 import { SubCategorySelector } from '@/components/Budget/SubCategorySelector';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Transaction, useTransactionTable } from './hooks/useTransactionTable';
+import { Transaction } from './hooks/useTransactionTable';
 import { getStatusBadgeVariant, getBudgetBadgeVariant } from './utils/transactionUtils';
 import { APP_STATUSES, useSettings } from '@/hooks/useSettings';
 import { useCategorySource, useUnifiedCategoryActions } from '@/hooks/useBudgetCategories';
@@ -31,6 +31,7 @@ interface EditableCellProps {
   customDisplay?: React.ReactNode;
   projections?: any[];
   isSaving?: boolean;
+  allTransactions?: Transaction[];
 }
 
 export const EditableCell = ({
@@ -43,14 +44,14 @@ export const EditableCell = ({
   onStopEdit,
   customDisplay,
   projections,
-  isSaving
+  isSaving,
+  allTransactions = [],
 }: EditableCellProps) => {
   const { settings } = useSettings();
   const { userProfile } = useProfile();
   const { currentAccountId } = useAuth();
   const { addCategory, addSubCategory } = useUnifiedCategoryActions();
   const { categories: displayCategories, subCategories: displaySubCategories } = useCategorySource();
-  const { transactions } = useTransactionTable();
   const value = transaction[field];
 
   const [localValue, setLocalValue] = useState(String(value || ''));
@@ -91,7 +92,7 @@ export const EditableCell = ({
 
       // Get unique entity names from existing transactions
       const existingEntities = Array.from(new Set(
-        transactions
+        allTransactions
           .filter(t => t.entity)
           .map(t => t.entity!)
       )).sort();
