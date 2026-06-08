@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
 import { processTransaction, ClassificationRule } from '@/lib/importBrain';
 import { getCachedRules, saveRulesCache } from '@/lib/sourceRulesCache';
@@ -13,6 +14,7 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     date: ['date', 'dato', 'booking', 'bogført', 'tidspunkt', 'transaktionsdato'],
     source: ['source', 'tekst', 'beskrivelse', 'modtager', 'afsender', 'merchant', 'vendor', 'butik', 'detaljer'],
     amount: ['amount', 'beløb', 'sum', 'pris', 'value', 'dkk', 'currency', 'total'],
+    account: ['account', 'konto', 'kontonummer', 'account_no', 'accountno', 'konto nr'],
     category: ['category', 'kategori', 'type', 'gruppe', 'label'],
     sub_category: ['sub_category', 'subcategory', 'underkategori', 'sub', 'specifikation'],
     // planned: ['planlagt', 'budgetteret', 'forventet'], // Disabled - always true
@@ -44,7 +46,7 @@ export interface ProcessingProgress {
 }
 
 export const useTransactionImport = (onImport: (data: any[], onProgress?: (current: number, total: number) => void) => void) => {
-    const { settings } = useSettings();
+    const { settings, addItem } = useSettings();
     const [step, setStep] = useState(1);
     const [isProcessing, setIsProcessing] = useState(false);
     const [csvData, setCsvData] = useState<string[][]>([]);
@@ -69,6 +71,8 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
 
     const [categoryValueMapping, setCategoryValueMapping] = useState<Record<string, string>>({});
     const [subCategoryValueMapping, setSubCategoryValueMapping] = useState<Record<string, string>>({});
+    const [unknownAccounts, setUnknownAccounts] = useState<string[]>([]);
+    const [accountResolutions, setAccountResolutions] = useState<Record<string, string>>({});
     const [uniqueCsvCategories, setUniqueCsvCategories] = useState<string[]>([]);
     const [uniqueCsvSubCategories, setUniqueCsvSubCategories] = useState<Record<string, string[]>>({});
 
@@ -169,6 +173,8 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
         setProcessingProgress({ current: 0, total: 0, stage: 'idle', dateSummary: '' });
         setConflicts([]);
         setSelectedConflictIds(new Set());
+        setUnknownAccounts([]);
+        setAccountResolutions({});
     };
 
     const parseCSV = (text: string) => {
@@ -210,28 +216,50 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                 if (hasHeadersDetected) {
                     const autoMapping: Record<string, string> = {};
                     const usedFields = new Set<string>();
-                    firstRow.forEach((header, index) => {
-                        const h = header.toLowerCase().trim();
-                        let match: string | null = null;
+                    const normalizedHeaders = firstRow.map(h => h.toLowerCase().trim());
 
-                        // 1. Try exact alias match first
+                    // PASS 1 — Exact alias matches (h === a) across ALL columns first.
+                    // This must run before substring matching so a precise header like
+                    // "Tekst" claims `source` before a routing column like "Afsenderkonto"
+                    // can greedily substring-grab it via the 'afsender' alias.
+                    // (NyKredit bug: Afsenderkonto/Modtagerkonto are account numbers, not
+                    //  merchant identity — they must never win the source field.)
+                    normalizedHeaders.forEach((h, index) => {
+                        if (autoMapping[index.toString()]) return;
                         for (const [field, aliases] of Object.entries(COLUMN_ALIASES)) {
-                            if (!usedFields.has(field) && aliases.some(a => h === a || h.includes(a))) {
-                                match = field;
+                            if (!usedFields.has(field) && aliases.some(a => h === a)) {
+                                autoMapping[index.toString()] = field;
+                                usedFields.add(field);
                                 break;
                             }
                         }
+                    });
 
-                        // 2. Fallback to fuzzy match
-                        if (!match) {
-                            match = fuzzyMatchField(header, transactionColumns.filter(col => !usedFields.has(col)));
+                    // PASS 2 — Substring matches (h.includes(a)) for any unmapped columns.
+                    normalizedHeaders.forEach((h, index) => {
+                        if (autoMapping[index.toString()]) return;
+                        for (const [field, aliases] of Object.entries(COLUMN_ALIASES)) {
+                            if (!usedFields.has(field) && aliases.some(a => h.includes(a))) {
+                                autoMapping[index.toString()] = field;
+                                usedFields.add(field);
+                                break;
+                            }
                         }
+                    });
 
+                    // PASS 3 — Fuzzy fallback for whatever remains.
+                    normalizedHeaders.forEach((h, index) => {
+                        if (autoMapping[index.toString()]) return;
+                        const match = fuzzyMatchField(
+                            firstRow[index],
+                            transactionColumns.filter(col => !usedFields.has(col))
+                        );
                         if (match) {
                             autoMapping[index.toString()] = match;
                             usedFields.add(match);
                         }
                     });
+
                     setColumnMapping(autoMapping);
                 }
                 setStep(2);
@@ -245,13 +273,30 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
 
     const readFile = (file: File) => {
         setIsProcessing(true);
-        const reader = new FileReader();
-        reader.onload = (e) => parseCSV(e.target?.result as string);
-        reader.onerror = () => {
-            setErrors(["Failed to read file"]);
-            setIsProcessing(false);
+        const isExcel = /\.(xlsx|xls)$/i.test(file.name);
+
+        if (isExcel) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const csv = XLSX.utils.sheet_to_csv(firstSheet);
+                    parseCSV(csv);
+                } catch {
+                    setErrors(["Failed to read Excel file"]);
+                    setIsProcessing(false);
+                }
+            };
+            reader.onerror = () => { setErrors(["Failed to read file"]); setIsProcessing(false); };
+            reader.readAsArrayBuffer(file);
+        } else {
+            const reader = new FileReader();
+            reader.onload = (e) => parseCSV(e.target?.result as string);
+            reader.onerror = () => { setErrors(["Failed to read file"]); setIsProcessing(false); };
+            reader.readAsText(file);
         }
-        reader.readAsText(file);
     };
 
     const generatePreview = () => {
@@ -298,6 +343,17 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                     let rawCsvCat = '';
                     let rawCsvSub = '';
 
+                    // Some bank exports omit empty description fields entirely rather than
+                    // emitting an empty delimiter-pair (e.g. "Date;Amount" instead of
+                    // "Date;;Amount"). Earlier versions tried to "fix" this by detecting
+                    // numeric-looking values in the source slot and blanking them out — but
+                    // that destroyed legitimate merchant descriptions (e.g. NyKredit "Tekst"
+                    // values that contain numbers or amount-like strings). The real fix lives
+                    // in the two-pass auto column-mapping above, which assigns "Tekst" to
+                    // `source` precisely instead of letting routing columns grab it. We now
+                    // always read each column straight from the row, preserving source as-is.
+                    // If rows are genuinely misaligned, the user can adjust the mapping in the
+                    // import dialog.
                     Object.entries(columnMapping).forEach(([csvIndex, transactionField]) => {
                         const indexNum = parseInt(csvIndex);
                         if (indexNum < row.length) {
@@ -349,7 +405,11 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
                         sourceSettings
                     );
 
-                    transaction.clean_source = processed.clean_source;
+                    // Only populate clean_source when a rule actually matched (confidence > 0).
+                    // Fresh, unmatched rows must leave clean_merchant null so they surface as
+                    // unresolved (Pending Triage) until the rules engine classifies them.
+                    // The raw merchant string always lives in transaction.source (Tekst).
+                    transaction.clean_source = processed.confidence > 0 ? processed.clean_source : null;
                     transaction.confidence = processed.confidence;
                     transaction.budget_month = processed.budget_month;
                     transaction.budget_year = processed.budget_year;
@@ -397,6 +457,35 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
         }, 100);
     };
 
+    // After parsing, check whether any account values in the data are not yet
+    // in settings.accounts. If so, pause at step 3 for the user to name them.
+    // Otherwise proceed directly to import.
+    const resolveAccountsWithData = (data: any[]) => {
+        const knownSet = new Set(settings.accounts.map((a: string) => a.toLowerCase()));
+        const dataAccounts = Array.from(new Set(
+            data.map(tx => tx.account).filter(Boolean)
+        )) as string[];
+        const unknown = dataAccounts.filter(a => !knownSet.has(a.toLowerCase()));
+
+        if (unknown.length > 0) {
+            setPreview(data);
+            setUnknownAccounts(unknown);
+            // Pre-fill any case-insensitive matches so the user doesn't re-type obvious ones
+            const autoRes: Record<string, string> = {};
+            unknown.forEach(acc => {
+                const match = settings.accounts.find(
+                    (sa: string) => sa.toLowerCase() === acc.toLowerCase()
+                );
+                if (match) autoRes[acc] = match;
+            });
+            setAccountResolutions(autoRes);
+            setStep(3);
+            setIsProcessing(false);
+        } else {
+            executeImport(data);
+        }
+    };
+
     const finalizePreview = (
         previewData: any[],
         csvCats: Set<string>,
@@ -410,66 +499,14 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
 
             setErrors(newErrors);
             if (newErrors.length === 0) {
-                const uniqueCats = Array.from(csvCats).sort();
-                setUniqueCsvCategories(uniqueCats);
-
-                // Auto-populate mapping with high confidence suggestions
-                const initialMapping: Record<string, string> = {};
-                const initialSubMapping: Record<string, string> = {};
-                const newSuggestions: Record<string, { category: string, subCategory?: string, confidence: number }> = {};
-
-                uniqueCats.forEach(cat => {
-                    const suggestion = generateSuggestions(cat);
-                    if (suggestion.category) {
-                        newSuggestions[cat] = { category: suggestion.category, confidence: suggestion.confidence };
-                    }
-
-                    // Auto-fill if confidence is high (inclusive of fuzzy matches at 0.8)
-                    if (suggestion.confidence >= 0.7) {
-                        initialMapping[cat] = suggestion.category;
-                        if (suggestion.subCategory) {
-                            initialSubMapping[cat] = suggestion.subCategory;
-                        }
-                    }
-                });
-
-                // We update suggestions partially here, then finish with subcats below
-
-                const subCatsObj: Record<string, string[]> = {};
-                Object.entries(csvSubCatsByCat).forEach(([cat, subs]) => {
-                    subCatsObj[cat] = Array.from(subs).sort();
-
-                    // Try to map subcategories too
-                    subs.forEach(sub => {
-                        const subSuggestion = generateSuggestions(sub);
-                        if (subSuggestion.subCategory) {
-                            // Add to suggestions record for exact-match detection in UI
-                            newSuggestions[sub] = {
-                                category: subSuggestion.category,
-                                subCategory: subSuggestion.subCategory,
-                                confidence: subSuggestion.confidence
-                            };
-
-                            if (subSuggestion.confidence >= 0.7) {
-                                initialSubMapping[sub] = subSuggestion.subCategory;
-                            }
-                        }
-                    });
-                });
-
-                setSuggestions(newSuggestions);
-                setCategoryValueMapping(initialMapping);
-                setSubCategoryValueMapping(initialSubMapping);
-                setUniqueCsvSubCategories(subCatsObj);
-
-                setStep(3); // Go to Value Mapping
+                resolveAccountsWithData(previewData);
+                return; // resolveAccountsWithData manages isProcessing from here
             }
         } catch (e) {
             console.error("Finalization error", e);
             setErrors(["Error finalizing preview generation"]);
-        } finally {
-            setIsProcessing(false);
         }
+        setIsProcessing(false);
     };
 
     const applyValueMappings = () => {
@@ -600,7 +637,7 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
         }
     };
 
-    const executeImport = async () => {
+    const executeImport = async (dataOverride?: any[]) => {
         setIsProcessing(true);
         setErrors([]);
 
@@ -608,11 +645,11 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
         await new Promise(r => setTimeout(r, 100));
 
         // Identify which transactions to actually import
-        // Non-conflicts + selected conflicts
+        // Non-conflicts + selected conflicts (or use dataOverride directly when skipping preview)
         const conflictIds = new Set(conflicts.map(c => c.id));
         const nonConflicts = preview.filter(p => !conflictIds.has(p.id));
         const chosenConflicts = conflicts.filter(c => selectedConflictIds.has(c.id));
-        const toImport = [...nonConflicts, ...chosenConflicts];
+        const toImport = dataOverride ?? [...nonConflicts, ...chosenConflicts];
 
         if (toImport.length === 0) {
             setErrors(["No transactions selected for import."]);
@@ -710,7 +747,19 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
     };
 
     const handleResolutionSave = async () => {
-        executeImport();
+        // Apply resolved names to preview data and persist new account names to settings
+        Object.values(accountResolutions).forEach(name => {
+            if (name && !settings.accounts.includes(name)) {
+                addItem('accounts', name);
+            }
+        });
+        const resolved = preview.map(tx => ({
+            ...tx,
+            account: tx.account
+                ? (accountResolutions[tx.account] ?? tx.account)
+                : tx.account
+        }));
+        executeImport(resolved);
     };
 
     const deletePreviewRow = (id: string) => {
@@ -759,6 +808,8 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
         toggleConflictSelection,
         selectAllConflicts,
         executeImport,
+        unknownAccounts,
+        accountResolutions, setAccountResolutions,
         reset
     };
 };
