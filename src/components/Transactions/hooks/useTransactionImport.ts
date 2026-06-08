@@ -295,7 +295,7 @@ export const useTransactionImport = (onImport: (data: any[], onProgress?: (curre
             const reader = new FileReader();
             reader.onload = (e) => parseCSV(e.target?.result as string);
             reader.onerror = () => { setErrors(["Failed to read file"]); setIsProcessing(false); };
-            reader.readAsText(file);
+            reader.readAsText(file, 'ISO-8859-1');
         }
     };
 
