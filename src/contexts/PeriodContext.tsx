@@ -20,6 +20,8 @@ interface PeriodContextType {
     setSelectedPeriod: (period: Period) => void;
     customDateRange: DateRange | undefined;
     setCustomDateRange: (range: DateRange | undefined) => void;
+    includeCore: boolean;
+    setIncludeCore: (include: boolean) => void;
     includeSpecial: boolean;
     setIncludeSpecial: (include: boolean) => void;
     includeKlintemarken: boolean;
@@ -29,6 +31,7 @@ interface PeriodContextType {
 const PeriodContext = createContext<PeriodContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'mibudget_selected_period_v2';
+const CORE_KEY = 'mibudget_include_core';
 const SPECIAL_KEY = 'mibudget_include_special';
 const KLINTEMARKEN_KEY = 'mibudget_include_klintemarken';
 
@@ -38,6 +41,11 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return (saved as Period) || 'All'; // Show all transactions by default
     });
     const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>();
+
+    const [includeCore, setIncludeCoreState] = useState<boolean>(() => {
+        const saved = localStorage.getItem(CORE_KEY);
+        return saved === null ? true : saved === 'true';
+    });
 
     const [includeSpecial, setIncludeSpecialState] = useState<boolean>(() => {
         const saved = localStorage.getItem(SPECIAL_KEY);
@@ -52,6 +60,11 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const setSelectedPeriod = (period: Period) => {
         setSelectedPeriodState(period);
         localStorage.setItem(STORAGE_KEY, period);
+    };
+
+    const setIncludeCore = (include: boolean) => {
+        setIncludeCoreState(include);
+        localStorage.setItem(CORE_KEY, String(include));
     };
 
     const setIncludeSpecial = (include: boolean) => {
@@ -70,6 +83,8 @@ export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             setSelectedPeriod,
             customDateRange,
             setCustomDateRange,
+            includeCore,
+            setIncludeCore,
             includeSpecial,
             setIncludeSpecial,
             includeKlintemarken,

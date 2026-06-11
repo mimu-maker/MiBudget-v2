@@ -98,32 +98,38 @@ const EditableCell = ({ value, baseValue, onUpdate, currency, isPercent, classNa
                             <LucideIcons.Check className="w-3.5 h-3.5" />
                         </button>
                     </div>
-                    {lastYearBudgetVal && (
-                        <div className="flex flex-col gap-1 items-end">
-                            <button
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setLocalValue(lastYearBudgetVal);
-                                }}
-                                className="text-[9px] text-blue-500 hover:text-blue-700 font-bold uppercase tracking-tight transition-colors flex items-center gap-1 bg-blue-50/50 px-1.5 py-0.5 rounded border border-blue-100/50 whitespace-nowrap"
-                            >
-                                <span>Copy {selectedYear - 1} Budget</span>
-                                <span className="font-mono text-blue-600/70">({formatCurrency(Number(lastYearBudgetVal), currency)})</span>
-                            </button>
-                            {lastYearSpentVal && (
+                    {lastYearSpentVal && (
+                        <div className="flex flex-col gap-1 items-end mt-0.5">
+                            <div className="text-[9px] font-bold text-muted-foreground/80 bg-muted/60 px-2 py-1 rounded border border-border/40 whitespace-nowrap">
+                                {selectedYear - 1} actual:&nbsp;
+                                <span className="font-mono text-foreground/80">
+                                    {formatCurrency(Number(lastYearSpentVal), currency)}{annualMultiplier === 12 ? '/yr' : '/mo'}
+                                </span>
+                            </div>
+                            {lastYearBudgetVal && (
                                 <button
                                     type="button"
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        setLocalValue(lastYearSpentVal);
+                                        setLocalValue(lastYearBudgetVal);
                                     }}
-                                    className="text-[9px] text-amber-500 hover:text-amber-700 font-bold uppercase tracking-tight transition-colors flex items-center gap-1 bg-amber-50/50 px-1.5 py-0.5 rounded border border-amber-100/50 whitespace-nowrap"
+                                    className="text-[9px] text-blue-500 hover:text-blue-700 font-bold uppercase tracking-tight transition-colors flex items-center gap-1 bg-blue-50/50 px-1.5 py-0.5 rounded border border-blue-100/50 whitespace-nowrap"
                                 >
-                                    <span>Copy {selectedYear - 1} Actuals</span>
-                                    <span className="font-mono text-amber-600/70">({formatCurrency(Number(lastYearSpentVal), currency)})</span>
+                                    <span>Copy {selectedYear - 1} Budget</span>
+                                    <span className="font-mono text-blue-600/70">({formatCurrency(Number(lastYearBudgetVal), currency)})</span>
                                 </button>
                             )}
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setLocalValue(lastYearSpentVal);
+                                }}
+                                className="text-[9px] text-amber-500 hover:text-amber-700 font-bold uppercase tracking-tight transition-colors flex items-center gap-1 bg-amber-50/50 px-1.5 py-0.5 rounded border border-amber-100/50 whitespace-nowrap"
+                            >
+                                <span>Copy {selectedYear - 1} Actuals</span>
+                                <span className="font-mono text-amber-600/70">({formatCurrency(Number(lastYearSpentVal), currency)})</span>
+                            </button>
                         </div>
                     )}
                 </div>
@@ -402,7 +408,27 @@ export const BudgetTable = ({
                     )}
 
                     {!projectionMode && (
-                        <td className="py-2 px-6 text-right font-bold text-foreground/70 whitespace-nowrap">{formatCurrency(subcat.spent, currency)}</td>
+                        <td className="py-2 px-6 text-right font-bold text-foreground/70 whitespace-nowrap">
+                            <div className="flex flex-col items-end gap-0.5">
+                                <span>{formatCurrency(subcat.spent, currency)}</span>
+                                {(() => {
+                                    const budgetMo = subcat.budget_amount || 0;
+                                    if (!budgetMo || !elapsedMonths) return null;
+                                    const prorated = budgetMo * elapsedMonths;
+                                    const pct = ((subcat.spent - prorated) / prorated) * 100;
+                                    if (Math.abs(pct) < 0.5) return null;
+                                    const isOver = pct > 0;
+                                    const colorClass = type === 'income'
+                                        ? (isOver ? 'text-emerald-500' : 'text-rose-500')
+                                        : (isOver ? 'text-rose-500' : 'text-emerald-500');
+                                    return (
+                                        <span className={`text-[9px] font-bold flex items-center gap-0.5 ${colorClass}`}>
+                                            {isOver ? '▲' : '▼'} {Math.abs(pct).toFixed(0)}% {isOver ? 'Above' : 'Below'} budget
+                                        </span>
+                                    );
+                                })()}
+                            </div>
+                        </td>
                     )}
 
                 </tr>

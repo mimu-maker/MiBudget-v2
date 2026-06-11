@@ -2,10 +2,12 @@ export const ALLOWED_EMAILS = [
   'michaelmullally@gmail.com',  // Michael
   'tanjen2@gmail.com',           // Tanja
   'qa@mimu.dev',                // QA User (Backdoor)
-  'automation@mimu.dev'         // Automation User (Backdoor)
+  'automation@mimu.dev',        // Automation User (Backdoor)
+  'demo@example.com'            // Demo User (read-only demo account)
 ];
 
 export const MASTER_ACCOUNT_EMAIL = 'michaelmullally@gmail.com';
+export const MULLALLY_ACCOUNT_ID = '92325837-1cf0-4157-82c6-82a233389b1a';
 
 export const HOUSEHOLD_EMAILS = [
   'michaelmullally@gmail.com',

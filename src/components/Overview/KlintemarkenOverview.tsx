@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useSettings } from '@/hooks/useSettings';
-import { usePeriod } from '@/contexts/PeriodContext';
 import { useOverviewData } from '@/components/Overview/hooks/useOverviewData';
 import { formatCurrency } from '@/lib/formatUtils';
 import * as LucideIcons from 'lucide-react';
@@ -11,7 +10,6 @@ import { useProfile } from '@/contexts/ProfileContext';
 
 export const KlintemarkenOverview = () => {
   const { settings } = useSettings();
-  const { includeKlintemarken } = usePeriod();
   const { userProfile } = useProfile();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
@@ -112,18 +110,6 @@ export const KlintemarkenOverview = () => {
     text: settings.darkMode ? '#94a3b8' : '#64748b',
     tooltip: settings.darkMode ? '#0f172a' : '#fff',
   }), [settings.darkMode]);
-
-  if (!includeKlintemarken) {
-    return (
-      <div className="flex flex-col items-center justify-center py-32 bg-amber-500/5 rounded-[2.5rem] border-2 border-dashed border-amber-500/20 animate-in fade-in duration-500">
-        <LucideIcons.Wallet className="w-16 h-16 text-amber-300 mb-6" />
-        <h3 className="text-xl font-bold text-amber-900 dark:text-amber-100 mb-2">Feeder Budgets Hidden</h3>
-        <p className="text-amber-600/70 dark:text-amber-400 font-medium text-center max-w-sm">
-          Enable the Feeder Budgets toggle in the top right to analyze your property and asset-specific spending.
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">

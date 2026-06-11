@@ -18,7 +18,7 @@ export const SpecialOverview = () => {
   // Use mode: 'all' to ensure we get ALL transactions for correct totals and analytics
   const { transactions } = useTransactionTable({ mode: 'all' });
   const { settings } = useSettings();
-  const { selectedPeriod, customDateRange, includeSpecial } = usePeriod();
+  const { selectedPeriod, customDateRange } = usePeriod();
   const { userProfile } = useProfile();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
@@ -141,18 +141,6 @@ export const SpecialOverview = () => {
     text: settings.darkMode ? '#94a3b8' : '#64748b',
     tooltip: settings.darkMode ? '#0f172a' : '#fff',
   }), [settings.darkMode]);
-
-  if (!includeSpecial) {
-    return (
-      <div className="flex flex-col items-center justify-center py-32 bg-purple-500/5 rounded-[2.5rem] border-2 border-dashed border-purple-500/20 animate-in fade-in duration-500">
-        <PiggyBank className="w-16 h-16 text-purple-300 mb-6" />
-        <h3 className="text-xl font-bold text-purple-900 dark:text-purple-100 mb-2">Slush Fund Hidden</h3>
-        <p className="text-purple-600/70 dark:text-purple-400 font-medium text-center max-w-sm">
-          Enable the Slush Fund toggle in the top right to analyze your special savings and unplanned expenses.
-        </p>
-      </div>
-    );
-  }
 
   const slushBudgetAccount = useMemo(() => {
     const specialCat = budgetData?.categories.find(c => c.name === 'Special');

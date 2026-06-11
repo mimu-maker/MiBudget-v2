@@ -1,18 +1,22 @@
 import { PeriodSelector } from '@/components/PeriodSelector';
 import { usePeriod } from '@/contexts/PeriodContext';
 import { MainOverview } from './MainOverview';
-
 import { SpecialOverview } from './SpecialOverview';
 import { CategoryOverview } from './CategoryOverview';
+import { KlintemarkenOverview } from './KlintemarkenOverview';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LayoutDashboard, PiggyBank, Wallet, PieChart } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { LayoutDashboard, PiggyBank, PieChart, Home } from 'lucide-react';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
+import { MULLALLY_ACCOUNT_ID } from '@/lib/authUtils';
 
 export const OverviewTabs = ({ defaultTab = "main" }: { defaultTab?: string }) => {
+  const { currentAccountId } = useAuth();
+  const showKlintemarken = currentAccountId === MULLALLY_ACCOUNT_ID;
+  const resolvedDefault = defaultTab === 'klintemarken' && !showKlintemarken ? 'main' : defaultTab;
+
   return (
     <div className="p-6">
-      <Tabs defaultValue={defaultTab} className="space-y-8">
+      <Tabs defaultValue={resolvedDefault} className="space-y-8">
         <div className="flex items-center justify-between mb-8">
           <div className="flex justify-start">
             <TabsList className="bg-muted/50 p-1.5 h-12 rounded-full border border-border/50 shadow-sm">
@@ -37,6 +41,15 @@ export const OverviewTabs = ({ defaultTab = "main" }: { defaultTab?: string }) =
                 <PiggyBank className="w-4 h-4" />
                 <span className="font-bold tracking-tight">Slush Fund</span>
               </TabsTrigger>
+              {showKlintemarken && (
+                <TabsTrigger
+                  value="klintemarken"
+                  className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all gap-2"
+                >
+                  <Home className="w-4 h-4" />
+                  <span className="font-bold tracking-tight">Klintemarken</span>
+                </TabsTrigger>
+              )}
             </TabsList>
           </div>
 
@@ -54,6 +67,11 @@ export const OverviewTabs = ({ defaultTab = "main" }: { defaultTab?: string }) =
         <TabsContent value="special" className="outline-none animate-in fade-in-50 duration-500">
           <SpecialOverview />
         </TabsContent>
+        {showKlintemarken && (
+          <TabsContent value="klintemarken" className="outline-none animate-in fade-in-50 duration-500">
+            <KlintemarkenOverview />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
