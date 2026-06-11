@@ -27,20 +27,25 @@ const EXP_BAR_X = INC_BAR_RIGHT + BAR_GAP;           // ≈ 560
 const EXP_BAR_RIGHT = EXP_BAR_X + BAR_W;             // ≈ 632
 
 // ── Node / flow layout ────────────────────────────────────────────────────────
-const NODE_W = 10;          // width of node rectangle
-const NODE_GAP = 8;         // vertical gap between adjacent node bands
-// Horizontal distance from bar edge to the near edge of the node rect
-const NODE_OFFSET = 120;
+const NODE_W   = 10;   // width of node rectangle
+const NODE_GAP = 8;    // vertical gap between adjacent node bands
 
-// Income nodes: right edge is NODE_OFFSET left of the bar
-const INC_NODE_RIGHT = INC_BAR_X - NODE_OFFSET;      // ≈ 348
-const INC_NODE_LEFT  = INC_NODE_RIGHT - NODE_W;       // ≈ 338
-const INC_FLOW_MID   = Math.round((INC_NODE_RIGHT + INC_BAR_X) / 2); // ≈ 408
+// Nodes are anchored near the SVG edges so flows use the full available width.
+// H_PAD: minimum edge padding; LABEL_W: space reserved for category name + amount.
+const H_PAD   = 16;
+const LABEL_W = 150;  // enough for ~22 chars at 10.5 px + currency amount
 
-// Expense nodes: left edge is NODE_OFFSET right of the bar
-const EXP_NODE_LEFT  = EXP_BAR_RIGHT + NODE_OFFSET;  // ≈ 752
-const EXP_NODE_RIGHT = EXP_NODE_LEFT + NODE_W;        // ≈ 762
-const EXP_FLOW_MID   = Math.round((EXP_BAR_RIGHT + EXP_NODE_LEFT) / 2); // ≈ 692
+// Income nodes sit at the LEFT edge — right edge of node touches the flow start
+const INC_NODE_LEFT  = H_PAD + LABEL_W;              // ≈ 166
+const INC_NODE_RIGHT = INC_NODE_LEFT + NODE_W;        // ≈ 176
+// Flows span from INC_NODE_RIGHT → INC_BAR_X  (≈ 292 px)
+const INC_FLOW_MID   = Math.round((INC_NODE_RIGHT + INC_BAR_X) / 2); // ≈ 322
+
+// Expense nodes sit at the RIGHT edge — left edge of node touches the flow end
+const EXP_NODE_RIGHT = W - H_PAD - LABEL_W;          // ≈ 934
+const EXP_NODE_LEFT  = EXP_NODE_RIGHT - NODE_W;       // ≈ 924
+// Flows span from EXP_BAR_RIGHT → EXP_NODE_LEFT  (≈ 292 px)
+const EXP_FLOW_MID   = Math.round((EXP_BAR_RIGHT + EXP_NODE_LEFT) / 2); // ≈ 778
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 const INC_COLOR = '#10b981'; // emerald-500
