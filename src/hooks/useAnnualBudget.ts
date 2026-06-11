@@ -184,6 +184,62 @@ export const useAnnualBudget = (year?: number) => {
         }
       }
 
+      // 4b. Fetch last year's transactions for "previous year actuals" reference
+      // Only negative amounts, exclude Excluded/Reconciled status
+      const lastYear = targetYear - 1;
+      let lastYearTransactions: any[] = [];
+      {
+        let lyFrom = 0;
+        let lyHasMore = true;
+        while (lyHasMore) {
+          let lyQuery = (supabase as any)
+            .from('transactions')
+            .select('category, sub_category, amount')
+            .lt('amount', 0)
+            .not('status', 'in', '("Excluded","Reconciled")');
+          if (currentAccountId) lyQuery = lyQuery.eq('account_id', currentAccountId);
+          else lyQuery = lyQuery.or(`user_id.eq.${user?.id},user_id.eq.${profileId}`);
+
+          const { data: lyChunk } = await lyQuery
+            .or(`budget_year.eq.${lastYear},and(budget_month.gte."${lastYear}-01-01",budget_month.lte."${lastYear}-12-31")`)
+            .range(lyFrom, lyFrom + CHUNK_SIZE - 1);
+
+          if (!lyChunk || lyChunk.length === 0) {
+            lyHasMore = false;
+          } else {
+            lastYearTransactions = [...lastYearTransactions, ...lyChunk];
+            if (lyChunk.length < CHUNK_SIZE) lyHasMore = false;
+            else lyFrom += CHUNK_SIZE;
+          }
+        }
+      }
+
+      // 4c. Fetch last year's budget limits for reference
+      let lastYearBudgetLimits: Record<string, number> = {};
+      if (currentAccountId) {
+        const { data: lyBudget } = await (supabase as any)
+          .from('budgets')
+          .select('id')
+          .eq('account_id', currentAccountId)
+          .eq('year', lastYear)
+          .limit(1)
+          .maybeSingle();
+
+        if (lyBudget?.id) {
+          const { data: lyLimits } = await (supabase as any)
+            .from('budget_category_limits')
+            .select('sub_category_id, limit_amount')
+            .eq('budget_id', lyBudget.id)
+            .not('sub_category_id', 'is', null);
+
+          (lyLimits || []).forEach((lim: any) => {
+            if (lim.sub_category_id) {
+              lastYearBudgetLimits[lim.sub_category_id] = Number(lim.limit_amount ?? 0);
+            }
+          });
+        }
+      }
+
       // 5. Build Budget Object with proper amounts from budget_category_limits
       const categories: BudgetCategory[] = dbCategories.map((cat: any) => {
         const catTransactions = allYearTransactions.filter(t => t.category === cat.name);
@@ -197,6 +253,10 @@ export const useAnnualBudget = (year?: number) => {
               ? categoryBudgets[sub.id]
               : (sub.budget_amount ?? 0);
             const subSpent = catTransactions.filter(t => t.sub_category === sub.name).reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
+            const lySubSpent = lastYearTransactions
+              .filter(t => t.category === cat.name && t.sub_category === sub.name)
+              .reduce((sum: number, t: any) => sum + Math.abs(t.amount), 0);
+            const lySubBudget = lastYearBudgetLimits[sub.id] ?? 0;
             return {
               id: sub.id,
               name: sub.name,
@@ -204,7 +264,10 @@ export const useAnnualBudget = (year?: number) => {
               spent: subSpent,
               remaining: subBudgetAmount - subSpent,
               is_active: categoryBudgets[`${cat.id}-${sub.id}-active`] !== 0,
-              label: sub.label
+              label: sub.label,
+              last_year_data: (lySubSpent > 0 || lySubBudget > 0)
+                ? { spent: lySubSpent, budget: lySubBudget }
+                : undefined
             };
           });
 

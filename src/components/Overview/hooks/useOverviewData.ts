@@ -83,9 +83,9 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
             filtered = filtered.filter(t => t.budget !== 'Special' && t.category?.toLowerCase() !== 'slush fund' && getGroup(t.category) !== 'special');
         }
 
-        // Core filtering
+        // Core filtering — income group is also a Core concept, exclude it when Core is off
         if (!includeCore) {
-            filtered = filtered.filter(t => getGroup(t.category) !== 'expenditure');
+            filtered = filtered.filter(t => getGroup(t.category) !== 'expenditure' && getGroup(t.category) !== 'income');
         }
 
         // Klintemarken transactions - respect toggle if passed, otherwise hide (relic removal)
@@ -93,18 +93,41 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
             filtered = filtered.filter(t => t.budget !== 'Klintemarken' && getGroup(t.category) !== 'klintemarken');
         }
 
-        filtered = filtered.filter(t => t.budget !== 'Exclude' && !t.excluded && t.status !== 'Pending Reconciliation' && !t.status?.startsWith('Pending: '));
+        filtered = filtered.filter(t => {
+            // Always hide Pending Reconciliation — income and expenses alike
+            if (t.status === 'Pending Reconciliation' || t.status?.startsWith('Pending: ')) return false;
+            // Income: show regardless of excluded/budget flags — only pending recon is suppressed
+            const group = getGroup(t.category);
+            if (group === 'income' || (includeKlintemarken && group === 'klintemarken')) return true;
+            // Expenses/other: standard exclusion rules
+            return t.budget !== 'Exclude' && !t.excluded;
+        });
+
+        // Exclude uncategorized transactions from all chart/KPI aggregations
+        filtered = filtered.filter(t => t.category && t.category !== 'Uncategorized');
+
         return filtered;
     }, [dateFilteredTransactions, includeCore, includeSpecial, includeKlintemarken, budgetData]);
 
     // Core Summary (Income, Expense, Net) - now based on flowFiltered
     const summary = useMemo(() => {
         return flowFiltered.reduce((acc, t) => {
-            if (t.amount > 0) acc.income += t.amount;
-            else acc.expense += Math.abs(t.amount);
+            const group = getGroup(t.category);
+            // Positive special-group amounts count as income when Slush toggle is on
+            const isIncome = group === 'income'
+                || (includeKlintemarken && group === 'klintemarken')
+                || (includeSpecial && group === 'special' && t.amount > 0);
+            if (isIncome && t.amount > 0) {
+                acc.income += t.amount;
+            } else if (t.amount < 0) {
+                acc.expense += Math.abs(t.amount);
+            } else {
+                // positive amount in non-income category (refund/reimbursement) = expense offset
+                acc.expense = Math.max(0, acc.expense - t.amount);
+            }
             return acc;
         }, { income: 0, expense: 0 });
-    }, [flowFiltered]);
+    }, [flowFiltered, budgetData, includeKlintemarken, includeSpecial]);
 
     const netIncome = summary.income - summary.expense;
 
@@ -138,22 +161,21 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
                 return d >= periodStart && d < nextPeriodStart;
             });
 
-            const income = monthTransactions.reduce((sum, t) => sum + (t.amount > 0 ? t.amount : 0), 0);
-            const expense = monthTransactions.reduce((sum, t) => sum + (t.amount < 0 ? Math.abs(t.amount) : 0), 0);
-
-            // Subcategory contributors
-            const subcategorySums: Record<string, number> = {};
-            monthTransactions.forEach(t => {
-                if (t.amount < 0) {
-                    const sub = t.sub_category || t.category || 'Other';
-                    subcategorySums[sub] = (subcategorySums[sub] || 0) + Math.abs(t.amount);
+            const { income, expense } = monthTransactions.reduce((acc, t) => {
+                const group = getGroup(t.category);
+                // Positive special-group amounts count as income when Slush toggle is on
+                const isIncome = group === 'income'
+                    || (includeKlintemarken && group === 'klintemarken')
+                    || (includeSpecial && group === 'special' && t.amount > 0);
+                if (isIncome && t.amount > 0) {
+                    acc.income += t.amount;
+                } else if (t.amount < 0) {
+                    acc.expense += Math.abs(t.amount);
+                } else {
+                    acc.expense = Math.max(0, acc.expense - t.amount);
                 }
-            });
-
-            const majorExpenses = Object.entries(subcategorySums)
-                .sort(([, a], [, b]) => b - a)
-                .filter(([, sum]) => expense > 0 && (sum / expense) > 0.25)
-                .map(([name, sum]) => ({ name, sum }));
+                return acc;
+            }, { income: 0, expense: 0 });
 
             // Category splits for line chart
             const categorySplits: Record<string, number> = {};
@@ -163,6 +185,73 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
                 }
             });
 
+            // Sub-category splits per category (for drill-down drawer)
+            const subCategorySplits: Record<string, Record<string, number>> = {};
+            monthTransactions.forEach(t => {
+                if (t.amount < 0 && t.category && t.sub_category) {
+                    if (!subCategorySplits[t.category]) subCategorySplits[t.category] = {};
+                    subCategorySplits[t.category][t.sub_category] =
+                        (subCategorySplits[t.category][t.sub_category] || 0) + Math.abs(t.amount);
+                }
+            });
+
+            // Subcategory sums (fallback for majorExpenses when no individual tx exists)
+            // Also excludes Property (mortgage/loans) to match priority-1 filter
+            const subcategorySums: Record<string, number> = {};
+            monthTransactions.forEach(t => {
+                if (t.amount < 0 && t.category !== 'Property') {
+                    const sub = t.sub_category || t.category || 'Other';
+                    subcategorySums[sub] = (subcategorySums[sub] || 0) + Math.abs(t.amount);
+                }
+            });
+
+            // Major Expenses: priority 1 = individual tx, 2 = subcategory totals, 3 = category totals
+            // Exclude Property (mortgage, BoligLån, loans) — fixed committed, not useful in hover
+            const expenseTransactions = monthTransactions
+                .filter(t => t.amount < 0 && t.category !== 'Property')
+                .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+
+            // Stretch to 5 items if ≥3 Discretionary transactions > 2000 DKK
+            const discretionaryLarge = expenseTransactions.filter(t =>
+                Math.abs(t.amount) > 2000 &&
+                budgetData?.categories.find(c => c.name === t.category)?.label === 'Discretionary'
+            );
+            const expenseLimit = discretionaryLarge.length >= 3 ? 5 : 3;
+
+            let majorExpenses: { name: string; sum: number }[];
+            if (expenseTransactions.length > 0) {
+                majorExpenses = expenseTransactions.slice(0, expenseLimit).map(t => ({
+                    name: t.clean_source || t.source || 'Unknown',
+                    sum: Math.abs(t.amount)
+                }));
+            } else {
+                const subEntries = Object.entries(subcategorySums)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, expenseLimit);
+                if (subEntries.length > 0) {
+                    majorExpenses = subEntries.map(([name, sum]) => ({ name, sum }));
+                } else {
+                    majorExpenses = Object.entries(categorySplits)
+                        .sort(([, a], [, b]) => b - a)
+                        .slice(0, expenseLimit)
+                        .map(([name, sum]) => ({ name, sum }));
+                }
+            }
+
+            // Notable income: income > 1000 DKK, excluding salary sub-categories
+            const notableIncome = monthTransactions
+                .filter(t => {
+                    const group = getGroup(t.category);
+                    if (!(group === 'income' || (includeKlintemarken && group === 'klintemarken'))) return false;
+                    if (t.amount <= 1000) return false;
+                    // Exclude salary lines (Salary - Michael, Salary - Tanja, etc.)
+                    if (t.sub_category?.toLowerCase().includes('salary')) return false;
+                    return true;
+                })
+                .sort((a, b) => b.amount - a.amount)
+                .slice(0, 5)
+                .map(t => ({ name: t.clean_source || t.source || 'Income', sum: t.amount }));
+
             return {
                 month: monthLabel,
                 fullMonth: fullMonthName,
@@ -170,10 +259,12 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
                 expense,
                 balance: income - expense,
                 majorExpenses,
+                notableIncome,
+                subCategorySplits,
                 ...categorySplits
             };
         });
-    }, [flowFiltered, effectiveInterval, displayLocale]);
+    }, [flowFiltered, effectiveInterval, displayLocale, budgetData, includeKlintemarken]);
 
     // Balance Trend for Cash Flow chart
     const balanceTrend = useMemo(() => {
@@ -190,7 +281,8 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
             expense: 0,
             balance: 0,
             cumulativeBalance: 0,
-            majorExpenses: []
+            majorExpenses: [],
+            notableIncome: []
         };
 
         return [startPoint, ...trend];
@@ -212,15 +304,6 @@ export const useOverviewData = ({ includeCore, includeSpecial, includeKlintemark
         const expenseCategoryNames = new Set(expenseCategories.map(c => c.name));
 
         const dataMap: Record<string, { budgeted: number; actual: number; icon?: string; color?: string }> = {};
-
-        console.log("DEBUG RADAR:", { 
-            budgetDataExists: !!budgetData,
-            categoriesCount: budgetData?.categories?.length,
-            expenseCategoriesCount: expenseCategories.length,
-            monthsInPeriod,
-            includeCore, 
-            includeSpecial 
-        });
 
         expenseCategories.forEach(cat => {
             dataMap[cat.name] = {

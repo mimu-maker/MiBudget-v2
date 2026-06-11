@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from "@/components/ui/select";
 import { Switch } from '@/components/ui/switch';
-import { Store, ArrowRight, History, Search } from 'lucide-react';
+import { Store, ArrowRight, History, Search, AlertTriangle, ShieldAlert, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SourceNameSelector } from '../Transactions/SourceNameSelector';
@@ -71,6 +71,38 @@ export const SourceRuleForm = ({
         // const currentTxMock: any = { id: 'current', source: rule.raw_name, clean_source: rule.name, amount: 0 };
         // return findSimilarTransactions(currentTxMock, transactions, rule.name || rule.raw_name, rule.match_mode);
     }, [transactions, rule.name, rule.raw_name, rule.match_mode]);
+
+    // --- Contains-rule risk analysis ---
+    // Computed live whenever the user types a pattern or toggles match mode.
+    // Tells them: how many transactions this rule hits, and how many of those
+    // are already mapped to a DIFFERENT clean_name (collision = silent re-categorisation).
+    const containsRisk = useMemo(() => {
+        const pattern = rule.raw_name.trim().toLowerCase();
+        if (rule.match_mode !== 'contains' || !pattern) return null;
+
+        const riskLevel: 'high' | 'medium' | 'low' =
+            pattern.length <= 5 ? 'high' : pattern.length <= 10 ? 'medium' : 'low';
+
+        const matching = transactions.filter(tx =>
+            (tx.source || '').toLowerCase().includes(pattern)
+        );
+
+        // Collisions: already has a clean_source that points somewhere ELSE
+        const collisionSources = new Map<string, number>();
+        matching.forEach(tx => {
+            const existing = tx.clean_source?.trim();
+            if (existing && existing.toLowerCase() !== rule.name.toLowerCase()) {
+                collisionSources.set(existing, (collisionSources.get(existing) ?? 0) + 1);
+            }
+        });
+
+        return {
+            riskLevel,
+            matchCount: matching.length,
+            collisionCount: Array.from(collisionSources.values()).reduce((a, b) => a + b, 0),
+            collisionSources, // Map<existingCleanName, count>
+        };
+    }, [rule.match_mode, rule.raw_name, rule.name, transactions]);
 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -169,11 +201,65 @@ export const SourceRuleForm = ({
                                 onChange={(e) => setRule({ ...rule, raw_name: e.target.value })}
                                 className={cn(
                                     "h-9 text-sm font-mono bg-white border-slate-200 focus-visible:ring-blue-500",
-                                    errors.raw_name && "border-red-500 ring-1 ring-red-500"
+                                    errors.raw_name && "border-red-500 ring-1 ring-red-500",
+                                    containsRisk?.riskLevel === 'high' && "border-red-400",
+                                    containsRisk?.riskLevel === 'medium' && "border-amber-400",
                                 )}
                                 placeholder="Keyword to match (e.g. SPAR)..."
                             />
                         </div>
+
+                        {/* Blast radius / collision warning — only for contains rules */}
+                        {containsRisk && (
+                            <div className={cn(
+                                "mt-1.5 rounded-lg border px-2.5 py-2 text-[11px] leading-snug space-y-1 animate-in fade-in slide-in-from-top-1 duration-200",
+                                containsRisk.riskLevel === 'high'
+                                    ? "bg-red-50 border-red-200 text-red-800"
+                                    : containsRisk.riskLevel === 'medium'
+                                    ? "bg-amber-50 border-amber-200 text-amber-800"
+                                    : "bg-slate-50 border-slate-200 text-slate-600"
+                            )}>
+                                {/* Risk tier label */}
+                                <div className="flex items-center gap-1.5 font-black uppercase tracking-wide text-[10px]">
+                                    {containsRisk.riskLevel === 'high' && <ShieldAlert className="w-3.5 h-3.5 shrink-0" />}
+                                    {containsRisk.riskLevel === 'medium' && <AlertTriangle className="w-3.5 h-3.5 shrink-0" />}
+                                    {containsRisk.riskLevel === 'low' && <Info className="w-3.5 h-3.5 shrink-0" />}
+                                    {containsRisk.riskLevel === 'high'
+                                        ? 'High risk — pattern is too short'
+                                        : containsRisk.riskLevel === 'medium'
+                                        ? 'Medium risk — verify matches below'
+                                        : 'Contains match'}
+                                </div>
+
+                                {/* Blast radius */}
+                                <div className="font-medium">
+                                    {containsRisk.matchCount === 0
+                                        ? 'No existing transactions match this pattern.'
+                                        : <>Matches <strong>{containsRisk.matchCount}</strong> existing transaction{containsRisk.matchCount !== 1 ? 's' : ''}.</>
+                                    }
+                                </div>
+
+                                {/* Collision warning */}
+                                {containsRisk.collisionCount > 0 && (
+                                    <div className={cn(
+                                        "flex flex-col gap-0.5 pt-1 border-t font-semibold",
+                                        containsRisk.riskLevel === 'high'
+                                            ? "border-red-200 text-red-700"
+                                            : "border-amber-200 text-amber-700"
+                                    )}>
+                                        <span className="flex items-center gap-1">
+                                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                                            {containsRisk.collisionCount} already mapped elsewhere — rule would silently re-categorise:
+                                        </span>
+                                        {Array.from(containsRisk.collisionSources.entries()).map(([name, count]) => (
+                                            <span key={name} className="pl-4 font-mono text-[10px]">
+                                                "{name}" × {count}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* MIDDLE: Arrow */}

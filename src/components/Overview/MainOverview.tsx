@@ -6,29 +6,29 @@ import * as LucideIcons from 'lucide-react';
 import { useOverviewData } from '@/components/Overview/hooks/useOverviewData';
 import { formatCurrency } from '@/lib/formatUtils';
 import { cn } from '@/lib/utils';
+import { usePeriod } from '@/contexts/PeriodContext';
 import BudgetSankey from '@/components/Budget/BudgetSankey';
 import SummaryPane from '@/components/Projection/SummaryPane';
+import { useAuth } from '@/contexts/UnifiedAuthContext';
+import { MULLALLY_ACCOUNT_ID } from '@/lib/authUtils';
 
 export const MainOverview = () => {
-  const [localIncludeCore, setLocalIncludeCore] = useState(true);
-  const [localIncludeSpecial, setLocalIncludeSpecial] = useState(true);
+  const { currentAccountId } = useAuth();
+  const showKlintemarken = currentAccountId === MULLALLY_ACCOUNT_ID;
+  const { includeCore, setIncludeCore, includeSpecial, setIncludeSpecial, includeKlintemarken, setIncludeKlintemarken } = usePeriod();
   const [flowTab, setFlowTab] = useState<'cashflow' | 'categoryflow'>('cashflow');
 
   const toggleFilter = (type: 'core' | 'special' | 'klintemarken') => {
-    const isCore = type === 'core';
-    const isSpecial = type === 'special';
+    const current = type === 'core' ? includeCore : type === 'special' ? includeSpecial : includeKlintemarken;
 
-    // Current state
-    const current = isCore ? localIncludeCore : localIncludeSpecial;
-
-    // If turning off, check if it's the last one enabled
     if (current) {
-      const activeCount = (localIncludeCore ? 1 : 0) + (localIncludeSpecial ? 1 : 0);
-      if (activeCount <= 1) return; // Prevent disabling the last one
+      const activeCount = (includeCore ? 1 : 0) + (includeSpecial ? 1 : 0) + (includeKlintemarken ? 1 : 0);
+      if (activeCount <= 1) return;
     }
 
-    if (isCore) setLocalIncludeCore(!localIncludeCore);
-    if (isSpecial) setLocalIncludeSpecial(!localIncludeSpecial);
+    if (type === 'core') setIncludeCore(!includeCore);
+    if (type === 'special') setIncludeSpecial(!includeSpecial);
+    if (type === 'klintemarken') setIncludeKlintemarken(!includeKlintemarken);
   };
 
 
@@ -45,8 +45,9 @@ export const MainOverview = () => {
     budgetData,
     flowFiltered,
   } = useOverviewData({
-    includeCore: localIncludeCore,
-    includeSpecial: localIncludeSpecial,
+    includeCore,
+    includeSpecial,
+    includeKlintemarken,
   });
 
   const chartColors = {
@@ -99,14 +100,29 @@ export const MainOverview = () => {
             </div>
           </div>
 
-          {data.majorExpenses && data.majorExpenses.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-dashed">
+          <div className="mt-4 pt-3 border-t border-dashed">
               <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Major Expenses</p>
+              {data.majorExpenses && data.majorExpenses.length > 0 ? (
+                <div className="space-y-1">
+                  {data.majorExpenses.map((exp: any, i: number) => (
+                    <div key={i} className="flex justify-between items-start gap-4">
+                      <span className="text-[11px] text-foreground/70 flex-1 leading-tight">{exp.name}</span>
+                      <span className="text-[11px] font-mono font-bold text-rose-500">{formatCurrency(exp.sum, settings.currency, amountFormat)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted-foreground italic">No significant expenses</p>
+              )}
+            </div>
+          {data.notableIncome && data.notableIncome.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-dashed">
+              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600 mb-2">Notable Income</p>
               <div className="space-y-1">
-                {data.majorExpenses.map((exp: any, i: number) => (
+                {data.notableIncome.map((item: any, i: number) => (
                   <div key={i} className="flex justify-between items-start gap-4">
-                    <span className="text-[11px] text-foreground/70 flex-1 leading-tight">{exp.name}</span>
-                    <span className="text-[11px] font-mono font-bold text-foreground">{formatCurrency(exp.sum, settings.currency, amountFormat)}</span>
+                    <span className="text-[11px] text-foreground/70 flex-1 leading-tight">{item.name}</span>
+                    <span className="text-[11px] font-mono font-bold text-emerald-500">{formatCurrency(item.sum, settings.currency, amountFormat)}</span>
                   </div>
                 ))}
               </div>
@@ -123,8 +139,9 @@ export const MainOverview = () => {
   // Replicating for now as it's specific to Sankey view.
   const categoriesWithActuals = budgetData?.categories
     .filter(cat => {
-      if (cat.category_group === 'expenditure' && !localIncludeCore) return false;
-      if (cat.category_group === 'special' && !localIncludeSpecial) return false;
+      if (cat.category_group === 'income') return true; // always include income for Sankey
+      if (cat.category_group === 'expenditure' && !includeCore) return false;
+      if (cat.category_group === 'special' && !includeSpecial) return false;
       if (cat.category_group === 'klintemarken') return false; // Feeder budget removed
       if (cat.category_group !== 'special' && cat.category_group !== 'klintemarken' && cat.category_group !== 'expenditure') return false;
       return true;
@@ -178,7 +195,6 @@ export const MainOverview = () => {
           <SummaryPane
             title="Total Income"
             value={summary.income}
-            data={balanceTrend.map(d => d.income || 0)}
             color="green"
             icon={LucideIcons.TrendingUp}
             currency={settings.currency}
@@ -187,7 +203,6 @@ export const MainOverview = () => {
           <SummaryPane
             title="Total Expenses"
             value={summary.expense}
-            data={balanceTrend.map(d => d.expense || 0)}
             color="red"
             icon={LucideIcons.TrendingDown}
             currency={settings.currency}
@@ -196,7 +211,6 @@ export const MainOverview = () => {
           <SummaryPane
             title="Net Savings"
             value={netIncome}
-            data={balanceTrend.map(d => (d.income || 0) - (d.expense || 0))}
             color="yellow"
             icon={LucideIcons.PiggyBank}
             currency={settings.currency}
@@ -232,12 +246,12 @@ export const MainOverview = () => {
                   onClick={() => toggleFilter('core')}
                   className={cn(
                     "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
-                    localIncludeCore
+                    includeCore
                       ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
                       : "bg-background border-border text-muted-foreground hover:bg-accent"
                   )}
                 >
-                  <LucideIcons.ShieldCheck className={cn("w-3 h-3", localIncludeCore ? "fill-emerald-500/50" : "")} />
+                  <LucideIcons.ShieldCheck className={cn("w-3 h-3", includeCore ? "fill-emerald-500/50" : "")} />
                   CORE
                 </Button>
                 <Button
@@ -246,14 +260,30 @@ export const MainOverview = () => {
                   onClick={() => toggleFilter('special')}
                   className={cn(
                     "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
-                    localIncludeSpecial
+                    includeSpecial
                       ? "bg-purple-500/10 border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
                       : "bg-background border-border text-muted-foreground hover:bg-accent"
                   )}
                 >
-                  <LucideIcons.PiggyBank className={cn("w-3 h-3", localIncludeSpecial ? "fill-purple-500/50" : "")} />
+                  <LucideIcons.PiggyBank className={cn("w-3 h-3", includeSpecial ? "fill-purple-500/50" : "")} />
                   SLUSH
                 </Button>
+                {showKlintemarken && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => toggleFilter('klintemarken')}
+                    className={cn(
+                      "h-7 px-3 rounded-full text-[10px] font-black transition-all gap-1.5 border-2",
+                      includeKlintemarken
+                        ? "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+                        : "bg-background border-border text-muted-foreground hover:bg-accent"
+                    )}
+                  >
+                    <LucideIcons.Home className={cn("w-3 h-3", includeKlintemarken ? "fill-amber-500/50" : "")} />
+                    KLINTEMARKEN
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>

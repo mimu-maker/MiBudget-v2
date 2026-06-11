@@ -1,8 +1,6 @@
-import React, { useMemo } from 'react';
-import { ResponsiveContainer, Sankey, Tooltip, Layer, Rectangle } from 'recharts';
+import React, { useMemo, useState } from 'react';
 import { formatCurrency } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
-import * as LucideIcons from 'lucide-react';
 import { BudgetCategory } from '@/hooks/useAnnualBudget';
 
 interface BudgetSankeyProps {
@@ -10,280 +8,398 @@ interface BudgetSankeyProps {
     denominator?: number;
 }
 
-const COLORS = {
-    income: '#10b981', // Emerald 500
-    total: '#059669',  // Emerald 600
-    expense: '#f43f5e', // Rose 500
-    expensePalette: [
-        '#f43f5e', '#fb7185', '#e11d48', '#be123c', '#fb923c', '#f97316', '#ea580c', '#c2410c'
-    ]
-};
+// ── Viewport ─────────────────────────────────────────────────────────────────
+const W = 1100;
+const H = 640;
 
-const BudgetSankey: React.FC<BudgetSankeyProps> = ({ budgetData, denominator }) => {
-    const { settings } = useSettings();
+// ── Bar dimensions ────────────────────────────────────────────────────────────
+const BAR_W = 72;
+const BAR_GAP = 20;
+const MAX_BAR_H = 440;
+// Both bars share the same bottom baseline — diff only shows at the top
+const BOTTOM_Y = 574;
 
-    const sankeyData = useMemo(() => {
-        const nodes: { name: string; color?: string; icon?: string; type?: 'income' | 'total' | 'expense' | 'savings' }[] = [];
-        const links: { source: number; target: number; value: number; color?: string; opacity?: number }[] = [];
-        const nodeMap = new Map<string, number>();
+// Bars centered horizontally
+const BARS_W = BAR_W * 2 + BAR_GAP;
+const INC_BAR_X = Math.round((W - BARS_W) / 2);     // ≈ 468
+const INC_BAR_RIGHT = INC_BAR_X + BAR_W;             // ≈ 540
+const EXP_BAR_X = INC_BAR_RIGHT + BAR_GAP;           // ≈ 560
+const EXP_BAR_RIGHT = EXP_BAR_X + BAR_W;             // ≈ 632
 
-        const getOrCreateNode = (name: string, color?: string, icon?: string, type?: 'income' | 'total' | 'expense' | 'savings') => {
-            const key = `${type}-${name}`;
-            if (nodeMap.has(key)) return nodeMap.get(key)!;
-            const index = nodes.length;
-            nodes.push({ name, color, icon, type });
-            nodeMap.set(key, index);
-            return index;
+// ── Node / flow layout ────────────────────────────────────────────────────────
+const NODE_W   = 10;   // width of node rectangle
+const NODE_GAP = 8;    // vertical gap between adjacent node bands
+
+// Nodes are anchored near the SVG edges so flows use the full available width.
+// H_PAD: minimum edge padding; LABEL_W: space reserved for category name + amount.
+const H_PAD   = 16;
+const LABEL_W = 150;  // enough for ~22 chars at 10.5 px + currency amount
+
+// Income nodes sit at the LEFT edge — right edge of node touches the flow start
+const INC_NODE_LEFT  = H_PAD + LABEL_W;              // ≈ 166
+const INC_NODE_RIGHT = INC_NODE_LEFT + NODE_W;        // ≈ 176
+// Flows span from INC_NODE_RIGHT → INC_BAR_X  (≈ 292 px)
+const INC_FLOW_MID   = Math.round((INC_NODE_RIGHT + INC_BAR_X) / 2); // ≈ 322
+
+// Expense nodes sit at the RIGHT edge — left edge of node touches the flow end
+const EXP_NODE_RIGHT = W - H_PAD - LABEL_W;          // ≈ 934
+const EXP_NODE_LEFT  = EXP_NODE_RIGHT - NODE_W;       // ≈ 924
+// Flows span from EXP_BAR_RIGHT → EXP_NODE_LEFT  (≈ 292 px)
+const EXP_FLOW_MID   = Math.round((EXP_BAR_RIGHT + EXP_NODE_LEFT) / 2); // ≈ 778
+
+// ── Colours ───────────────────────────────────────────────────────────────────
+const INC_COLOR = '#10b981'; // emerald-500
+const EXP_COLOR = '#f43f5e'; // rose-500
+const EXP_PALETTE = [
+    '#f43f5e', '#fb7185', '#e11d48', '#be123c',
+    '#fb923c', '#f97316', '#ea580c', '#c2410c',
+    '#f59e0b', '#84cc16', '#06b6d4', '#6366f1',
+    '#a78bfa', '#ec4899', '#14b8a6', '#f472b6',
+];
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface Band {
+    name: string;
+    value: number;
+    color: string;
+    // Bar side: contiguous, no gaps
+    barTopY: number;
+    barBotY: number;
+    // Node side: same height as bar segment, spread with NODE_GAP between bands
+    nodeTopY: number;
+    nodeBotY: number;
+}
+
+// ── Core layout ───────────────────────────────────────────────────────────────
+/**
+ * Compute band positions for one side (income or expense).
+ *
+ * - Bar segments are contiguous: sum of segH = barH exactly.
+ * - Node segments have the same height as their bar segment.
+ * - Node stack is vertically centred on the bar. Total extra height =
+ *   (N-1) * NODE_GAP — split equally above and below.
+ */
+function computeBands(
+    nodes: { name: string; value: number; color: string }[],
+    barH: number,
+    barTopY: number,
+): Band[] {
+    if (!nodes.length || barH <= 0) return [];
+    const total = nodes.reduce((s, n) => s + n.value, 0) || 1;
+    const totalGaps = Math.max(0, nodes.length - 1) * NODE_GAP;
+    const nodeStackTopY = barTopY - totalGaps / 2;
+    let barCursor  = barTopY;
+    let nodeCursor = nodeStackTopY;
+    return nodes.map(n => {
+        const h = (n.value / total) * barH;
+        const band: Band = {
+            name: n.name,
+            value: n.value,
+            color: n.color,
+            barTopY:  barCursor,
+            barBotY:  barCursor + h,
+            nodeTopY: nodeCursor,
+            nodeBotY: nodeCursor + h,
         };
+        barCursor  += h;
+        nodeCursor += h + NODE_GAP;
+        return band;
+    });
+}
 
-        // Diagnostic logging
-        console.log('Sankey Budget Data:', budgetData);
+// ── Path builders ─────────────────────────────────────────────────────────────
+/** Filled bezier band: node right edge → income bar left edge */
+function incBandPath(b: Band): string {
+    const mx = INC_FLOW_MID;
+    return [
+        `M${INC_NODE_RIGHT},${b.nodeTopY}`,
+        `C${mx},${b.nodeTopY} ${mx},${b.barTopY} ${INC_BAR_X},${b.barTopY}`,
+        `L${INC_BAR_X},${b.barBotY}`,
+        `C${mx},${b.barBotY} ${mx},${b.nodeBotY} ${INC_NODE_RIGHT},${b.nodeBotY}`,
+        'Z',
+    ].join(' ');
+}
 
-        const incomeCategories = budgetData.filter(item =>
-            item.category_group === 'income' &&
-            ((item.budget_amount || 0) > 0 || (item.spent || 0) > 0)
-        );
-        const expenseCategories = budgetData.filter(item =>
-            item.category_group !== 'income' &&
-            ((item.budget_amount || 0) > 0 || (item.spent || 0) > 0)
-        );
+/** Filled bezier band: expense bar right edge → node left edge */
+function expBandPath(b: Band): string {
+    const mx = EXP_FLOW_MID;
+    return [
+        `M${EXP_BAR_RIGHT},${b.barTopY}`,
+        `C${mx},${b.barTopY} ${mx},${b.nodeTopY} ${EXP_NODE_LEFT},${b.nodeTopY}`,
+        `L${EXP_NODE_LEFT},${b.nodeBotY}`,
+        `C${mx},${b.nodeBotY} ${mx},${b.barBotY} ${EXP_BAR_RIGHT},${b.barBotY}`,
+        'Z',
+    ].join(' ');
+}
 
-        // 1. Calculate the raw sums from the data
-        const incomeSum = incomeCategories.reduce((sum, cat) => {
-            const subSum = (cat.sub_categories || []).reduce((s, sub) => s + Math.max(sub.budget_amount || 0, sub.spent || 0), 0);
-            return sum + subSum;
-        }, 0);
+/** Rounded-top-corners bar rect */
+function roundedTopRect(x: number, y: number, w: number, h: number, r = 6): string {
+    if (h <= 0) return '';
+    const cr = Math.min(r, w / 2, h);
+    return `M${x + cr},${y} H${x + w - cr} Q${x + w},${y} ${x + w},${y + cr} V${y + h} H${x} V${y + cr} Q${x},${y} ${x + cr},${y}Z`;
+}
 
-        const expenseSum = expenseCategories.reduce((sum, item) => sum + Math.max(item.budget_amount || 0, item.spent || 0), 0);
+function trunc(s: string, n: number) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 
-        if (incomeSum === 0 && expenseSum === 0) return { nodes: [], links: [] };
+// ── Component ─────────────────────────────────────────────────────────────────
+const BudgetSankey: React.FC<BudgetSankeyProps> = ({ budgetData }) => {
+    const { settings } = useSettings();
+    const [hovered, setHovered] = useState<string | null>(null);
 
-        const imbalance = incomeSum - expenseSum;
-
-        // The "Invisible" Center Node
-        const fundsNodeIndex = getOrCreateNode('Total Funds', COLORS.total, 'Wallet', 'total');
-
-        // Stage 1: Income Sub-Categories -> Total Funds
-        incomeCategories.forEach(cat => {
-            (cat.sub_categories || []).forEach(sub => {
-                const value = Math.max(sub.budget_amount || 0, sub.spent || 0);
-                if (value > 0) {
-                    const nodeIndex = getOrCreateNode(sub.name, COLORS.income, cat.icon || 'Banknote', 'income');
-                    links.push({
-                        source: nodeIndex,
-                        target: fundsNodeIndex,
-                        value: Math.max(value, 0.01),
-                        color: COLORS.income,
-                        opacity: 0.4
-                    });
-                }
-            });
-        });
-
-        // Add "From Savings" on the LEFT if we spent more than we earned
-        if (imbalance < 0) {
-            const deficit = Math.abs(imbalance);
-            const deficitNodeIndex = getOrCreateNode('From Savings / Overspending', COLORS.expense, 'TrendingUp', 'income');
-            links.push({
-                source: deficitNodeIndex,
-                target: fundsNodeIndex,
-                value: Math.max(deficit, 0.01),
-                color: COLORS.expense,
-                opacity: 0.4
-            });
-        }
-
-        // Stage 2: Total Funds -> Expense Categories
-        expenseCategories.sort((a, b) => (b.budget_amount || 0) - (a.budget_amount || 0)).forEach((item, i) => {
-            const themeColor = item.color || COLORS.expensePalette[i % COLORS.expensePalette.length];
-            const nodeIndex = getOrCreateNode(item.name, themeColor, item.icon || 'CreditCard', 'expense');
-            const value = Math.max(item.budget_amount || 0, item.spent || 0);
-
-            if (value > 0) {
-                links.push({
-                    source: fundsNodeIndex,
-                    target: nodeIndex,
-                    value: Math.max(value, 0.01),
-                    color: themeColor,
-                    opacity: 0.4
+    const { incBands, expBands, totalIncome, totalExpense, incBarH, expBarH, incBarTopY, expBarTopY } =
+        useMemo(() => {
+            // Income: sub-categories of income categories
+            const rawInc: { name: string; value: number; color: string }[] = [];
+            budgetData.filter(d => d.category_group === 'income').forEach(cat => {
+                (cat.sub_categories || []).forEach(sub => {
+                    const v = Math.max(sub.budget_amount || 0, sub.spent || 0);
+                    if (v > 0) rawInc.push({ name: sub.name, value: v, color: INC_COLOR });
                 });
-            }
-        });
-
-        // Stage 2b: Total Funds -> Unallocated (if any)
-        if (imbalance > 0) {
-            const savingsNodeIndex = getOrCreateNode('Unallocated / Savings', '#3b82f6', 'PiggyBank', 'savings');
-            links.push({
-                source: fundsNodeIndex,
-                target: savingsNodeIndex,
-                value: Math.max(imbalance, 0.01),
-                color: '#3b82f6',
-                opacity: 0.4
             });
-        }
 
-        return { nodes, links };
-    }, [budgetData]);
+            // Expenses: top-level categories, sorted largest first
+            const rawExp: { name: string; value: number; color: string }[] = budgetData
+                .filter(d => d.category_group !== 'income')
+                .map((d, i) => ({
+                    name: d.name,
+                    value: Math.max(d.budget_amount || 0, d.spent || 0),
+                    color: d.color || EXP_PALETTE[i % EXP_PALETTE.length],
+                }))
+                .filter(d => d.value > 0)
+                .sort((a, b) => b.value - a.value);
 
-    const CustomTooltip = ({ active, payload }: any) => {
-        if (active && payload && payload.length) {
-            const data = payload[0].payload;
+            const totalIncome  = rawInc.reduce((s, d) => s + d.value, 0);
+            const totalExpense = rawExp.reduce((s, d) => s + d.value, 0);
+            const maxVal       = Math.max(totalIncome, totalExpense) || 1;
 
-            // Recharts Sankey payloads vary based on if you hover a Node or a Link
-            const isNode = data.name !== undefined && data.source === undefined;
+            const incBarH    = (totalIncome  / maxVal) * MAX_BAR_H;
+            const expBarH    = (totalExpense / maxVal) * MAX_BAR_H;
+            const incBarTopY = BOTTOM_Y - incBarH;
+            const expBarTopY = BOTTOM_Y - expBarH;
 
-            if (isNode) {
-                return (
-                    <div className="bg-slate-900/95 border border-slate-700 p-4 rounded-2xl shadow-2xl backdrop-blur-md">
-                        <p className="font-bold text-slate-200 mb-2 truncate max-w-[200px]">{data.name}</p>
-                        <div className="flex flex-col gap-1">
-                            <div className="flex justify-between items-center gap-4">
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total Flow</span>
-                                <span className="text-sm font-black text-white">{formatCurrency(payload[0].value, settings.currency)}</span>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
-            // It's a link
-            const isBudget = data.color === '#3b82f6';
-
-            const getSourceTargetName = (item: any) => {
-                if (typeof item === 'string') return item;
-                if (typeof item === 'number') return sankeyData.nodes[item]?.name || 'Unknown';
-                if (item && typeof item === 'object') return item.name || 'Unknown';
-                return 'Unknown';
+            return {
+                incBands:    computeBands(rawInc, incBarH, incBarTopY),
+                expBands:    computeBands(rawExp, expBarH, expBarTopY),
+                totalIncome, totalExpense, incBarH, expBarH, incBarTopY, expBarTopY,
             };
+        }, [budgetData]);
 
-            const sourceName = getSourceTargetName(data.source);
-            const targetName = getSourceTargetName(data.target);
+    const dark  = settings.darkMode;
+    const fg    = dark ? '#e2e8f0' : '#1e293b';
+    const muted = dark ? '#64748b' : '#94a3b8';
 
-            return (
-                <div className="bg-slate-900/95 border border-slate-700 p-4 rounded-2xl shadow-2xl backdrop-blur-md">
-                    <div className="flex items-center gap-2 mb-2">
-                        <div className={`w-2 h-2 rounded-full ${isBudget ? 'bg-blue-500' : 'bg-rose-500'}`} />
-                        <p className="font-bold text-slate-200 truncate max-w-[200px]">
-                            {isBudget ? 'Planned Budget' : 'Actual Spend'}
-                        </p>
-                    </div>
-                    <div className="flex justify-between items-center gap-6">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{sourceName} ➔ {targetName}</span>
-                        <span className="text-lg font-black text-white">{formatCurrency(data.value, settings.currency)}</span>
-                    </div>
-                </div>
-            );
-        }
-        return null;
-    };
-
-    const CustomNode = (props: any) => {
-        const { x, y, width, height, index, payload, containerWidth } = props;
-
-        // Make the center node invisible as requested
-        if (payload.name === 'Total Funds') return null;
-
-        const isLeft = x < containerWidth / 3;
-        const isRight = x > (containerWidth * 2) / 3;
-        const color = payload.color || COLORS.expense;
-
-        const IconComponent = (LucideIcons as any)[payload.icon || 'Circle'];
-
+    if (totalIncome === 0 && totalExpense === 0) {
         return (
-            <Layer key={`node-${index}`}>
-                <Rectangle
-                    x={x}
-                    y={y}
-                    width={width}
-                    height={height}
-                    fill={color}
-                    fillOpacity={0.9}
-                    stroke={color}
-                    strokeWidth={1}
-                    radius={[6, 6, 6, 6]}
-                />
-
-                {IconComponent && (
-                    <foreignObject
-                        x={isRight ? x + width + 8 : x - 28}
-                        y={y + (height / 2) - 10}
-                        width="20"
-                        height="20"
-                    >
-                        <div style={{ color: color }}>
-                            <IconComponent size={18} strokeWidth={2.5} />
-                        </div>
-                    </foreignObject>
-                )}
-
-                <text
-                    x={isRight ? x + width + 32 : (isLeft ? x - 34 : x + width / 2)}
-                    y={y + height / 2}
-                    textAnchor={isRight ? 'start' : (isLeft ? 'end' : 'middle')}
-                    dominantBaseline="middle"
-                    className="text-[11px] font-black uppercase tracking-wider"
-                    fill={settings.darkMode ? '#e2e8f0' : '#1e293b'}
-                >
-                    {payload.name}
-                </text>
-            </Layer>
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+                <span className="text-4xl opacity-20">⟳</span>
+                <p className="text-sm font-bold uppercase tracking-widest opacity-50">
+                    No flow data for this period
+                </p>
+            </div>
         );
-    };
+    }
+
+    // Label visibility thresholds (in SVG pixels)
+    const SHOW_NAME_MIN = 13;  // band must be at least this tall to show a name
+    const SHOW_AMT_MIN  = 26;  // band must be at least this tall to show name + amount
 
     return (
-        <div className="w-full h-[650px] mt-4 bg-white/50 dark:bg-slate-950/20 p-8 rounded-[2.5rem] border border-slate-200/50 dark:border-slate-800/50 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-5">
-                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500 rounded-full blur-[120px]" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-rose-500 rounded-full blur-[120px]" />
-            </div>
+        <div
+            className="w-full mt-4 rounded-[2rem] overflow-hidden bg-white/40 dark:bg-slate-950/20 border border-slate-200/40 dark:border-slate-800/40 shadow-xl"
+            style={{ position: 'relative', paddingTop: `${(H / W) * 100}%` }}
+        >
+            <svg
+                viewBox={`0 0 ${W} ${H}`}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+                onMouseLeave={() => setHovered(null)}
+            >
+                {/* ════════ INCOME FLOWS — filled bezier bands ════════ */}
+                {incBands.map((b, i) => {
+                    const hi = hovered === `inc-${i}`;
+                    return (
+                        <path
+                            key={`if-${i}`}
+                            d={incBandPath(b)}
+                            fill={INC_COLOR}
+                            fillOpacity={hi ? 0.52 : 0.22}
+                            onMouseEnter={() => setHovered(`inc-${i}`)}
+                            onMouseLeave={() => setHovered(null)}
+                            style={{ transition: 'fill-opacity 0.15s', cursor: 'default' }}
+                        />
+                    );
+                })}
 
-            {sankeyData.nodes.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4 animate-in fade-in duration-700">
-                    <LucideIcons.SearchX className="w-16 h-16 opacity-20" />
-                    <p className="text-lg font-bold uppercase tracking-widest opacity-50">No flow data available for this period</p>
-                </div>
-            ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                    <Sankey
-                        data={sankeyData}
-                        node={<CustomNode containerWidth={1000} />}
-                        nodePadding={6}
-                        margin={{ top: 40, right: 180, bottom: 40, left: 180 }}
-                        link={(props: any) => {
-                            const { sourceX, sourceY, targetX, targetY, linkWidth, payload } = props;
-                            if (!payload) return null;
+                {/* ════════ EXPENSE FLOWS — filled bezier bands ════════ */}
+                {expBands.map((b, i) => {
+                    const hi = hovered === `exp-${i}`;
+                    return (
+                        <path
+                            key={`ef-${i}`}
+                            d={expBandPath(b)}
+                            fill={b.color}
+                            fillOpacity={hi ? 0.52 : 0.22}
+                            onMouseEnter={() => setHovered(`exp-${i}`)}
+                            onMouseLeave={() => setHovered(null)}
+                            style={{ transition: 'fill-opacity 0.15s', cursor: 'default' }}
+                        />
+                    );
+                })}
 
-                            const color = payload.color || 'url(#linkGradient)';
-                            const opacity = payload.opacity || 0.3;
+                {/* ════════ INCOME BAR ════════ */}
+                {incBarH > 0 && (
+                    <g>
+                        <path
+                            d={roundedTopRect(INC_BAR_X, incBarTopY, BAR_W, incBarH)}
+                            fill={INC_COLOR}
+                            fillOpacity={0.9}
+                        />
+                        {/* Segment dividers (subtle white lines) */}
+                        {incBands.slice(1).map((b, i) => (
+                            <line
+                                key={`id-${i}`}
+                                x1={INC_BAR_X} y1={b.barTopY}
+                                x2={INC_BAR_RIGHT} y2={b.barTopY}
+                                stroke="rgba(255,255,255,0.3)" strokeWidth={1}
+                            />
+                        ))}
+                        {/* Bar label — above bar */}
+                        <text x={INC_BAR_X + BAR_W / 2} y={incBarTopY - 18}
+                            textAnchor="middle" fill={muted}
+                            fontSize={9} fontWeight={700} letterSpacing="0.1em">
+                            INCOME
+                        </text>
+                        <text x={INC_BAR_X + BAR_W / 2} y={incBarTopY - 5}
+                            textAnchor="middle" fill={INC_COLOR}
+                            fontSize={11} fontWeight={800}>
+                            {formatCurrency(Math.round(totalIncome), settings.currency)}
+                        </text>
+                    </g>
+                )}
 
-                            return (
-                                <path
-                                    d={`
-                                        M${sourceX},${sourceY}
-                                        C${(sourceX + targetX) / 2},${sourceY}
-                                        ${(sourceX + targetX) / 2},${targetY}
-                                        ${targetX},${targetY}
-                                    `}
-                                    fill="none"
-                                    stroke={color}
-                                    strokeWidth={Math.max(linkWidth, 1)}
-                                    strokeOpacity={opacity}
-                                />
-                            );
-                        }}
-                    >
-                        <defs>
-                            <linearGradient id="linkGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
-                                <stop offset="50%" stopColor="#059669" stopOpacity="0.6" />
-                                <stop offset="100%" stopColor="#f43f5e" stopOpacity="0.4" />
-                            </linearGradient>
-                        </defs>
-                        <Tooltip content={<CustomTooltip />} />
-                    </Sankey>
-                </ResponsiveContainer>
-            )}
-        </div >
+                {/* ════════ EXPENSE BAR ════════ */}
+                {expBarH > 0 && (
+                    <g>
+                        <path
+                            d={roundedTopRect(EXP_BAR_X, expBarTopY, BAR_W, expBarH)}
+                            fill={EXP_COLOR}
+                            fillOpacity={0.9}
+                        />
+                        {expBands.slice(1).map((b, i) => (
+                            <line
+                                key={`ed-${i}`}
+                                x1={EXP_BAR_X} y1={b.barTopY}
+                                x2={EXP_BAR_RIGHT} y2={b.barTopY}
+                                stroke="rgba(255,255,255,0.3)" strokeWidth={1}
+                            />
+                        ))}
+                        <text x={EXP_BAR_X + BAR_W / 2} y={expBarTopY - 18}
+                            textAnchor="middle" fill={muted}
+                            fontSize={9} fontWeight={700} letterSpacing="0.1em">
+                            EXPENSES
+                        </text>
+                        <text x={EXP_BAR_X + BAR_W / 2} y={expBarTopY - 5}
+                            textAnchor="middle" fill={EXP_COLOR}
+                            fontSize={11} fontWeight={800}>
+                            {formatCurrency(Math.round(totalExpense), settings.currency)}
+                        </text>
+                    </g>
+                )}
+
+                {/* ════════ INCOME NODES + LABELS ════════ */}
+                {incBands.map((b, i) => {
+                    const hi   = hovered === `inc-${i}`;
+                    const bh   = b.nodeBotY - b.nodeTopY;
+                    const midY = (b.nodeTopY + b.nodeBotY) / 2;
+                    const showName = bh >= SHOW_NAME_MIN;
+                    const showAmt  = bh >= SHOW_AMT_MIN;
+                    return (
+                        <g
+                            key={`in-${i}`}
+                            onMouseEnter={() => setHovered(`inc-${i}`)}
+                            onMouseLeave={() => setHovered(null)}
+                            style={{ cursor: 'default' }}
+                        >
+                            <title>{b.name}: {formatCurrency(Math.round(b.value), settings.currency)}</title>
+                            {/* Node rect — right edge abuts the flow */}
+                            <rect
+                                x={INC_NODE_LEFT} y={b.nodeTopY}
+                                width={NODE_W} height={bh}
+                                fill={INC_COLOR} fillOpacity={hi ? 1 : 0.8} rx={2}
+                                style={{ transition: 'fill-opacity 0.15s' }}
+                            />
+                            {showName && (
+                                <text
+                                    x={INC_NODE_LEFT - 7}
+                                    y={showAmt ? midY - 4 : midY + 4}
+                                    textAnchor="end"
+                                    fill={hi ? INC_COLOR : fg}
+                                    fontSize={10.5} fontWeight={hi ? 800 : 600}
+                                    style={{ transition: 'fill 0.1s' }}
+                                >
+                                    {trunc(b.name, 22)}
+                                </text>
+                            )}
+                            {showAmt && (
+                                <text
+                                    x={INC_NODE_LEFT - 7} y={midY + 10}
+                                    textAnchor="end" fill={muted}
+                                    fontSize={9} fontWeight={700}
+                                >
+                                    {formatCurrency(Math.round(b.value), settings.currency)}
+                                </text>
+                            )}
+                        </g>
+                    );
+                })}
+
+                {/* ════════ EXPENSE NODES + LABELS ════════ */}
+                {expBands.map((b, i) => {
+                    const hi   = hovered === `exp-${i}`;
+                    const bh   = b.nodeBotY - b.nodeTopY;
+                    const midY = (b.nodeTopY + b.nodeBotY) / 2;
+                    const showName = bh >= SHOW_NAME_MIN;
+                    const showAmt  = bh >= SHOW_AMT_MIN;
+                    return (
+                        <g
+                            key={`en-${i}`}
+                            onMouseEnter={() => setHovered(`exp-${i}`)}
+                            onMouseLeave={() => setHovered(null)}
+                            style={{ cursor: 'default' }}
+                        >
+                            <title>{b.name}: {formatCurrency(Math.round(b.value), settings.currency)}</title>
+                            {/* Node rect — left edge abuts the flow */}
+                            <rect
+                                x={EXP_NODE_LEFT} y={b.nodeTopY}
+                                width={NODE_W} height={bh}
+                                fill={b.color} fillOpacity={hi ? 1 : 0.8} rx={2}
+                                style={{ transition: 'fill-opacity 0.15s' }}
+                            />
+                            {showName && (
+                                <text
+                                    x={EXP_NODE_RIGHT + 7}
+                                    y={showAmt ? midY - 4 : midY + 4}
+                                    textAnchor="start"
+                                    fill={hi ? b.color : fg}
+                                    fontSize={10.5} fontWeight={hi ? 800 : 600}
+                                    style={{ transition: 'fill 0.1s' }}
+                                >
+                                    {trunc(b.name, 22)}
+                                </text>
+                            )}
+                            {showAmt && (
+                                <text
+                                    x={EXP_NODE_RIGHT + 7} y={midY + 10}
+                                    textAnchor="start" fill={muted}
+                                    fontSize={9} fontWeight={700}
+                                >
+                                    {formatCurrency(Math.round(b.value), settings.currency)}
+                                </text>
+                            )}
+                        </g>
+                    );
+                })}
+            </svg>
+        </div>
     );
 };
 

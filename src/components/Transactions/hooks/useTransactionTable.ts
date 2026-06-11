@@ -887,9 +887,17 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       for (let i = 0; i < total; i += CHUNK_SIZE) {
         const chunk = toInsert.slice(i, i + CHUNK_SIZE);
 
+        // Deduplicate by fingerprint to prevent "cannot affect row a second time" error
+        const seenFingerprints = new Set<string>();
+        const deduped = chunk.filter(tx => {
+          if (seenFingerprints.has(tx.fingerprint)) return false;
+          seenFingerprints.add(tx.fingerprint);
+          return true;
+        });
+
         // Sanitize for DB: Use legacy column names for compatibility (source -> merchant)
         // Note: although types.ts may show 'source', the actual DB project uses 'merchant'
-        const dbChunk = chunk.map((tx) => {
+        const dbChunk = deduped.map((tx) => {
           // Mandatory user_id check
           const userId = tx.user_id || userProfile?.user_id || user?.id; // Fallback if missing
 
@@ -929,7 +937,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
         const { error } = await (supabase as any).from('transactions').upsert(dbChunk as any, { onConflict: 'fingerprint' });
         if (error) throw error;
 
-        processed += chunk.length;
+        processed += deduped.length;
         if (onProgress) onProgress(processed, total);
       }
 
