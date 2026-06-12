@@ -90,10 +90,10 @@ export const EditableCell = ({
       };
 
 
-      // Get unique entity names from existing transactions
+      // Active entities only: those with at least one Pending Reconciliation item
       const existingEntities = Array.from(new Set(
         allTransactions
-          .filter(t => t.entity)
+          .filter(t => t.entity && t.status === 'Pending Reconciliation')
           .map(t => t.entity!)
       )).sort();
 
@@ -269,6 +269,10 @@ export const EditableCell = ({
                   <SelectValue placeholder="Assign Entity..." />
                 </SelectTrigger>
                 <SelectContent>
+                  {/* Keep the row's current entity selectable even if it has no other pending items */}
+                  {transaction.entity && !existingEntities.includes(transaction.entity) && (
+                    <SelectItem value={transaction.entity}>{transaction.entity}</SelectItem>
+                  )}
                   {existingEntities.map(name => (
                     <SelectItem key={name} value={name}>{name}</SelectItem>
                   ))}
