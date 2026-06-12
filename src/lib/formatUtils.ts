@@ -11,6 +11,10 @@ export const formatNumber = (
     // Danish: 1.000,00 (comma decimal)
     const locale = format === 'comma_decimal' ? 'da-DK' : 'en-US';
 
+    // Normalise -0 and float dust (e.g. -1.1e-13 from summing) so values that
+    // round to zero never render as "-0.00"
+    if (Math.round(value * Math.pow(10, maxDecimals)) === 0) value = 0;
+
     return new Intl.NumberFormat(locale, {
         minimumFractionDigits: minDecimals,
         maximumFractionDigits: maxDecimals,

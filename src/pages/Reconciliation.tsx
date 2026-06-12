@@ -124,11 +124,12 @@ const Reconciliation = () => {
         return transactions.filter(t => t.status === 'Reconciled');
     }, [transactions]);
 
-    // Get all unique entities from the system
+    // Active entities only: those with at least one Pending Reconciliation item
+    // (plus entities created in this session). Full entity management lives in Settings.
     const existingEntities = useMemo(() => {
         const entities = new Set<string>(customEntities);
         transactions.forEach(t => {
-            if (t.entity) entities.add(t.entity);
+            if (t.entity && t.status === 'Pending Reconciliation') entities.add(t.entity);
         });
         return Array.from(entities).sort();
     }, [transactions, customEntities]);
@@ -189,6 +190,12 @@ const Reconciliation = () => {
 
     // Subset-sum matcher for Outstanding Items groups
     const matcher = useReconMatcher(groupedByEntity);
+
+    const netOutstanding = useMemo(() => pendingItems.reduce((acc, t) => acc + t.amount, 0), [pendingItems]);
+
+    // Treat float dust / -0 as zero and render it neutrally instead of red/green
+    const balanceColor = (value: number, zeroClass: string, posClass: string, negClass: string) =>
+        Math.abs(value) < 0.005 ? zeroClass : value > 0 ? posClass : negClass;
 
     const handleConfirmCombination = async () => {
         if (!matcher.selection || !matcher.chosenIds?.length) return;
@@ -372,8 +379,8 @@ const Reconciliation = () => {
                 </div>
                 <div className="px-6 py-3 bg-white rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex items-center gap-4">
                     <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Net Outstanding</span>
-                    <span className={cn("text-xl font-black", pendingItems.reduce((acc, t) => acc + t.amount, 0) >= 0 ? "text-emerald-500" : "text-rose-500")}>
-                        {formatCurrency(pendingItems.reduce((acc, t) => acc + t.amount, 0), settings.currency)}
+                    <span className={cn("text-xl font-black", balanceColor(netOutstanding, "text-slate-600", "text-emerald-500", "text-rose-500"))}>
+                        {formatCurrency(netOutstanding, settings.currency)}
                     </span>
                 </div>
             </div>
@@ -577,17 +584,13 @@ const Reconciliation = () => {
                                                 className="mr-4 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 uppercase font-black text-[10px] tracking-widest h-8"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    if (items.some(t => !t.category || !t.sub_category)) {
-                                                        toast.error("All transactions must have a category and sub-category set");
-                                                        return;
-                                                    }
                                                     setConfirmingReconEntity({ entity, items, net: entityBalance });
                                                 }}
                                             >
                                                 Complete Recon
                                             </HeaderActionButton>
                                         )}
-                                        <span className={cn("font-black text-lg", entityBalance >= 0 ? "text-emerald-600" : "text-rose-600")}>
+                                        <span className={cn("font-black text-lg", balanceColor(entityBalance, "text-slate-600", "text-emerald-600", "text-rose-600"))}>
                                             {formatCurrency(entityBalance, settings.currency)}
                                         </span>
                                     </div>

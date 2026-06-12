@@ -12,6 +12,7 @@ import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
 import { useProfile } from '@/contexts/ProfileContext';
 import { useCategorySource } from '@/hooks/useBudgetCategories';
+import { useActiveEntities } from '@/hooks/useActiveEntities';
 import { CategorySelector } from '@/components/Budget/CategorySelector';
 import { SmartSelector } from '@/components/ui/smart-selector';
 import { cn } from '@/lib/utils';
@@ -32,6 +33,7 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
     const { settings } = useSettings();
     const { userProfile } = useProfile();
     const { subCategories } = useCategorySource();
+    const { entities: activeEntities } = useActiveEntities();
     const [isSaving, setIsSaving] = useState(false);
     const [editedTx, setEditedTx] = useState<Partial<Transaction>>({});
     const [isMappingExpanded, setIsMappingExpanded] = useState(false);
@@ -253,6 +255,32 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
                                     <SelectItem value="Review Needed">Review Needed</SelectItem>
                                 </SelectContent>
                             </Select>
+                        </div>
+                    </div>
+
+                    {/* Entity */}
+                    <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest pl-1">Entity</Label>
+                        <div className="bg-white p-4 rounded-xl border border-slate-200/60 shadow-sm">
+                            <Select
+                                value={editedTx.entity || 'none'}
+                                onValueChange={(v) => updateField('entity', v === 'none' ? null : v)}
+                            >
+                                <SelectTrigger className="h-9 bg-slate-50 border-slate-200 shadow-sm text-[11px] font-black rounded-lg uppercase w-full">
+                                    <SelectValue placeholder="None" />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-lg">
+                                    <SelectItem value="none" className="text-slate-400 italic font-medium">None</SelectItem>
+                                    {/* Keep the current entity selectable even if it has no other pending items */}
+                                    {editedTx.entity && !activeEntities.includes(editedTx.entity) && (
+                                        <SelectItem value={editedTx.entity}>{editedTx.entity}</SelectItem>
+                                    )}
+                                    {activeEntities.map(e => (
+                                        <SelectItem key={e} value={e}>{e}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-[10px] text-slate-400 mt-2">Only entities with outstanding reconciliation items are listed.</p>
                         </div>
                     </div>
 
