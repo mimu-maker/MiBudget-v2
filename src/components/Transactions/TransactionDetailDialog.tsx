@@ -98,24 +98,24 @@ export const TransactionDetailDialog = ({ transaction, open, onOpenChange, onSav
                                         Raw: {transaction.source}
                                     </div>
                                 )}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
                                 {!transaction.parent_id && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                            if (onSplit) {
-                                                onOpenChange(false);
-                                                onSplit(transaction.id);
-                                            } else {
-                                                setIsSplitModalOpen(true);
-                                            }
-                                        }}
-                                        className="h-9 px-3 text-xs font-bold gap-2 rounded-xl text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border-slate-200"
-                                    >
-                                        <Split className="w-3.5 h-3.5" /> Split
-                                    </Button>
+                                    <div className="pt-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                                if (onSplit) {
+                                                    onOpenChange(false);
+                                                    onSplit(transaction.id);
+                                                } else {
+                                                    setIsSplitModalOpen(true);
+                                                }
+                                            }}
+                                            className="h-9 px-3 text-xs font-bold gap-2 rounded-xl text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border-slate-200"
+                                        >
+                                            <Split className="w-3.5 h-3.5" /> Split
+                                        </Button>
+                                    </div>
                                 )}
                             </div>
                         </div>

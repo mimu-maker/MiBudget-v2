@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DatePickerWithRange } from '@/components/ui/date-range-picker';
-import { Check, ChevronDown, ChevronUp, Filter } from 'lucide-react';
+import { ArrowUpDown, Check, ChevronDown, ChevronUp, Filter } from 'lucide-react';
 import { Transaction } from './hooks/useTransactionTable';
 import { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
@@ -27,7 +27,7 @@ interface SortableHeaderProps {
   field: keyof Transaction;
   children: React.ReactNode;
   sortBy: keyof Transaction;
-  sortOrder: 'asc' | 'desc';
+  sortOrder: 'asc' | 'desc' | 'abs';
   onSort: (field: keyof Transaction) => void;
   className?: string;
 }
@@ -40,7 +40,11 @@ const SortableHeader = ({ field, children, sortBy, sortOrder, onSort, className 
     <div className={`flex items-center space-x-1 ${className?.includes('text-center') ? 'justify-center' : ''}`}>
       <span>{children}</span>
       {sortBy === field && (
-        sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
+        sortOrder === 'abs'
+          ? <ArrowUpDown className="w-4 h-4 text-purple-500" />
+          : sortOrder === 'asc'
+            ? <ChevronUp className="w-4 h-4" />
+            : <ChevronDown className="w-4 h-4" />
       )}
     </div>
   </th>
@@ -382,7 +386,7 @@ const FilterableHeader = ({ field, onFilter, onClearFilter, currentFilter, optio
 
 interface TransactionsTableHeaderProps {
   sortBy: keyof Transaction;
-  sortOrder: 'asc' | 'desc';
+  sortOrder: 'asc' | 'desc' | 'abs';
   onSort: (field: keyof Transaction) => void;
   onFilter: (field: string, value: any) => void;
   onClearFilter: (field: string) => void;

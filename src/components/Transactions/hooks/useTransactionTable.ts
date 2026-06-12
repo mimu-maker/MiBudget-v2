@@ -273,7 +273,14 @@ const applyTransactionFilters = (query: any, filters: Record<string, any>): any 
         query = query.eq('status', 'Complete');
       }
     } else if (typeof filterValue === 'string') {
-      query = query.ilike(dbField, `%${filterValue}%`);
+      if (field === 'source') {
+        // Search must match raw and cleaned names (e.g. "Fibia" → merchant 'BS FIBIA P/S' or clean_merchant 'Fibia').
+        // Commas/parens would break the PostgREST or() syntax, so strip them from the pattern.
+        const pattern = `%${filterValue.replace(/[,()]/g, '')}%`;
+        query = query.or(`merchant.ilike.${pattern},clean_merchant.ilike.${pattern},clean_source.ilike.${pattern}`);
+      } else {
+        query = query.ilike(dbField, `%${filterValue}%`);
+      }
     } else if (typeof filterValue === 'boolean') {
       query = query.eq(dbField, filterValue);
     }
@@ -284,7 +291,7 @@ const applyTransactionFilters = (query: any, filters: Record<string, any>): any 
 /**
  * Hook for INFINITE transactions with server-side sorting/filtering
  */
-const useInfiniteTransactions = (userId: string | undefined, currentAccountId: string | null, sortBy: keyof Transaction, sortOrder: 'asc' | 'desc', filters: Record<string, any>, options?: { enabled?: boolean }) => {
+const useInfiniteTransactions = (userId: string | undefined, currentAccountId: string | null, sortBy: keyof Transaction, sortOrder: 'asc' | 'desc' | 'abs', filters: Record<string, any>, options?: { enabled?: boolean }) => {
   return useInfiniteQuery({
     queryKey: ['transactions-infinite', sortBy, sortOrder, filters, currentAccountId],
     initialPageParam: 0,
@@ -323,7 +330,14 @@ const useInfiniteTransactions = (userId: string | undefined, currentAccountId: s
             } else if (Array.isArray(filterValue)) {
                 data = data.filter((t: any) => filterValue.includes(t[field]));
             } else if (typeof filterValue === 'string' && filterValue !== 'unresolved' && filterValue !== 'resolved') {
-                data = data.filter((t: any) => String(t[field]).toLowerCase().includes(filterValue.toLowerCase()));
+                const needle = filterValue.toLowerCase();
+                if (field === 'source') {
+                    data = data.filter((t: any) =>
+                        [t.source, t.merchant, t.clean_merchant, t.clean_source]
+                            .some(v => String(v || '').toLowerCase().includes(needle)));
+                } else {
+                    data = data.filter((t: any) => String(t[field]).toLowerCase().includes(needle));
+                }
             }
          });
 
@@ -332,6 +346,7 @@ const useInfiniteTransactions = (userId: string | undefined, currentAccountId: s
          }
 
          data.sort((a: any, b: any) => {
+             if (sortOrder === 'abs') return Math.abs(b.amount) - Math.abs(a.amount);
              const valA = a[sortBy];
              const valB = b[sortBy];
              if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
@@ -550,7 +565,7 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
     [sourceRules]);
 
   const [sortBy, setSortBy] = usePersistentState<keyof Transaction>('mimu_tx_sortBy', 'date');
-  const [sortOrder, setSortOrder] = usePersistentState<'asc' | 'desc'>('mimu_tx_sortOrder', 'desc');
+  const [sortOrder, setSortOrder] = usePersistentState<'asc' | 'desc' | 'abs'>('mimu_tx_sortOrder', 'desc');
   const [filters, setFilters] = usePersistentState<Record<string, any>>('mimu_tx_filters', {});
 
   const {
@@ -581,14 +596,19 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
       raw = (infiniteData?.pages as any)?.flat() || [];
     }
 
-    return raw.map(t => ({
+    const mapped = raw.map(t => ({
       ...t,
       // A transaction is resolved if it has a clean_source set — regardless of
       // whether a classification rule exists. knownSources is still used in the
       // row for the "is this a known source" inline-edit check (line 125).
       is_resolved: !!(t.clean_source && t.clean_source.trim() !== '')
     }));
-  }, [infiniteData, allData, knownSources, options.mode]);
+
+    if (options.mode !== 'all' && sortOrder === 'abs' && sortBy === 'amount') {
+      return [...mapped].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+    }
+    return mapped;
+  }, [infiniteData, allData, knownSources, options.mode, sortOrder, sortBy]);
 
   const isLoading = options.mode === 'all' ? isAllLoading : isInfiniteLoading;
   const isError = options.mode === 'all' ? isAllError : isInfiniteError;
@@ -769,7 +789,15 @@ export const useTransactionTable = (options: { mode?: 'infinite' | 'all' } = { m
 
   const handleSort = useCallback((field: keyof Transaction) => {
     if (sortBy === field) {
-      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+      if (field === 'amount') {
+        setSortOrder(prev => {
+          if (prev === 'asc') return 'desc';
+          if (prev === 'desc') return 'abs';
+          return 'asc';
+        });
+      } else {
+        setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+      }
     } else {
       setSortBy(field);
       setSortOrder('asc');

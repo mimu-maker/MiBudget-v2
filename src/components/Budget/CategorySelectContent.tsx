@@ -29,6 +29,13 @@ interface CategorySelectContentProps {
     primaryCategory?: string | null;
     secondaryCategories?: string[];
     transactionAmount?: number;
+    groupedCategories?: {
+        income: any[];
+        feeders: any[];
+        expenses: any[];
+        slush: any[];
+    };
+    isLoadingCategories?: boolean;
 }
 
 export const CategorySelectContent = ({
@@ -44,9 +51,14 @@ export const CategorySelectContent = ({
     hideSuggestions = false,
     primaryCategory,
     secondaryCategories = [],
-    transactionAmount
+    transactionAmount,
+    groupedCategories: externalGrouped,
+    isLoadingCategories: externalIsLoading
 }: CategorySelectContentProps) => {
-    const { income, feeders, expenses, slush, isLoading } = useGroupedCategories();
+    const internalGrouped = useGroupedCategories();
+    const grouped = externalGrouped || internalGrouped;
+    const { income = [], feeders = [], expenses = [], slush = [], isLoading: internalLoading } = grouped;
+    const isLoading = externalIsLoading !== undefined ? externalIsLoading : internalLoading;
     const { settings } = useSettings();
     const { data: popular = [] } = usePopularCategories(suggestionLimit);
 

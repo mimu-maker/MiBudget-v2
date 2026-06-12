@@ -4,8 +4,9 @@ import { useTransactionTable, Transaction } from '@/components/Transactions/hook
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { HeaderActionButton } from '@/components/ui/header-action-button';
 import { Badge } from '@/components/ui/badge';
-import { Check, ArrowRightLeft, X, Sparkles, History, User, Building, Briefcase, Pencil, Plus, ArrowLeft, HelpCircle } from 'lucide-react';
+import { Check, ArrowRightLeft, X, Sparkles, History, User, Building, Briefcase, Pencil, Plus, ArrowLeft, HelpCircle, Split, Target } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
 import { cn } from '@/lib/utils';
@@ -14,6 +15,8 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
 import { TransactionDetailDialog } from '@/components/Transactions/TransactionDetailDialog';
+import { TransactionSplitModal } from '@/components/Transactions/TransactionSplitModal';
+import { useReconMatcher } from '@/hooks/useReconMatcher';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { useProfile } from '@/contexts/ProfileContext';
@@ -90,6 +93,9 @@ const Reconciliation = () => {
 
     // Detail Dialog State
     const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+
+    // Split Modal State (shortcut from rows)
+    const [splitTransaction, setSplitTransaction] = useState<Transaction | null>(null);
 
     // Entity creation
     const [customEntities, setCustomEntities] = useState<string[]>([]);
@@ -180,6 +186,19 @@ const Reconciliation = () => {
         });
         return groups;
     }, [pendingItems, customEntities]);
+
+    // Subset-sum matcher for Outstanding Items groups
+    const matcher = useReconMatcher(groupedByEntity);
+
+    const handleConfirmCombination = async () => {
+        if (!matcher.selection || !matcher.chosenIds?.length) return;
+        const ids = [matcher.selection.positive.id, ...matcher.chosenIds];
+        await bulkUpdate({ ids, updates: { status: 'Reconciled' } });
+        toast.success("Transactions Reconciled", {
+            description: `Matched ${formatCurrency(matcher.selection.positive.amount, settings.currency)} against ${matcher.chosenIds.length} item(s)`
+        });
+        matcher.reset();
+    };
 
     // Unknown transactions
     const unknownItems = useMemo(() => {
@@ -448,6 +467,19 @@ const Reconciliation = () => {
                                         <Button
                                             size="sm"
                                             variant="ghost"
+                                            className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSplitTransaction(item);
+                                            }}
+                                            title="Split Transaction"
+                                        >
+                                            <Split className="w-4 h-4" />
+                                        </Button>
+
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
                                             className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -508,17 +540,17 @@ const Reconciliation = () => {
                                                             if (e.key === 'Escape') setRenamingEntity(null);
                                                         }}
                                                     />
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-600 hover:bg-emerald-50" onClick={() => handleSaveRename(entity)}>
+                                                    <HeaderActionButton size="icon" variant="ghost" className="h-8 w-8 text-emerald-600 hover:bg-emerald-50" onClick={() => handleSaveRename(entity)}>
                                                         <Check className="w-4 h-4" />
-                                                    </Button>
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600 hover:bg-rose-50" onClick={() => setRenamingEntity(null)}>
+                                                    </HeaderActionButton>
+                                                    <HeaderActionButton size="icon" variant="ghost" className="h-8 w-8 text-rose-600 hover:bg-rose-50" onClick={() => setRenamingEntity(null)}>
                                                         <X className="w-4 h-4" />
-                                                    </Button>
+                                                    </HeaderActionButton>
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center gap-2 group/title">
                                                     <span className="text-lg font-black tracking-tight">{entity}</span>
-                                                    <Button
+                                                    <HeaderActionButton
                                                         size="icon"
                                                         variant="ghost"
                                                         className="h-6 w-6 opacity-0 group-hover/title:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
@@ -529,7 +561,7 @@ const Reconciliation = () => {
                                                         }}
                                                     >
                                                         <Pencil className="w-3 h-3" />
-                                                    </Button>
+                                                    </HeaderActionButton>
                                                 </div>
                                             )}
                                             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -539,7 +571,7 @@ const Reconciliation = () => {
                                     </div>
                                     <div className="flex items-center pr-4">
                                         {items.some(t => t.amount > 0) && items.some(t => t.amount < 0) && (
-                                            <Button 
+                                            <HeaderActionButton
                                                 variant="secondary"
                                                 size="sm"
                                                 className="mr-4 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 uppercase font-black text-[10px] tracking-widest h-8"
@@ -553,7 +585,7 @@ const Reconciliation = () => {
                                                 }}
                                             >
                                                 Complete Recon
-                                            </Button>
+                                            </HeaderActionButton>
                                         )}
                                         <span className={cn("font-black text-lg", entityBalance >= 0 ? "text-emerald-600" : "text-rose-600")}>
                                             {formatCurrency(entityBalance, settings.currency)}
@@ -567,36 +599,122 @@ const Reconciliation = () => {
                                         </div>
                                     ) : (
                                         <div className="flex flex-col divide-y divide-border/30">
-                                            {items.map(item => (
-                                                <div
-                                                    key={item.id}
-                                                    onClick={() => setSelectedTransaction(item)}
-                                                    className="flex items-center justify-between p-3.5 px-6 hover:bg-white transition-colors cursor-pointer group/row"
-                                                >
-                                                    <div className="flex items-center gap-4">
-                                                        <span className="text-xs font-bold text-slate-400 w-24 tabular-nums">{formatDate(item.date, false, dateFormat)}</span>
-                                                        <div className="flex flex-col">
-                                                            <span className="font-bold text-sm text-slate-700">{item.clean_source || item.source}</span>
-                                                            {(item.category || item.sub_category) && (
-                                                                <span className="text-[10px] text-slate-400 font-medium">
-                                                                    {item.category}{item.sub_category ? ` • ${item.sub_category}` : ''}
-                                                                </span>
+                                            {items.map(item => {
+                                                const isSelectablePositive = item.amount > 0 && items.some(t => t.amount < 0);
+                                                const isSelectedPositive = matcher.selectedPositiveId === item.id;
+                                                const isHighlighted = matcher.highlightedIds.has(item.id);
+
+                                                return (
+                                                    <div
+                                                        key={item.id}
+                                                        onClick={() => isSelectablePositive ? matcher.togglePositive(item) : setSelectedTransaction(item)}
+                                                        className={cn(
+                                                            "flex items-center justify-between p-3.5 px-6 transition-colors cursor-pointer group/row",
+                                                            isSelectedPositive ? "bg-indigo-50 ring-1 ring-inset ring-indigo-300" :
+                                                                isHighlighted ? "bg-amber-50 ring-1 ring-inset ring-amber-300" : "hover:bg-white"
+                                                        )}
+                                                    >
+                                                        <div className="flex items-center gap-4">
+                                                            <span className="text-xs font-bold text-slate-400 w-24 tabular-nums">{formatDate(item.date, false, dateFormat)}</span>
+                                                            <div className="flex flex-col">
+                                                                <span className="font-bold text-sm text-slate-700">{item.clean_source || item.source}</span>
+                                                                {(item.category || item.sub_category) && (
+                                                                    <span className="text-[10px] text-slate-400 font-medium">
+                                                                        {item.category}{item.sub_category ? ` • ${item.sub_category}` : ''}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {isSelectablePositive && (
+                                                                <Badge variant="outline" className={cn(
+                                                                    "text-[9px] uppercase font-black tracking-widest gap-1 transition-opacity",
+                                                                    isSelectedPositive ? "bg-indigo-100 text-indigo-700 border-indigo-300" : "text-slate-400 border-slate-200 opacity-0 group-hover/row:opacity-100"
+                                                                )}>
+                                                                    <Target className="w-3 h-3" />
+                                                                    {isSelectedPositive ? 'Matching…' : 'Find Matches'}
+                                                                </Badge>
                                                             )}
                                                         </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-3">
-                                                        <span className={cn(
-                                                            "font-black text-sm",
-                                                            item.amount >= 0 ? "text-emerald-600" : "text-rose-600"
-                                                        )}>
-                                                            {formatCurrency(item.amount, settings.currency)}
-                                                        </span>
-                                                        <div className="text-[10px] font-bold uppercase tracking-widest text-blue-500 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                                                            EDIT
+                                                        <div className="flex items-center gap-3">
+                                                            <span className={cn(
+                                                                "font-black text-sm",
+                                                                item.amount >= 0 ? "text-emerald-600" : "text-rose-600"
+                                                            )}>
+                                                                {formatCurrency(item.amount, settings.currency)}
+                                                            </span>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); setSelectedTransaction(item); }}
+                                                                className="text-[10px] font-bold uppercase tracking-widest text-blue-500 opacity-0 group-hover/row:opacity-100 transition-opacity"
+                                                            >
+                                                                EDIT
+                                                            </button>
                                                         </div>
                                                     </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {matcher.selection?.entity === entity && (
+                                        <div className="m-4 p-4 bg-white rounded-2xl border border-indigo-200 shadow-sm space-y-3 animate-in fade-in slide-in-from-bottom-2">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Target className="w-4 h-4 text-indigo-500" />
+                                                    <span className="text-xs font-black uppercase tracking-widest text-slate-600">
+                                                        Matches for {formatCurrency(matcher.selection.positive.amount, settings.currency)}
+                                                    </span>
                                                 </div>
-                                            ))}
+                                                <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-slate-700" onClick={matcher.reset} title="Clear selection">
+                                                    <X className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+
+                                            {matcher.combinations.length === 0 ? (
+                                                <p className="text-sm text-slate-400 font-medium italic">
+                                                    No combination of negative items offsets this amount (within ±5%).
+                                                </p>
+                                            ) : (
+                                                <div className="space-y-1.5">
+                                                    {matcher.combinations.map((combo, idx) => {
+                                                        const isChosen = matcher.chosenIds?.join() === combo.ids.join();
+                                                        return (
+                                                            <button
+                                                                key={idx}
+                                                                onMouseEnter={() => matcher.setHoveredIds(combo.ids)}
+                                                                onMouseLeave={() => matcher.setHoveredIds(null)}
+                                                                onClick={() => matcher.setChosenIds(isChosen ? null : combo.ids)}
+                                                                className={cn(
+                                                                    "w-full flex items-center justify-between px-3 py-2 rounded-xl border text-left transition-all",
+                                                                    isChosen ? "bg-indigo-50 border-indigo-300 ring-1 ring-indigo-200" : "bg-slate-50/50 border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/40"
+                                                                )}
+                                                            >
+                                                                <div className="flex items-center gap-2">
+                                                                    <Badge variant="outline" className="text-[10px] font-black bg-white">{combo.ids.length} item{combo.ids.length > 1 ? 's' : ''}</Badge>
+                                                                    <span className="font-mono font-bold text-sm text-rose-600">{formatCurrency(combo.total, settings.currency)}</span>
+                                                                </div>
+                                                                <Badge className={cn(
+                                                                    "text-[9px] uppercase font-black tracking-widest",
+                                                                    combo.exact ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-100 text-amber-700 border-amber-200"
+                                                                )}>
+                                                                    {combo.exact ? 'Exact' : `≈ off by ${formatCurrency(combo.difference, settings.currency)}`}
+                                                                </Badge>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
+                                            {matcher.chosenIds && matcher.chosenIds.length > 0 && (
+                                                <div className="flex justify-end pt-2 border-t border-slate-100">
+                                                    <Button
+                                                        size="sm"
+                                                        onClick={handleConfirmCombination}
+                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase text-[10px] tracking-widest shadow-md"
+                                                    >
+                                                        <Check className="w-4 h-4 mr-1.5" />
+                                                        Reconcile {matcher.chosenIds.length + 1} Items
+                                                    </Button>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </AccordionContent>
@@ -697,6 +815,15 @@ const Reconciliation = () => {
                     }
                 }}
             />
+
+            {splitTransaction && (
+                <TransactionSplitModal
+                    open={!!splitTransaction}
+                    onOpenChange={(open) => !open && setSplitTransaction(null)}
+                    transaction={splitTransaction}
+                    onSplitComplete={() => setSplitTransaction(null)}
+                />
+            )}
 
             <Dialog open={!!promptingNoteTx} onOpenChange={(open) => !open && setPromptingNoteTx(null)}>
                 <DialogContent className="max-w-md">

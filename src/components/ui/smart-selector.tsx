@@ -2,6 +2,7 @@ import * as React from "react";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { HeaderActionButton } from "@/components/ui/header-action-button";
 import {
     Command,
     CommandEmpty,
@@ -26,6 +27,9 @@ interface SmartSelectorProps {
     disabled?: boolean;
     emptyMessage?: string;
     hideSuggestions?: boolean;
+    // Render the trigger as a <span> instead of a <button> — required when the
+    // selector sits inside another <button> (e.g. an AccordionTrigger).
+    spanTrigger?: boolean;
 }
 
 export const SmartSelector = ({
@@ -37,7 +41,8 @@ export const SmartSelector = ({
     className,
     disabled = false,
     emptyMessage = "No results found.",
-    hideSuggestions = false
+    hideSuggestions = false,
+    spanTrigger = false
 }: SmartSelectorProps) => {
     const [open, setOpen] = React.useState(false);
     const [searchValue, setSearchValue] = React.useState("");
@@ -53,10 +58,12 @@ export const SmartSelector = ({
 
     const selectedOption = formattedOptions.find(opt => opt.value === value);
 
+    const TriggerComp = spanTrigger ? HeaderActionButton : Button;
+
     return (
         <Popover open={open} onOpenChange={handleOpenChange}>
             <PopoverTrigger asChild>
-                <Button
+                <TriggerComp
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
@@ -70,7 +77,7 @@ export const SmartSelector = ({
                         {selectedOption ? selectedOption.label : placeholder}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
+                </TriggerComp>
             </PopoverTrigger>
             <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
                 <Command value={searchValue} onValueChange={setSearchValue}>

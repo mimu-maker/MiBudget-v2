@@ -1,17 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertCircle, FileText, Plus } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTransactionImport } from './hooks/useTransactionImport';
-import { ManualTransactionForm } from './AddTransactionDialog/ManualTransactionForm';
 import { ImportSourceStep } from './AddTransactionDialog/ImportSourceStep';
 import { ImportMappingStep } from './AddTransactionDialog/ImportMappingStep';
-import { ImportPreviewStep } from './AddTransactionDialog/ImportPreviewStep';
-import { ImportDuplicateCheckStep } from './AddTransactionDialog/ImportDuplicateCheckStep';
-import { ImportCategoryMappingStep } from './AddTransactionDialog/ImportCategoryMappingStep';
+import { ImportResolutionStep } from './AddTransactionDialog/ImportResolutionStep';
 import { ProcessingStatus } from './AddTransactionDialog/ProcessingStatus';
+import { Button } from '@/components/ui/button';
 
 interface UnifiedAddTransactionsDialogProps {
     open: boolean;
@@ -20,9 +18,8 @@ interface UnifiedAddTransactionsDialogProps {
     onImport: (data: any[], onProgress?: (current: number, total: number) => void) => void;
 }
 
-export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImport }: UnifiedAddTransactionsDialogProps) => {
-    const [mode, setMode] = useState<'entry' | 'import'>('entry');
-    const [importSource, setImportSource] = useState<'upload' | 'paste'>('upload');
+export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onImport }: UnifiedAddTransactionsDialogProps) => {
+    const navigate = useNavigate();
 
     const {
         step, setStep,
@@ -31,56 +28,43 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
         columnMapping, setColumnMapping,
         fieldConfigs, setFieldConfigs,
         errors, setErrors,
-        preview, updatePreviewRow, bulkUpdatePreview, applyRuleToPreview, deletePreviewRow, bulkDeletePreviewRows, differentiatePreviewRow,
-        trustCsvCategories,
+        preview,
         pasteContent, setPasteContent,
-        conflicts, selectedConflictIds, toggleConflictSelection, selectAllConflicts,
-        uniqueCsvCategories, uniqueCsvSubCategories,
-        categoryValueMapping, setCategoryValueMapping,
-        subCategoryValueMapping, setSubCategoryValueMapping,
-        applyValueMappings,
         processingProgress,
-        suggestions, // Exposed from hook
-        parseCSV, readFile, generatePreview, checkForUnknownAccounts, executeImport, handleResolutionSave, reset
+        unknownAccounts,
+        accountResolutions, setAccountResolutions,
+        parseCSV, readFile, generatePreview, handleResolutionSave, reset
     } = useTransactionImport(onImport);
 
-    // Reset state on open/close
     useEffect(() => {
         if (!open) {
-            setTimeout(() => {
-                reset();
-                setMode('entry');
-            }, 300);
+            setTimeout(() => reset(), 300);
         }
     }, [open, reset]);
 
-    const handleFormCancel = () => onOpenChange(false);
-
-    // Wrap onAdd to close dialog on success
-    const handleAdd = async (transaction: any) => {
-        await onAdd(transaction);
+    const handleImportComplete = () => {
         onOpenChange(false);
+        navigate('/transactions/validation');
     };
+
+    // Total steps: 2 normally; 3 when account resolution is needed
+    const totalSteps = step >= 3 ? 3 : 2;
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className={cn("bg-slate-50 transition-all duration-300",
-                mode === 'import' && step > 1 ? "w-[95vw] max-w-7xl max-h-[95vh] overflow-y-auto" : "max-w-2xl")}>
-
+            <DialogContent className={cn(
+                'bg-slate-50 transition-all duration-300',
+                step === 2 ? 'w-[95vw] max-w-7xl max-h-[95vh] overflow-y-auto' : 'max-w-2xl'
+            )}>
                 <DialogHeader>
                     <div className="flex items-center justify-between">
                         <div>
-                            <DialogTitle className="text-2xl font-semibold">
-                                {mode === 'entry' ? 'Add New Transaction' : 'Import Transactions'}
-                            </DialogTitle>
+                            <DialogTitle className="text-2xl font-semibold">Import Transactions</DialogTitle>
                             <DialogDescription>
-                                {mode === 'entry'
-                                    ? 'Add a new transaction manually with all required details.'
-                                    : 'Import transactions from a CSV file and map the columns.'
-                                }
+                                Import transactions from a CSV or Excel file and map the columns.
                             </DialogDescription>
                         </div>
-                        {mode === 'import' && <div className="text-sm text-slate-500">Step {step} of 6</div>}
+                        <div className="text-sm text-slate-500">Step {step} of {totalSteps}</div>
                     </div>
 
                     {errors.length > 0 && (
@@ -99,125 +83,55 @@ export const UnifiedAddTransactionsDialog = ({ open, onOpenChange, onAdd, onImpo
                     )}
                 </DialogHeader>
 
-                {mode === 'entry' ? (
-                    <div className="space-y-6">
-                        <Tabs defaultValue="form" className="w-full">
-                            <TabsList className="grid w-full grid-cols-2 mb-6 bg-slate-200 p-1 rounded-lg">
-                                <TabsTrigger value="form" className="flex items-center gap-2 font-medium tracking-tight">
-                                    <Plus className="w-4 h-4" /> Single Transaction
-                                </TabsTrigger>
-                                <TabsTrigger value="bulk" onClick={() => setMode('import')} className="flex items-center gap-2 font-medium tracking-tight">
-                                    <FileText className="w-4 h-4" /> Bulk Import
-                                </TabsTrigger>
-                            </TabsList>
+                <div className="mt-4 min-h-[400px] relative">
+                    {step === 1 && (
+                        <ImportSourceStep
+                            importSource="upload"
+                            setImportSource={() => {}}
+                            readFile={readFile}
+                            parseCSV={parseCSV}
+                            pasteContent={pasteContent}
+                            setPasteContent={setPasteContent}
+                            isProcessing={isProcessing}
+                            setMode={() => {}}
+                        />
+                    )}
 
-                            <ManualTransactionForm
-                                onAdd={handleAdd}
-                                onCancel={handleFormCancel}
-                                setIsProcessing={setIsProcessing}
-                                setErrors={setErrors}
-                            />
-                        </Tabs>
-                    </div>
-                ) : (
-                    <div className="mt-4 min-h-[400px] relative">
-                        {step === 1 && (
-                            <ImportSourceStep
-                                importSource={importSource}
-                                setImportSource={setImportSource}
-                                readFile={readFile}
-                                parseCSV={parseCSV}
-                                pasteContent={pasteContent}
-                                setPasteContent={setPasteContent}
-                                isProcessing={isProcessing}
-                                setMode={setMode}
-                            />
-                        )}
+                    {step === 2 && (
+                        <ImportMappingStep
+                            csvData={csvData}
+                            hasHeaders={hasHeaders}
+                            setHasHeaders={setHasHeaders}
+                            columnMapping={columnMapping}
+                            setColumnMapping={setColumnMapping}
+                            fieldConfigs={fieldConfigs}
+                            setFieldConfigs={setFieldConfigs}
+                            setStep={setStep}
+                            generatePreview={generatePreview}
+                        />
+                    )}
 
-                        {step === 2 && (
-                            <ImportMappingStep
-                                csvData={csvData}
-                                hasHeaders={hasHeaders}
-                                setHasHeaders={setHasHeaders}
-                                columnMapping={columnMapping}
-                                setColumnMapping={setColumnMapping}
-                                fieldConfigs={fieldConfigs}
-                                setFieldConfigs={setFieldConfigs}
-                                setStep={setStep}
-                                generatePreview={generatePreview}
-                            />
-                        )}
-
-                        {step === 3 && (
-                            <ImportCategoryMappingStep
-                                mode="category"
-                                uniqueCsvCategories={uniqueCsvCategories}
-                                uniqueCsvSubCategories={uniqueCsvSubCategories}
-                                categoryValueMapping={categoryValueMapping}
-                                setCategoryValueMapping={setCategoryValueMapping}
-                                subCategoryValueMapping={subCategoryValueMapping}
-                                setSubCategoryValueMapping={setSubCategoryValueMapping}
-                                setStep={setStep}
-                                applyValueMappings={applyValueMappings}
-                                suggestions={suggestions}
-                            />
-                        )}
-
-                        {step === 4 && (
-                            <ImportCategoryMappingStep
-                                mode="sub-category"
-                                uniqueCsvCategories={uniqueCsvCategories}
-                                uniqueCsvSubCategories={uniqueCsvSubCategories}
-                                categoryValueMapping={categoryValueMapping}
-                                setCategoryValueMapping={setCategoryValueMapping}
-                                subCategoryValueMapping={subCategoryValueMapping}
-                                setSubCategoryValueMapping={setSubCategoryValueMapping}
-                                setStep={setStep}
-                                applyValueMappings={applyValueMappings}
-                                suggestions={suggestions}
-                            />
-                        )}
-
-                        {step === 5 && (
-                            <ImportPreviewStep
-                                preview={preview}
-                                setStep={setStep}
-                                checkForUnknownAccounts={checkForUnknownAccounts}
-                                updatePreviewRow={updatePreviewRow}
-                                bulkUpdatePreview={bulkUpdatePreview}
-                                applyRuleToPreview={applyRuleToPreview}
-                                onDelete={deletePreviewRow}
-                                onBulkDelete={bulkDeletePreviewRows}
-                                onKeep={differentiatePreviewRow}
-                            />
-                        )}
-
-                        {step === 6 && (
-                            <ImportDuplicateCheckStep
-                                preview={preview}
-                                conflicts={conflicts}
-                                selectedConflictIds={selectedConflictIds}
-                                toggleConflictSelection={toggleConflictSelection}
-                                selectAllConflicts={selectAllConflicts}
-                                setStep={setStep}
-                                executeImport={executeImport}
-                                isProcessing={isProcessing}
-                            />
-                        )}
-                    </div>
-                )}
+                    {step === 3 && (
+                        <ImportResolutionStep
+                            unknownAccounts={unknownAccounts}
+                            accountResolutions={accountResolutions}
+                            setAccountResolutions={setAccountResolutions}
+                            preview={preview}
+                            isProcessing={isProcessing}
+                            setStep={setStep}
+                            handleResolutionSave={handleResolutionSave}
+                        />
+                    )}
+                </div>
 
                 {isProcessing && (
                     <ProcessingStatus
                         processingProgress={processingProgress}
                         setIsProcessing={setIsProcessing}
-                        onClose={() => onOpenChange(false)}
+                        onClose={handleImportComplete}
                     />
                 )}
             </DialogContent>
         </Dialog>
     );
 };
-
-// Internal Import for Button used in Alert (to avoid importing from UI in logic sections)
-import { Button } from '@/components/ui/button';

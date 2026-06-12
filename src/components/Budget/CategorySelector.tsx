@@ -2,6 +2,7 @@ import * as React from "react";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { HeaderActionButton } from "@/components/ui/header-action-button";
 import {
     Command,
     CommandEmpty,
@@ -31,6 +32,16 @@ interface CategorySelectorProps {
     primaryCategory?: string | null;
     secondaryCategories?: string[];
     transactionAmount?: number;
+    groupedCategories?: {
+        income: any[];
+        feeders: any[];
+        expenses: any[];
+        slush: any[];
+    };
+    isLoadingCategories?: boolean;
+    // Render the trigger as a <span> instead of a <button> — required when the
+    // selector sits inside another <button> (e.g. an AccordionTrigger).
+    spanTrigger?: boolean;
 }
 
 export const CategorySelector = ({
@@ -46,14 +57,19 @@ export const CategorySelector = ({
     hideSuggestions = false,
     primaryCategory,
     secondaryCategories,
-    transactionAmount
+    transactionAmount,
+    groupedCategories,
+    isLoadingCategories,
+    spanTrigger = false
 }: CategorySelectorProps) => {
     const [open, setOpen] = React.useState(false);
+
+    const TriggerComp = spanTrigger ? HeaderActionButton : Button;
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
-                <Button
+                <TriggerComp
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
@@ -67,7 +83,7 @@ export const CategorySelector = ({
                         {(!value || value === 'always-ask') && showAlwaysAsk ? "Always Ask" : (value || placeholder)}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
+                </TriggerComp>
             </PopoverTrigger>
             <PopoverContent className="w-[320px] p-0" align="start">
                 <Command className="border-none">
@@ -91,6 +107,8 @@ export const CategorySelector = ({
                             primaryCategory={primaryCategory}
                             secondaryCategories={secondaryCategories}
                             transactionAmount={transactionAmount}
+                            groupedCategories={groupedCategories}
+                            isLoadingCategories={isLoadingCategories}
                         />
                     </CommandList>
                 </Command>
