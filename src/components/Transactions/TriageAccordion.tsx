@@ -8,8 +8,10 @@ import { cn } from '@/lib/utils';
 import { formatCurrency, formatDate } from '@/lib/formatUtils';
 import { useSettings } from '@/hooks/useSettings';
 import { useProfile } from '@/contexts/ProfileContext';
+import { useGroupedCategories } from '@/hooks/useBudgetCategories';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { HeaderActionButton } from '@/components/ui/header-action-button';
 import { SourceNameSelector } from './SourceNameSelector';
 import { SmartSelector } from '@/components/ui/smart-selector';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -183,6 +185,7 @@ export const TriageAccordion = ({
 }: TriageAccordionProps) => {
     const { settings } = useSettings();
     const { userProfile } = useProfile();
+    const { income, feeders, expenses, slush, isLoading: categoriesLoading } = useGroupedCategories();
     const [expandedSource, setExpandedSource] = useState<string | null>(null);
     const [selectedSourceRule, setSelectedSourceRule] = useState<any | null>(null);
     const [categorisationEdits, setCategorisationEdits] = useState<Record<string, { category: string, sub_category: string, status?: string }>>({});
@@ -300,21 +303,22 @@ export const TriageAccordion = ({
             if (!groups[tx.source]) groups[tx.source] = [];
             groups[tx.source].push(tx);
         });
-        return Object.entries(groups).map(([source, txs]) => ({
-            source,
-            txs,
-            count: txs.length,
-            total: txs.reduce((sum, tx) => sum + tx.amount, 0),
-            avgAmount: txs.reduce((sum, tx) => sum + tx.amount, 0) / txs.length,
-            isPendingRecon: txs.some(tx => tx.status === 'Pending Reconciliation')
-        })).sort((a, b) => {
+        return Object.entries(groups).map(([source, txs]) => {
+            const sortedTxs = [...txs].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+            return {
+                source,
+                txs: sortedTxs,
+                count: sortedTxs.length,
+                total: sortedTxs.reduce((sum, tx) => sum + tx.amount, 0),
+                absTotal: sortedTxs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0),
+                avgAmount: sortedTxs.reduce((sum, tx) => sum + tx.amount, 0) / sortedTxs.length,
+                isPendingRecon: sortedTxs.some(tx => tx.status === 'Pending Reconciliation')
+            };
+        }).sort((a, b) => {
             if (a.isPendingRecon !== b.isPendingRecon) return a.isPendingRecon ? 1 : -1;
-            const factor = mappingSort.order === 'asc' ? 1 : -1;
-            if (mappingSort.field === 'source') return factor * a.source.localeCompare(b.source);
-            if (mappingSort.field === 'count') return factor * (a.count - b.count);
-            return factor * (a.total - b.total);
+            return b.absTotal - a.absTotal;
         });
-    }, [pendingSourceMapping, mappingSort]);
+    }, [pendingSourceMapping]);
 
     // Auto-expand the first non-recon group on load
     useEffect(() => {
@@ -333,21 +337,22 @@ export const TriageAccordion = ({
             if (!groups[m]) groups[m] = [];
             groups[m].push(tx);
         });
-        return Object.entries(groups).map(([source, txs]) => ({
-            source,
-            txs,
-            count: txs.length,
-            total: txs.reduce((sum, tx) => sum + tx.amount, 0),
-            avgAmount: txs.reduce((sum, tx) => sum + tx.amount, 0) / txs.length,
-            isPendingRecon: txs.some(tx => tx.status === 'Pending Reconciliation')
-        })).sort((a, b) => {
+        return Object.entries(groups).map(([source, txs]) => {
+            const sortedTxs = [...txs].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+            return {
+                source,
+                txs: sortedTxs,
+                count: sortedTxs.length,
+                total: sortedTxs.reduce((sum, tx) => sum + tx.amount, 0),
+                absTotal: sortedTxs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0),
+                avgAmount: sortedTxs.reduce((sum, tx) => sum + tx.amount, 0) / sortedTxs.length,
+                isPendingRecon: sortedTxs.some(tx => tx.status === 'Pending Reconciliation')
+            };
+        }).sort((a, b) => {
             if (a.isPendingRecon !== b.isPendingRecon) return a.isPendingRecon ? 1 : -1;
-            const factor = catSort.order === 'asc' ? 1 : -1;
-            if (catSort.field === 'source') return factor * a.source.localeCompare(b.source);
-            if (catSort.field === 'count') return factor * (a.count - b.count);
-            return factor * (a.total - b.total);
+            return b.absTotal - a.absTotal;
         });
-    }, [pendingCategorisation, catSort]);
+    }, [pendingCategorisation]);
 
     const validationGroups = useMemo(() => {
         const sources: Record<string, any> = {};
@@ -379,7 +384,14 @@ export const TriageAccordion = ({
             }
         });
 
-        return Object.values(sources).sort((a: any, b: any) => b.total - a.total);
+        return Object.values(sources).map((source: any) => {
+            Object.values(source.categories).forEach((cat: any) => {
+                Object.values(cat.subCategories).forEach((sub: any) => {
+                    sub.txs = [...sub.txs].sort((a: any, b: any) => Math.abs(b.amount) - Math.abs(a.amount));
+                });
+            });
+            return { ...source, absTotal: Math.abs(source.total) };
+        }).sort((a: any, b: any) => b.absTotal - a.absTotal);
     }, [pendingValidation]);
 
     // Track the first source of the current validation groups to auto-expand if needed
@@ -722,17 +734,6 @@ export const TriageAccordion = ({
                     <div className="space-y-4">
                         {regularItems.length > 0 && (
                             <div className="space-y-4">
-                                <BucketHeader
-                                    fields={[
-                                        { label: "Source", key: "source", className: "flex-1" },
-                                        { label: "Count", key: "count", className: "w-24 text-center" },
-                                        { label: "Total Amount", key: "total", className: "w-32 text-right" }
-                                    ]}
-                                    sortBy={mappingSort.field}
-                                    sortOrder={mappingSort.order}
-                                    onSort={(f: string) => handleSort('pending-source', f)}
-                                    color="amber"
-                                />
                                 <VirtualList
                                     items={regularItems}
                                     height="600px"
@@ -831,6 +832,9 @@ export const TriageAccordion = ({
                                                 suggestionLimit={3}
                                                 placeholder="Category"
                                                 className="h-9 w-[180px] text-sm font-medium"
+                                                groupedCategories={{ income, feeders, expenses, slush }}
+                                                isLoadingCategories={categoriesLoading}
+                                                spanTrigger
                                             />
                                             <SmartSelector
                                                 value={edit.sub_category}
@@ -839,10 +843,11 @@ export const TriageAccordion = ({
                                                 options={subCats.map((s: string) => ({ label: s, value: s }))}
                                                 placeholder="Sub-category"
                                                 className="h-9 w-[150px]"
+                                                spanTrigger
                                             />
 
                                             <div className="flex items-center gap-1 border-l border-slate-200 pl-3 ml-1 bg-white/50 py-1 rounded-lg">
-                                                <Button
+                                                <HeaderActionButton
                                                     size="sm"
                                                     variant="ghost"
                                                     onClick={(e) => {
@@ -858,8 +863,8 @@ export const TriageAccordion = ({
                                                     title="Apply to All"
                                                 >
                                                     <Check className="w-5 h-5" />
-                                                </Button>
-                                                <Button
+                                                </HeaderActionButton>
+                                                <HeaderActionButton
                                                     size="sm"
                                                     variant="ghost"
                                                     onClick={(e) => {
@@ -870,14 +875,25 @@ export const TriageAccordion = ({
                                                     title="Reset Changes"
                                                 >
                                                     <X className="w-4 h-4" />
-                                                </Button>
+                                                </HeaderActionButton>
                                             </div>
 
                                             <div className="w-px h-6 bg-slate-200 mx-1" />
 
                                             <div className="flex items-center gap-1">
+                                                {txs.length === 1 && (
+                                                    <HeaderActionButton
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={(e) => { e.stopPropagation(); onSplit(txs[0]); }}
+                                                        className="h-9 w-9 p-0 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"
+                                                        title="Split Transaction"
+                                                    >
+                                                        <Split className="w-4 h-4" />
+                                                    </HeaderActionButton>
+                                                )}
                                                 {!isPendingRecon && (
-                                                    <Button
+                                                    <HeaderActionButton
                                                         size="sm"
                                                         variant="ghost"
                                                         onClick={(e) => {
@@ -888,10 +904,10 @@ export const TriageAccordion = ({
                                                         title="Set to Pending Reconciliation"
                                                     >
                                                         <History className="w-4 h-4" />
-                                                    </Button>
+                                                    </HeaderActionButton>
                                                 )}
 
-                                                <Button
+                                                <HeaderActionButton
                                                     size="sm"
                                                     variant={confirmingExcludeId === `group:${source}` ? "destructive" : "ghost"}
                                                     onClick={(e) => {
@@ -910,7 +926,7 @@ export const TriageAccordion = ({
                                                     )}
                                                 >
                                                     {confirmingExcludeId === `group:${source}` ? "CONFIRM" : <EyeOff className="w-4 h-4" />}
-                                                </Button>
+                                                </HeaderActionButton>
                                             </div>
 
                                             <div className={cn("ml-4 tabular-nums font-black text-[16px] shrink-0 border-l border-slate-100 pl-4 min-w-[120px] text-right", total < 0 ? "text-red-600" : "text-emerald-600")}>{formatCurrency(total, settings.currency)}</div>
@@ -981,6 +997,8 @@ export const TriageAccordion = ({
                                                                 suggestionLimit={3}
                                                                 placeholder="Category"
                                                                 className="h-9 w-[180px] text-sm font-medium"
+                                                                groupedCategories={{ income, feeders, expenses, slush }}
+                                                                isLoadingCategories={categoriesLoading}
                                                             />
                                                             <SmartSelector
                                                                 value={tx.sub_category || ''}
@@ -1104,17 +1122,6 @@ export const TriageAccordion = ({
                     <div className="space-y-4">
                         {regularItems.length > 0 && (
                             <div className="space-y-3">
-                                <BucketHeader
-                                    fields={[
-                                        { label: "Source", key: "source", className: "flex-1" },
-                                        { label: "Count", key: "count", className: "w-24 text-center" },
-                                        { label: "Total Volume", key: "total", className: "w-32 text-right" }
-                                    ]}
-                                    sortBy={catSort.field}
-                                    sortOrder={catSort.order}
-                                    onSort={(f: string) => handleSort('pending-categorisation', f)}
-                                    color="blue"
-                                />
                                 <Accordion
                                     type="single"
                                     collapsible
@@ -1174,17 +1181,6 @@ export const TriageAccordion = ({
             color: 'indigo',
             content: (
                 <div className="space-y-6">
-                    <BucketHeader
-                        fields={[
-                            { label: "Source Group", key: "source", className: "flex-1" },
-                            { label: "Items", key: "count", className: "w-24 text-center" },
-                            { label: "Sum", key: "total", className: "w-32 text-right" }
-                        ]}
-                        sortBy={valSort.field}
-                        sortOrder={valSort.order}
-                        onSort={(f: string) => handleSort('pending-validation', f)}
-                        color="indigo"
-                    />
                     <Accordion
                         type="single"
                         collapsible
@@ -1227,6 +1223,9 @@ export const TriageAccordion = ({
                                                         suggestionLimit={3}
                                                         placeholder="Category"
                                                         className="h-9 w-[180px] text-sm font-medium"
+                                                        groupedCategories={{ income, feeders, expenses, slush }}
+                                                        isLoadingCategories={categoriesLoading}
+                                                        spanTrigger
                                                     />
                                                     <SmartSelector
                                                         value={sourceMappingEdits[group.sourceName]?.sub_category || group.uniformSubCategory || ''}
@@ -1235,10 +1234,11 @@ export const TriageAccordion = ({
                                                         options={getSubCategoryList(sourceMappingEdits[group.sourceName]?.category !== undefined ? sourceMappingEdits[group.sourceName]?.category : (group.uniformCategory || '')).map((s: string) => ({ label: s, value: s }))}
                                                         placeholder="Sub-category"
                                                         className="h-9 w-[150px]"
+                                                        spanTrigger
                                                     />
 
                                                     <div className="flex items-center gap-1 border-l border-slate-200 pl-3 ml-1">
-                                                        <Button
+                                                        <HeaderActionButton
                                                             size="sm"
                                                             variant="ghost"
                                                             onClick={(e) => {
@@ -1261,8 +1261,8 @@ export const TriageAccordion = ({
                                                             title="Verify and Save Mapping"
                                                         >
                                                             <Check className="w-5 h-5" />
-                                                        </Button>
-                                                        <Button
+                                                        </HeaderActionButton>
+                                                        <HeaderActionButton
                                                             size="sm"
                                                             variant="ghost"
                                                             onClick={(e) => {
@@ -1273,7 +1273,7 @@ export const TriageAccordion = ({
                                                             title="Reset Changes"
                                                         >
                                                             <X className="w-4 h-4" />
-                                                        </Button>
+                                                        </HeaderActionButton>
                                                     </div>
 
                                                     <div className="w-px h-6 bg-slate-200 mx-1" />
@@ -1281,7 +1281,7 @@ export const TriageAccordion = ({
                                                     <span className={cn("font-black text-[16px] font-mono tabular-nums border-r border-slate-100 pr-4", group.total < 0 ? "text-red-600" : "text-emerald-600")}>{formatCurrency(group.total, settings.currency)}</span>
 
                                                     <div className="flex items-center gap-1">
-                                                        <Button
+                                                        <HeaderActionButton
                                                             size="sm"
                                                             variant="ghost"
                                                             onClick={() => handleVerifyAllInGroup(group, 'Complete')}
@@ -1289,9 +1289,9 @@ export const TriageAccordion = ({
                                                             title="Validate All"
                                                         >
                                                             <Check className="w-5 h-5" />
-                                                        </Button>
+                                                        </HeaderActionButton>
 
-                                                        <Button
+                                                        <HeaderActionButton
                                                             size="sm"
                                                             variant="ghost"
                                                             onClick={() => setPendingReconTx({ source: group.sourceName, _isGroup: true, _ids: Object.values(group.categories).flatMap((c: any) => Object.values(c.subCategories).flatMap((s: any) => s.txs.map((t: any) => t.id))) })}
@@ -1299,9 +1299,9 @@ export const TriageAccordion = ({
                                                             title="Set Group to Pending Reconciliation"
                                                         >
                                                             <History className="w-4 h-4" />
-                                                        </Button>
+                                                        </HeaderActionButton>
 
-                                                        <Button
+                                                        <HeaderActionButton
                                                             size="sm"
                                                             variant={confirmingExcludeId === `group:${group.sourceName}` ? "destructive" : "ghost"}
                                                             onClick={() => {
@@ -1320,7 +1320,7 @@ export const TriageAccordion = ({
                                                             )}
                                                         >
                                                             {confirmingExcludeId === `group:${group.sourceName}` ? "CONFIRM" : <EyeOff className="w-4 h-4" />}
-                                                        </Button>
+                                                        </HeaderActionButton>
                                                     </div>
                                                 </div>
                                             </div>

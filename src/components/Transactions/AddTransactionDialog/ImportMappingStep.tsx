@@ -64,7 +64,7 @@ export const ImportMappingStep = ({
 
             <div className="flex justify-between pt-8 border-t border-slate-200 mt-10">
                 <Button variant="ghost" size="lg" onClick={() => setStep(1)} className="text-slate-500 hover:bg-slate-100"><ChevronLeft className="w-4 h-4 mr-2" /> Back</Button>
-                <Button onClick={generatePreview} size="lg" className="px-12 bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-100">Next: Preview <ChevronRight className="w-4 h-4 ml-2" /></Button>
+                <Button onClick={generatePreview} size="lg" className="px-12 bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-100">Save &amp; Import <ChevronRight className="w-4 h-4 ml-2" /></Button>
             </div>
         </div>
     );

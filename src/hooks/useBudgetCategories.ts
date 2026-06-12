@@ -776,7 +776,8 @@ export const useGroupedCategories = () => {
       return {
         income: localCats.filter(c => c.category_group === 'income').sort(sortByName),
         feeders: [],
-        expenses: localCats.filter(c => c.category_group !== 'income').sort(sortByName)
+        expenses: localCats.filter(c => c.category_group !== 'income').sort(sortByName),
+        slush: []
       };
     }
 

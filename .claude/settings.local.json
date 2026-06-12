@@ -7,7 +7,11 @@
       "Bash(git checkout:*)",
       "Bash(git add:*)",
       "Bash(git commit -m ':*)",
-      "Bash(git merge feature/multi-account-demo-setup --no-ff -m ':*)"
+      "Bash(git merge feature/multi-account-demo-setup --no-ff -m ':*)",
+      "mcp__claude_ai_Supabase__get_project",
+      "mcp__plugin_vercel-plugin_vercel__list_teams",
+      "Bash(npm run *)",
+      "mcp__7bb04722-db31-4ae5-b851-ddfb9472ad86__execute_sql"
     ]
   }
 }

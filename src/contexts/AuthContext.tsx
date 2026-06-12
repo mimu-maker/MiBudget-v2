@@ -94,14 +94,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
+        // Check email allowlist BEFORE setting user state to prevent
+        // ProfileContext from briefly running for disallowed users.
+        if (session?.user?.email && !isEmailAllowed(session.user.email)) {
+          await supabase.auth.signOut();
+          return;
+        }
+
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user?.email) {
-          if (!isEmailAllowed(session.user.email)) {
-            await supabase.auth.signOut();
-            return;
-          }
           const profile = await fetchUserProfile(session.user.id, session.user.email);
           await updateProfileAndAccount(profile);
         } else {
@@ -113,14 +116,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user?.email && !isEmailAllowed(session.user.email)) {
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user?.email) {
-        if (!isEmailAllowed(session.user.email)) {
-          await supabase.auth.signOut();
-          setLoading(false);
-          return;
-        }
         const profile = await fetchUserProfile(session.user.id, session.user.email);
         await updateProfileAndAccount(profile);
       }

@@ -48,10 +48,14 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
 
+    const DEMO_ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
+    const DEMO_PROFILE_ID = '2edb305b-d267-4e7c-9411-1e83d503bc68';
+
     const fetchUserProfile = async (userId: string) => {
         try {
             const { data: userData } = await supabase.auth.getUser();
             const actualUserId = userData.user?.id || userId;
+            const actualEmail = userData.user?.email;
 
             const { data, error } = await (supabase as any)
                 .from('user_profiles')
@@ -60,6 +64,29 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 .single();
 
             if (error && error.code === 'PGRST116') {
+                // Demo user: never INSERT — return hardcoded profile pointing to demo account
+                if (actualEmail === 'demo@example.com') {
+                    console.log('ProfileContext: Demo user profile not found in DB, using hardcoded fallback');
+                    return {
+                        id: DEMO_PROFILE_ID,
+                        user_id: actualUserId,
+                        email: 'demo@example.com',
+                        full_name: 'Demo User',
+                        currency: 'USD',
+                        timezone: 'America/New_York',
+                        language: 'en-US',
+                        date_format: 'YY/MM/DD',
+                        amount_format: 'dot_decimal',
+                        show_time: false,
+                        role: 'admin',
+                        is_setup_complete: true,
+                        onboarding_status: 'completed',
+                        current_account_id: DEMO_ACCOUNT_ID,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    } as UserProfile;
+                }
+
                 console.log('ProfileContext: Profile not found, creating master profile');
                 const newProfile = {
                     user_id: actualUserId,

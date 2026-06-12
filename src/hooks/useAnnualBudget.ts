@@ -167,7 +167,7 @@ export const useAnnualBudget = (year?: number) => {
       let hasMore = true;
 
       while (hasMore) {
-        let query = (supabase as any).from('transactions').select('*');
+        let query = (supabase as any).from('transactions').select('*').neq('budget', 'Exclude');
         if (currentAccountId) query = query.eq('account_id', currentAccountId);
         else query = query.or(`user_id.eq.${user?.id},user_id.eq.${profileId}`);
 

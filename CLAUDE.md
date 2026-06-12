@@ -26,7 +26,7 @@ npm run test:ui    # Vitest with UI
 
 ## Active Branch
 
-`Claude_0.1` — all work goes here. Never push directly to main.
+`Claude_0.4` — all work goes here. Never push directly to main.
 
 ## Architecture
 
@@ -122,12 +122,4 @@ If data appears missing in the UI:
 
 ## Decisions Log
 
-| Date | Decision |
-|------|----------|
-| 2026-05-02 | Removed `fuzzy` match mode — only `contains` and `exact` remain |
-| 2026-05-02 | Added `UNIQUE (account_id, raw_name)` constraint to `classification_rules` |
-| 2026-05-02 | `is_resolved` = `!!clean_source` — no longer requires a rule to exist |
-| 2026-05-02 | Transaction sub-label shows raw bank string, not notes field |
-| 2026-05-02 | `Reconciled` status excluded from all Pending views |
-| 2026-05-02 | `Special` category (Slush Fund) must not be filtered out of dropdowns |
-| 2026-05-02 | `vercel.json` added for SPA routing (fixes 404 on page refresh) |
+See `docs/logs/` for dated decision logs.

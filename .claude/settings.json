@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CURRENT=$(git -C \"$(pwd)\" rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown'); HIGHEST=$(git -C \"$(pwd)\" branch -a 2>/dev/null | grep -oE 'Claude_0\\.[0-9]+' | sort -t. -k2 -n | tail -1); if [ -z \"$HIGHEST\" ]; then NEXT='Claude_0.1'; else NUM=$(echo \"$HIGHEST\" | grep -oE '[0-9]+$'); NEXT=\"Claude_0.$((NUM + 1))\"; fi; printf '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"⚠️  BRANCH DISCIPLINE (CLAUDE.md)\\nCurrent branch: %s\\nNext sequential branch: %s\\n\\nBefore any git work, confirm with the user which branch to use. Never commit directly to main. Default to creating %s unless the user specifies otherwise.\"}}' \"$CURRENT\" \"$NEXT\" \"$NEXT\""
+          }
+        ]
+      }
+    ]
+  }
+}
